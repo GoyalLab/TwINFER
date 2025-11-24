@@ -1,0 +1,4 @@
+,k_on,k_off,mrna_half_life,protein_half_life,k_prod_mRNA,k_prod_protein,n_gene_1_to_gene_2,k_add_gene_1_to_gene_2,n_gene_2_to_gene_1,k_add_gene_2_to_gene_1,n_gene_1_to_gene_3,k_add_gene_1_to_gene_3,n_gene_2_to_gene_3,k_add_gene_2_to_gene_3
+0,0.66,8.6,4,45,2,560,2,6,2,6,2,6,2,6
+1,0.66,8.6,4,45,2,560,2,6,2,6,2,6,2,6
+2,0.66,8.6,4,45,2,560,2,6,2,6,2,6,2,6
