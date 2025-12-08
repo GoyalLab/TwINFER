@@ -286,9 +286,22 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.colors import TwoSlopeNorm
 
+def sort_genes_numerically(gene_list):
+    def extract_key(g):
+        if g.startswith("gene_"):
+            suffix = g[len("gene_"):]
+            # Check if suffix is an integer
+            if suffix.isdigit():
+                return ("gene", int(suffix))
+        # fallback: sort lexicographically
+        return ("other", g)
+    
+    return sorted(gene_list, key=extract_key)
+
+
 def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential_regulation=None, title=None, add_gene_labels=True,
                             add_time=False, time=None, gray_out_no_reg=False, vmin=None, vmax=None, cmap=None, 
-                            return_plot=False, black_out_self=False,figsize_input= (8, 6), symmetric = True):
+                            return_plot=False, black_out_self=False,figsize_input= (8, 6), symmetric = True, draw_diagonal_multi_state_reg = False, multi_state_reg_edges = None):
     """
     Plot a gene-gene correlation matrix as a heatmap with regulatory overlays and dynamic formatting.
     """
@@ -300,7 +313,8 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
             raise ValueError("Time can have at most two entries.")
 
     # Format gene names: gene_1 → g1
-    base_names =  gene_list
+    base_names =  sort_genes_numerically(gene_list)
+
 
     # Format axis labels
     if add_gene_labels:
@@ -321,7 +335,11 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
 
     # Prepare plot matrix
     plot_matrix = corr_matrix.copy()
-
+    if symmetric:
+        # --- Symmetrize matrix by taking whichever side is non-zero ---
+        A = plot_matrix.values
+        sym_A = np.where(A != np.nan, A, A.T)     # fill from transposed when zero
+        plot_matrix = pd.DataFrame(sym_A, index=plot_matrix.index, columns=plot_matrix.columns)
     # --- Handle masking ---
     mask = np.zeros_like(plot_matrix.values, dtype=bool)
     if gray_out_no_reg and no_regulation:
@@ -331,6 +349,9 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
                 j = gene_list.index(g2)
                 plot_matrix.iloc[i, j] = 0
                 mask[i, j] = True
+                if symmetric:
+                    plot_matrix.iloc[j, i] = 0
+                    mask[j, i] = True   
 
     # --- Handle vmin/vmax auto-scaling ---
     temp_values = plot_matrix.values.copy()
@@ -361,7 +382,7 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
     else:
         norm = None
         if cmap is None:
-            cmap = "Blues" if vmin >= 0 else "Reds"
+            cmap = "Blues" if vmin >= 0 else "Reds_r"
 
     # --- Plot heatmap ---
     fig, ax = plt.subplots(figsize=figsize_input)
@@ -402,6 +423,31 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
                     if i != j:  # avoid drawing twice on diagonal
                         rect2 = Rectangle((i, j), 1, 1, fill=False, edgecolor='black', linewidth=1)
                         ax.add_patch(rect2)
+    #Adding diagonal lines for multi-state regulation
+    if draw_diagonal_multi_state_reg and len(multi_state_reg_edges) > 0:
+        for g1, g2 in multi_state_reg_edges:
+            if g1 in gene_list and g2 in gene_list:
+                i = gene_list.index(g1)
+                j = gene_list.index(g2)
+
+                # Draw a dashed black diagonal inside that cell
+                ax.plot(
+                    [j, j+1],      # x: left → right of the cell
+                    [i+1, i],      # y: top → bottom of the cell
+                    linestyle="--",
+                    color="black",
+                    linewidth=1.5,
+                    clip_on=False
+                )
+                # Draw a dashed black diagonal inside that cell
+                ax.plot(
+                    [i, i+1],      # x: left → right of the cell
+                    [j+1, j],      # y: top → bottom of the cell
+                    linestyle="--",
+                    color="black",
+                    linewidth=1.5,
+                    clip_on=False
+                )
 
     # --- Title ---
     if title:
@@ -413,186 +459,17 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
         ax.set_title(title, fontsize=12)
 
     plt.tight_layout()
+    ax.set_clip_on(False)
+    for artist in ax.get_children():
+        try:
+            artist.set_clip_on(False)
+        except Exception:
+            pass
+
     if return_plot:
         return fig, ax
     else:
         plt.show()
-
-# def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential_regulation=None, title=None, add_gene_labels=True,
-#                             add_time=False, time=None, gray_out_no_reg=False, vmin=None, vmax=None, cmap=None, return_plot = False, black_out_self = False):
-#     """
-#     Plot a gene-gene correlation matrix as a heatmap with regulatory overlays and dynamic formatting.
-
-#     This function visualizes a square correlation matrix (e.g., gene-gene correlations at a given timepoint),
-#     optionally marking entries with no inferred regulation and highlighting potential regulatory pairs.
-
-#     Parameters
-#     ----------
-#     corr_matrix : pd.DataFrame
-#         A square DataFrame representing gene-gene correlations (e.g., Spearman or directional). 
-#         Must have both row and column labels matching `gene_list`.
-
-#     gene_list : list of str
-#         List of gene names in the expected order (e.g., ["gene_1", "gene_2", ...]).
-
-#     no_regulation : list of tuple, optional
-#         List of (gene_i, gene_j) pairs where no regulation is inferred. 
-#         If `gray_out_no_reg` is True, these entries will be grayed out (masked as NaN in the heatmap).
-
-#     potential_regulation : list of tuple, optional
-#         List of (gene_i, gene_j) pairs with possible regulation. These will be marked with solid black rectangles.
-
-#     title : str, optional
-#         Plot title. If `add_time=True`, timepoint annotations will be appended to the title.
-
-#     add_gene_labels : bool, default=True
-#         Whether to annotate the axes with gene labels (e.g., g1, g2, ...).
-
-#     add_time : bool, default=False
-#         Whether to append time information to gene labels on the axes (e.g., $g1_{t1}$).
-
-#     time : list or tuple of int, optional
-#         Time information to annotate gene labels:
-#         - If `len(time) == 1`, both axes are assumed to correspond to the same time.
-#         - If `len(time) == 2`, the row and column axes will be labeled with t1 and t2, respectively.
-#         Required if `add_time=True`.
-
-#     gray_out_no_reg : bool, default=False
-#         If True, entries in `no_regulation` will be masked and shown as gray (NaN in the heatmap).
-
-#     vmin : float, optional
-#         Lower bound of colormap. If not provided, inferred from data.
-
-#     vmax : float, optional
-#         Upper bound of colormap. If not provided, inferred from data.
-
-#     cmap : str or matplotlib colormap, optional
-#         Colormap to use. If not provided:
-#         - Uses 'Blues' if all values ≥ 0
-#         - Uses 'Reds' if all values ≤ 0
-#         - Uses a custom Red-Blue diverging map if values span both negative and positive
-
-#     Returns
-#     -------
-#     None
-#         The function displays a heatmap using `matplotlib.pyplot` and does not return any value.
-
-#     Notes
-#     -----
-#     - The function assumes `corr_matrix` and `gene_list` are consistent (i.e., same order and names).
-#     - Entries in `no_regulation` that are not in `gene_list` will be silently ignored.
-#     - The function supports both symmetric and asymmetric matrices (e.g., directional correlations).
-#     - If `vmin == vmax`, a small epsilon will be added to avoid a degenerate colormap.
-#     """
-
-#     if add_time:
-#         if time is None or not isinstance(time, (list, tuple)) or len(time) == 0:
-#             raise ValueError("If add_time=True, you must provide a non-empty list of 1 or 2 time values in `time`.")
-#         if len(time) > 2:
-#             raise ValueError("Time can have at most two entries.")
-
-#     # Format gene names: gene_1 → g1
-#     base_names = [g.replace("gene_", "g") for g in gene_list]
-
-#     # Format axis labels
-#     if add_gene_labels:
-#         if add_time:
-#             if len(time) == 1:
-#                 row_labels = [f"$g{i}_{{{time[0]}}}$" for i in range(1, len(base_names) + 1)]
-#                 col_labels = row_labels
-#             else:
-#                 row_labels = [f"$g{i}_{{{time[0]}}}$" for i in range(1, len(base_names) + 1)]
-#                 col_labels = [f"$g{i}_{{{time[1]}}}$" for i in range(1, len(base_names) + 1)]
-#         else:
-#             row_labels = base_names
-#             col_labels = base_names
-#     else:
-#         row_labels = [""] * len(gene_list)
-#         col_labels = [""] * len(gene_list)
-
-#     # Prepare plot matrix
-#     plot_matrix = corr_matrix.copy()
-
-#     # --- Handle masking ---
-#     mask = np.zeros_like(plot_matrix.values, dtype=bool)
-#     if gray_out_no_reg and no_regulation:
-#         for g1, g2 in no_regulation:
-#             if g1 in gene_list and g2 in gene_list:
-#                 i = gene_list.index(g1)
-#                 j = gene_list.index(g2)
-#                 plot_matrix.iloc[i, j] = np.nan
-#                 mask[i, j] = True
-
-#     # --- Handle vmin/vmax auto-scaling ---
-#     data_values = plot_matrix.values.flatten()
-#     data_values = data_values[~np.isnan(data_values)]
-
-#     if len(data_values) == 0:
-#         vmin, vmax = -1.0, 1.0
-#     else:
-#         if vmin is None:
-#             vmin = np.min(data_values)
-#         if vmax is None:
-#             vmax = np.max(data_values)
-#         if vmin == vmax:
-#             vmin -= 1e-4
-#             vmax += 1e-4
-
-#     # --- Choose colormap adaptively ---
-#     from matplotlib.colors import TwoSlopeNorm
-
-#     if cmap is None and vmin < 0 and vmax > 0:
-#         cmap = make_reds_blues_colormap()
-#         center_span = max(abs(vmin), abs(vmax))
-#         norm = TwoSlopeNorm(vmin=-center_span, vcenter=0.0, vmax=center_span)
-
-#     else:
-#         norm = None
-#         if cmap is None:
-#             cmap = "Blues" if vmin >= 0 else "Reds"
-
-#     fig, ax = plt.subplots(figsize=(8, 6))
-#     heatmap = sns.heatmap(
-#         plot_matrix,
-#         ax=ax,
-#         cmap=cmap,
-#         vmin=vmin,
-#         vmax=vmax,
-#         norm=norm,  # ✅ Will be None if not diverging
-#         xticklabels=col_labels,
-#         yticklabels=row_labels,
-#         square=True,
-#         cbar_kws={'label': 'Correlation'},
-#         linewidths=0.5,
-#         linecolor='lightgray',
-#         mask=mask
-#     )
-#     if norm is not None:
-#         cbar = heatmap.collections[0].colorbar
-#         # cbar.set_clim(vmin, vmax)  # display only actual data range on colorbar
-
-
-#     # --- Add regulation boxes ---
-#     if potential_regulation:
-#         for g1, g2 in potential_regulation:
-#             if g1 in gene_list and g2 in gene_list:
-#                 i = gene_list.index(g1)
-#                 j = gene_list.index(g2)
-#                 rect = Rectangle((j, i), 1, 1, fill=False, edgecolor='black', linewidth=2)
-#                 ax.add_patch(rect)
-
-#     # --- Title ---
-#     if title:
-#         if add_time:
-#             if len(time) == 1:
-#                 title += f" @ time {time[0]}h"
-#             elif len(time) == 2:
-#                 title += f" (rows: t{time[0]}, cols: t{time[1]})"
-#         ax.set_title(title, fontsize=12)
-
-#     plt.tight_layout()
-#     plt.show()
-
 
 def print_summary(no_regulation, 
                   single_state_regulation, 
@@ -805,7 +682,3 @@ def plot_network(correlation_matrix, gene_list, edges, title=None):
 
     plt.tight_layout()
     plt.show()
-
-
-
-

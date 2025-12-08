@@ -213,7 +213,7 @@ from scipy.stats import rankdata
 
 def generate_random_shuffle(simulation_data, gene_list, n_shuffles=10000, random_state=42):
     """
-    Generate null distributions of gene–gene correlations by random pairing of cells,
+    Generate null distributions of difference correlations by random pairing of cells,
     independent of any 'replicate' column.
 
     Parameters
@@ -439,17 +439,20 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
                 plt.axvline(current_threshold, color="red", linestyle="--", label=f"threshold={current_threshold:.3f}")
                 plt.axvline(-1*current_threshold, color="red", linestyle="--")
                 plt.axvline(corr_val, color="black", linestyle="-", label=f"actual={(corr_val):.3f}")
-                plt.title(f"Scrambled correlations: {gi} {direction_str} {gj}, p-val = {p_value:.3f}")
-                plt.xlabel("Correlation")
-                plt.ylabel("Count")
+                plt.title(f"Gene correlation: {gi} {direction_str} {gj}, p-val = {p_value:.3f}")
+                plt.xlabel(r"gene correlation $\rho$")
+                plt.ylabel("number of scrambles")
                 plt.legend()
                 plt.tight_layout()
                 plt.show()
         
         # Classify pairs
         gene_corr_thresholds[(gi, gj)] = current_threshold
-        target_list = potential_regulation if abs(corr_val) > current_threshold else no_regulation
-        target_list.append((gi, gj))
+        if abs(corr_val) > current_threshold:
+            potential_regulation.append((gi, gj))
+        else:
+            no_regulation.append((gi, gj))
+        
     
     return no_regulation, potential_regulation, gene_corr_thresholds
 
@@ -655,12 +658,13 @@ def differentiate_single_state_reg_and_multiple_states(all_t1_t2_measurements, p
             z_score = (t_corr - np.mean(r_corr))/r_corr_std
             if verbose:
                 plt.hist(r_corr)
-                plt.axvline(t_corr, linestyle = "--", c = "red", label = "Twin correlation at time t1")
-                plt.xlabel("Correlations")
-                plt.ylabel("Freuquency")
-                plt.title(f"Random pair correlations vs twin correlation at time t1 \
+                plt.axvline(t_corr, linestyle = "--", c = "red", label = r"twin difference correlation $\hat{\rho}_\Delta(t_1)$")
+                plt.xlabel(r"random-pair difference correlation $\rho_\Delta(t_1)$")
+                plt.ylabel("number of scrambles")
+                plt.title(f"Random pair difference correlations vs twin difference correlation \
                     \n between {gene_i} and {gene_j} \
                     \n Z-score = {z_score}")
+                plt.legend()
                 plt.show()
                 
             if abs(z_score) > abs(z_score_threshold):
@@ -672,7 +676,6 @@ def differentiate_single_state_reg_and_multiple_states(all_t1_t2_measurements, p
             raise ValueError(f"Division by zero for {gene_i} and {gene_j}")
         except KeyError:
             raise ValueError(f"Missing gene pair ({gene_i}, {gene_j}) in correlation matrices.")
-
     return multiple_states_gene_pairs, single_state_regulation
 
 def identify_reg_if_multiple_states(twin_correlation_matrix_t1, twin_correlation_matrix_t2, random_correlation_matrix_t1, random_correlation_matrix_t2, multiple_states_gene_pairs, gene_list, threshold_relative_increase=0.1):
