@@ -330,13 +330,13 @@ def infer_with_twinfer(path_to_simulation_file= None,
 
     # --- Step 2: Twin/random correlations at t2 ---
     if merge_time_points:
-        twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t2 = calculate_twin_random_pair_correlations(
+        twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1 = calculate_twin_random_pair_correlations(
             all_t1_t2_measurements, t1_twins, gene_list
         )
         title_random_plot = r"Random-pair difference correlation $\rho_{\Delta}$ using cells across both timepoints"
     else:
         title_random_plot = rf"Random-pair difference correlation $\rho_{{\Delta}}$ using cells at time {t1}"
-        twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t2 = calculate_twin_random_pair_correlations(
+        twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1 = calculate_twin_random_pair_correlations(
             all_t2_measurements, t1_twins, gene_list
         )
     # print(twin_pair_correlation_matrix_t2)
@@ -345,21 +345,21 @@ def infer_with_twinfer(path_to_simulation_file= None,
             title=rf"Twin pair correlations $\hat{{\rho}}_{{\Delta}}(t_1)$ at time {t1}h", add_gene_labels=True, add_time=True, time=[t1], gray_out_no_reg=True, black_out_self = True, symmetric = True
         )
         
-        plot_matrix_as_heatmap(corr_matrix=random_pair_correlation_matrix_t2, gene_list=gene_list, no_regulation=no_regulation, potential_regulation=potential_regulation,
+        plot_matrix_as_heatmap(corr_matrix=random_pair_correlation_matrix_t1, gene_list=gene_list, no_regulation=no_regulation, potential_regulation=potential_regulation,
             title=title_random_plot, add_gene_labels=True, add_time=False, time=[t1], gray_out_no_reg=True, black_out_self = True, symmetric = True
         )
 
     # --- Step 3: Classify regulation type: single-state vs multiple-states ---
     if merge_time_points:
         multiple_states_gene_pairs, single_state_regulation = differentiate_single_state_reg_and_multiple_states(
-            all_t1_t2_measurements, potential_regulation, twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t2, gene_list, z_score_threshold=z_score_threshold_two_states
+            all_t1_t2_measurements, potential_regulation, twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1, gene_list, z_score_threshold=z_score_threshold_two_states
         )
         twin_pair_correlation_matrix_t2, random_pair_correlation_matrix_t2 = calculate_twin_random_pair_correlations(
                     all_t1_t2_measurements, t2_twins, gene_list
                 )
     else:
         multiple_states_gene_pairs, single_state_regulation = differentiate_single_state_reg_and_multiple_states(
-            all_t2_measurements, potential_regulation, twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t2, gene_list, z_score_threshold=z_score_threshold_two_states
+            all_t2_measurements, potential_regulation, twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1, gene_list, z_score_threshold=z_score_threshold_two_states
         )
         twin_pair_correlation_matrix_t2, random_pair_correlation_matrix_t2 = calculate_twin_random_pair_correlations(
                     all_t2_measurements, t2_twins, gene_list
@@ -377,7 +377,8 @@ def infer_with_twinfer(path_to_simulation_file= None,
     all_gene_pairs = list(product(gene_list, repeat=2))
     if have_any_output:
         print_summary(no_regulation, single_state_regulation, multiple_states_no_reg, multiple_states_and_reg)
-    
+    direction_matrix = pd.DataFrame()
+    final_directed_edges = None
     # --- Step 5: Infer directionality of single-state interactions ---
     if infer_direction_for_which_edges == "single-state" :
         if len(single_state_regulation) > 0:
@@ -420,14 +421,14 @@ def infer_with_twinfer(path_to_simulation_file= None,
     else:
         direction_matrix = get_cross_correlations(across_t_twin1, across_t_twin2, gene_pairs=all_gene_pairs)
         final_directed_edges = identify_actual_directed_edges(across_t_twin1, across_t_twin2, direction_matrix, gene_pairs=all_gene_pairs, threshold = p_value_threshold_cross_correlation, n_cores_to_use = n_cores, verbose = True)
-    print(final_directed_edges)
+        print(final_directed_edges)
     # print(pre_threshold_direction_matrix)
     direction_matrix = direction_matrix.reindex(
     index=gene_list,
     columns=gene_list,
     fill_value=0
     )
-    if plot_correlation_matrices_as_heatmap:
+    if plot_correlation_matrices_as_heatmap and final_directed_edges:
         all_gene_pairs = list(product(gene_list, repeat=2))
         no_reg_pairs = [pair for pair in all_gene_pairs if pair not in final_directed_edges]
         if infer_direction_for_which_edges == "all-regulation" and multiple_states_and_reg:
@@ -469,10 +470,11 @@ def infer_with_twinfer(path_to_simulation_file= None,
     #         else:
     #             plot_network(direction_matrix, gene_list, final_directed_edges)
     unfiltered_direction_matrix = direction_matrix
-    for i in direction_matrix.index:
-        for j in direction_matrix.columns:
-            if i != j and (i, j) not in final_directed_edges:
-                direction_matrix.loc[i,j] = 0
+    if final_directed_edges:
+        for i in direction_matrix.index:
+            for j in direction_matrix.columns:
+                if i != j and (i, j) not in final_directed_edges:
+                    direction_matrix.loc[i,j] = 0
     try:
         result =  {
             "all_gene_pairs": all_gene_pairs,
