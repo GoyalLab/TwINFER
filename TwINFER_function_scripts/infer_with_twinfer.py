@@ -296,6 +296,10 @@ def infer_with_twinfer(path_to_simulation_file= None,
     [t1_twins, t2_twins, across_t_twin1, across_t_twin2],
     ignore_index=True
     )
+    all_t1_measurements = pd.concat(
+        [t1_twins, across_t_twin1],
+        ignore_index=True
+    )
     all_t2_measurements = pd.concat(
         [t2_twins, across_t_twin2],
         ignore_index=True
@@ -311,7 +315,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
         )
     else:
         pairwise_gene_gene_correlation_matrix = calculate_pairwise_gene_gene_correlation_matrix(
-            all_t2_measurements, gene_list
+            all_t1_measurements, gene_list
         )
            
         no_regulation, potential_regulation, gene_corr_thresholds = check_gene_gene_correlation_threshold(
@@ -337,7 +341,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
     else:
         title_random_plot = rf"Random-pair difference correlation $\rho_{{\Delta}}$ using cells at time {t1}"
         twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1 = calculate_twin_random_pair_correlations(
-            all_t2_measurements, t1_twins, gene_list
+            all_t1_measurements, t1_twins, gene_list
         )
     # print(twin_pair_correlation_matrix_t2)
     if plot_correlation_matrices_as_heatmap:
@@ -359,7 +363,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
                 )
     else:
         multiple_states_gene_pairs, single_state_regulation = differentiate_single_state_reg_and_multiple_states(
-            all_t2_measurements, potential_regulation, twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1, gene_list, z_score_threshold=z_score_threshold_two_states
+            all_t1_measurements, potential_regulation, twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1, gene_list, z_score_threshold=z_score_threshold_two_states
         )
         twin_pair_correlation_matrix_t2, random_pair_correlation_matrix_t2 = calculate_twin_random_pair_correlations(
                     all_t2_measurements, t2_twins, gene_list
@@ -421,14 +425,14 @@ def infer_with_twinfer(path_to_simulation_file= None,
     else:
         direction_matrix = get_cross_correlations(across_t_twin1, across_t_twin2, gene_pairs=all_gene_pairs)
         final_directed_edges = identify_actual_directed_edges(across_t_twin1, across_t_twin2, direction_matrix, gene_pairs=all_gene_pairs, threshold = p_value_threshold_cross_correlation, n_cores_to_use = n_cores, verbose = True)
-        print(final_directed_edges)
+    print(final_directed_edges)
     # print(pre_threshold_direction_matrix)
     direction_matrix = direction_matrix.reindex(
     index=gene_list,
     columns=gene_list,
     fill_value=0
     )
-    if plot_correlation_matrices_as_heatmap and final_directed_edges:
+    if plot_correlation_matrices_as_heatmap and not direction_matrix.empty:
         all_gene_pairs = list(product(gene_list, repeat=2))
         no_reg_pairs = [pair for pair in all_gene_pairs if pair not in final_directed_edges]
         if infer_direction_for_which_edges == "all-regulation" and multiple_states_and_reg:
