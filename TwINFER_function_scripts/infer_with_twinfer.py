@@ -325,7 +325,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
     # print(no_regulation)
     if plot_correlation_matrices_as_heatmap:
         if merge_time_points == True:
-            title = r"Gene correlations $\rho$ with cells across two points"
+            title = r"Gene correlations $\rho$ with cells from both two points"
         else:
             title = rf"Gene correlations $\rho$ with cells from time {t1}"
         plot_matrix_as_heatmap(corr_matrix=pairwise_gene_gene_correlation_matrix, gene_list=gene_list, no_regulation=no_regulation, potential_regulation=potential_regulation,
@@ -432,6 +432,12 @@ def infer_with_twinfer(path_to_simulation_file= None,
     columns=gene_list,
     fill_value=0
     )
+    unfiltered_direction_matrix = direction_matrix
+    if final_directed_edges:
+        for i in direction_matrix.index:
+            for j in direction_matrix.columns:
+                if i != j and (i, j) not in final_directed_edges:
+                    direction_matrix.loc[i,j] = 0
     if plot_correlation_matrices_as_heatmap and not direction_matrix.empty:
         all_gene_pairs = list(product(gene_list, repeat=2))
         no_reg_pairs = [pair for pair in all_gene_pairs if pair not in final_directed_edges]
@@ -441,7 +447,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
                 gene_list=gene_list,
                 no_regulation=no_reg_pairs,                   
                 potential_regulation=final_directed_edges,     
-                title=r"Direction: Twin cross-correlation $\hat{\rho}^{\dagger}_{x(t_{1}) \to y(t_{2})}$",
+                title=r"Twin cross-correlation $\hat{\rho}^{\dagger}_{x(t_{1}) \to y(t_{2})}$",
                 add_gene_labels=True,
                 add_time=False,
                 time=[t1, t2],

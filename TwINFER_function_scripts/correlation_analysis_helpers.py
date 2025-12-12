@@ -386,6 +386,10 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
 
     # --- Plot heatmap ---
     fig, ax = plt.subplots(figsize=figsize_input)
+    if title:
+      cbar_label = title 
+    else:
+      cbar_label = "Correlation"
     heatmap = sns.heatmap(
         plot_matrix,
         ax=ax,
@@ -396,7 +400,7 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
         xticklabels=col_labels,
         yticklabels=row_labels,
         square=True,
-        cbar_kws={'label': 'Correlation'},
+        cbar_kws={'label': cbar_label},
         linewidths=0.5,
         linecolor='lightgray',
         mask=mask
@@ -432,7 +436,7 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
 
                 # Draw a dashed black diagonal inside that cell
                 ax.plot(
-                    [j, j+1],      # x: left → right of the cell
+                    [j+1, j],      # x: left → right of the cell
                     [i+1, i],      # y: top → bottom of the cell
                     linestyle="--",
                     color="black",
@@ -441,7 +445,7 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
                 )
                 # Draw a dashed black diagonal inside that cell
                 ax.plot(
-                    [i, i+1],      # x: left → right of the cell
+                    [i+1, i],      # x: left → right of the cell
                     [j+1, j],      # y: top → bottom of the cell
                     linestyle="--",
                     color="black",
