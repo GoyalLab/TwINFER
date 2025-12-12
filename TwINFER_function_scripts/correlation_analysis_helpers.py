@@ -286,18 +286,33 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.colors import TwoSlopeNorm
 
-def sort_genes_numerically(gene_list):
-    def extract_key(g):
-        if g.startswith("gene_"):
-            suffix = g[len("gene_"):]
-            # Check if suffix is an integer
-            if suffix.isdigit():
-                return ("gene", int(suffix))
-        # fallback: sort lexicographically
-        return ("other", g)
-    
-    return sorted(gene_list, key=extract_key)
+import re
 
+def sort_genes_numerically(gene_list):
+    """
+    Sort gene_# numerically if present.
+    Otherwise, sort lexicographically.
+    Returns (sorted_genes, sorted_indices).
+    """
+    gene_pattern = re.compile(r"gene_(\d+)$")
+
+    has_numeric = any(gene_pattern.match(g) for g in gene_list)
+
+    def extract_key(g):
+        m = gene_pattern.match(g)
+        if m:
+            return (0, int(m.group(1)))
+        if has_numeric:
+            return (1, g)      # non-numeric go after numeric genes
+        return (0, g)          # pure lexicographic mode
+
+    indexed = list(enumerate(gene_list))
+    indexed_sorted = sorted(indexed, key=lambda x: extract_key(x[1]))
+
+    sorted_indices = [i for i, _ in indexed_sorted]
+    sorted_genes   = [g for _, g in indexed_sorted]
+
+    return sorted_genes, sorted_indices
 
 def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential_regulation=None, title=None, add_gene_labels=True,
                             add_time=False, time=None, gray_out_no_reg=False, vmin=None, vmax=None, cmap=None, 
@@ -313,7 +328,12 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
             raise ValueError("Time can have at most two entries.")
 
     # Format gene names: gene_1 → g1
-    base_names =  sort_genes_numerically(gene_list)
+    # ---- Sort genes AND matrix together (single source of truth) ----
+    sorted_genes, sorted_indices = sort_genes_numerically(gene_list)
+
+    gene_list   = sorted_genes
+    base_names  = gene_list
+    plot_matrix = corr_matrix.iloc[sorted_indices, sorted_indices]
 
 
     # Format axis labels
@@ -334,11 +354,11 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
         col_labels = [""] * len(gene_list)
 
     # Prepare plot matrix
-    plot_matrix = corr_matrix.copy()
+    # plot_matrix = corr_matrix.copy()
     if symmetric:
         # --- Symmetrize matrix by taking whichever side is non-zero ---
         A = plot_matrix.values
-        sym_A = np.where(A != np.nan, A, A.T)     # fill from transposed when zero
+        sym_A = np.where(~np.isnan(A), A, A.T)
         plot_matrix = pd.DataFrame(sym_A, index=plot_matrix.index, columns=plot_matrix.columns)
     # --- Handle masking ---
     mask = np.zeros_like(plot_matrix.values, dtype=bool)

@@ -2,10 +2,10 @@
 #SBATCH --account=p32655
 #SBATCH --partition=short
 #SBATCH --nodes=1
-#SBATCH --ntasks=9
+#SBATCH --ntasks=18
 #SBATCH --mem=6GB
 #SBATCH --time=4:00:00
-#SBATCH --job-name=multiple-hill-constant
+#SBATCH --job-name=drift_simulation
 #SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/drift_simulation/slurmLog-%A_%a-%x.out
 #SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/drift_simulation/slurmLog-%A_%a-%x.err
 
