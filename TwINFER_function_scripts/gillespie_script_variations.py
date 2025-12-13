@@ -175,15 +175,16 @@ def generate_reaction_network_from_matrix(connectivity_matrix: np.ndarray,
                 #k_add is per target, not per edge - so this needs to be updated accordingly - not a matrix, it is a list#TODO
 
             regulators_index = np.where(connectivity_matrix[:,j]!=0)[0]
-
-            if len(regulators_index) == 1:
+            if len(regulators_index) == 0:
+                pass
+            elif len(regulators_index) == 1:
                 #There is no combinatorial regulation
-                prop["regulatory"] = "(({sign}*{k_add})*({tf}_protein**{n})/({K}**{n}+{tf}_protein**{n}))*{curr_gene}_I"
+                prop["regulatory_single"] = "(({sign}*{k_add})*({tf}_protein**{n})/({K}**{n}+{tf}_protein**{n}))*{curr_gene}_I"
                 i = regulators_index[0]
                 regulator = gene_list[i]
                 sign = int(np.sign(connectivity_matrix[i,j]))
                 edge = f"{regulator}_to_{curr_gene}"
-                expr = prop["regulatory"]\
+                expr = prop["regulatory_single"]\
                     .replace("{sign}",str(sign))\
                     .replace("{k_add}",f"{{k_add_{curr_gene}}}")\
                     .replace("{n}",f"{{n_{edge}}}")\
@@ -195,7 +196,7 @@ def generate_reaction_network_from_matrix(connectivity_matrix: np.ndarray,
                                 "propensity":expr,"time":"-"})
             
             elif len(regulators_index) == 2:
-                prop["regulatory"] = """
+                prop["regulatory_comb"] = """
                                         (({sign}*{k_add}*{pre_factor}) * (
                                             {r1} * ({tf1}_protein**{n1}) / ({K1}**{n1})
                                         + {r2} * ({tf2}_protein**{n2}) / ({K2}**{n2})
@@ -256,19 +257,19 @@ def generate_reaction_network_from_matrix(connectivity_matrix: np.ndarray,
 
                     edge1 = f"{reg1}_to_{curr_gene}"
                     edge2 = f"{reg2}_to_{curr_gene}"
-                    expr = prop["regulatory"]\
+                    expr = prop["regulatory_comb"]\
                             .replace("{sign}", str(sign1))\
                             .replace("{pre_factor}", str(pre_factor))\
-                            .replace("{k_add}", f"{{k_{curr_gene}}}")\
+                            .replace("{k_add}", f"{{k_add_{curr_gene}}}")\
                             .replace("{tf1}", reg1)\
                             .replace("{tf2}", reg2)\
                             .replace("{n1}", f"{{n_{edge1}}}")\
                             .replace("{n2}", f"{{n_{edge2}}}")\
                             .replace("{K1}", f"{{K_{edge1}}}")\
                             .replace("{K2}", f"{{K_{edge2}}}")\
-                            .replace("{r1}", "1")\
-                            .replace("{r2}", "1")\
-                            .replace("{r12}", "1")\
+                            .replace("{r1}", r1)\
+                            .replace("{r2}", r2)\
+                            .replace("{r12}", r12)\
                             .replace("{curr_gene}", curr_gene)
                     reactions.append({
                             "species1": f"{curr_gene}_A",
@@ -279,21 +280,18 @@ def generate_reaction_network_from_matrix(connectivity_matrix: np.ndarray,
                             "time": "-"
                         })
                 else:
-                    print(f"Using additive logic for gene {curr_gene}")
-                    for i in regulators_index:
-                        regulator = gene_list[i]
-                        sign = int(np.sign(connectivity_matrix[i,j]))
-                        edge = f"{regulator}_to_{curr_gene}"
-                        expr = prop["regulatory"]\
-                            .replace("{sign}",str(sign))\
-                            .replace("{k_add}",f"{{k_add_{curr_gene}}}")\
-                            .replace("{n}",f"{{n_{edge}}}")\
-                            .replace("{K}",f"{{K_{edge}}}")\
-                            .replace("{tf}",regulator)\
-                            .replace("{curr_gene}",curr_gene)
-                        reactions.append({"species1":f"{curr_gene}_A","change1":1,
-                                        "species2":f"{curr_gene}_I","change2":-1,
-                                        "propensity":expr,"time":"-"})
+                    print(f"Continue")
+                    
+                    
+    df = pd.DataFrame(reactions)
+    df['propensity'] = df['propensity'].astype(str)
+    reactions_df = (
+        df.assign(propensity=df['propensity'].str.strip())
+        .query("propensity != ''")
+        .groupby(['species1','change1','species2','change2','time'])['propensity']
+        .agg(lambda x: ' + '.join(x) if len(x) > 1 else x.iloc[0])
+        .reset_index()
+    )                                   
     return reactions_df, gene_list                                      
 
 def generate_reaction_network_from_matrix_old(connectivity_matrix: np.ndarray,
@@ -873,7 +871,7 @@ def generate_K_from_steady_state_calc(param_dict, connectivity_matrix, gene_list
         regs = np.where(connectivity_matrix[:,i]!=0)[0]
 
         reg_eff = 0.0
-        k_add = param_dict.get(f"{{k_add_{curr_gene}}}", 0.0)
+        k_add = param_dict.get(f"{{k_add_{gene}}}", 0.0)
         
         k_on_eff = k_on + k_add*target_hill  # or replace k_on completely if no basal allowed
         burst_prob = k_on_eff/(k_on_eff+k_off)
@@ -958,7 +956,7 @@ def generate_k_from_max_expression(param_dict, connectivity_matrix, gene_list,
     return protein_levels, param_dict
 
 def add_interaction_terms(param_dict, connectivity_matrix, gene_list,
-                          n_matrix=None, k_add_matrix=None, scale_K=None, combinatorial_interaction_type = "additive", use_given_K = None, K_to_use = None):
+                          n_matrix=None, k_add_list=None, scale_K=None, combinatorial_interaction_type = "additive", use_given_K = None, K_to_use = None):
     """
     Adds interaction terms to the parameter dictionary based on the connectivity matrix 
     and gene list, and calculates steady-state paramet
@@ -1012,7 +1010,7 @@ def add_interaction_terms(param_dict, connectivity_matrix, gene_list,
     if use_given_K and K_to_use:
         return assign_k_values_matrix(param_dict, connectivity_matrix, gene_list, K_to_use)
     else:
-        generate_K_from_steady_state_calc(param_dict, connectivity_matrix, gene_list, scale_K=scale_K)
+        return generate_K_from_steady_state_calc(param_dict, connectivity_matrix, gene_list, scale_K=scale_K)
 
 def setup_gillespie_params_from_reactions(init_states: pd.DataFrame,
                                           reactions: pd.DataFrame,
@@ -1779,7 +1777,7 @@ def process_param_set(rows, label, base_config):
     init_states = generate_initial_state_from_genes(gene_list)
     param_dict = assign_parameters_to_genes(param_csv, gene_list, rows)
 
-    if n_matrix is not None:
+    if n_matrix is None:
         n_matrix = np.zeros((n_genes, n_genes))
     
     if k_add_list is None:
@@ -1817,7 +1815,7 @@ def process_param_set(rows, label, base_config):
             n_matrix[i, j] = param_dict.get(f"{{n_{edge}}}", 2.0)
 
     print("Done until addition of interaction terms")
-    steady_state, full_param_dict = add_interaction_terms(param_dict, connectivity_matrix, gene_list,
+    steady_state, full_param_dict = add_interaction_terms(param_dict=param_dict, connectivity_matrix=connectivity_matrix, gene_list=gene_list,
                                                           n_matrix=n_matrix,
                                                           k_add_list=k_add_per_gene, scale_K=scale_K,
                                                           combinatorial_interaction_type=combinatorial_interaction_type,  use_given_K = use_given_K, K_to_use = K_to_use)
