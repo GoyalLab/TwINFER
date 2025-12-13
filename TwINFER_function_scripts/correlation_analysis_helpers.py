@@ -425,7 +425,8 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
         linecolor='lightgray',
         mask=mask
     )
-
+    cbar = ax.collections[0].colorbar
+    cbar.set_label(cbar_label, fontsize=10)
     # --- Add regulation boxes ---
     # --- Add regulation boxes (symmetric outlines) ---
     # --- Black out diagonal if requested ---
