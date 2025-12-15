@@ -188,7 +188,7 @@ def generate_reaction_network_from_matrix(connectivity_matrix: np.ndarray):
         df.groupby(['species1','change1','species2','change2','time'])['propensity']
         .agg(lambda x: ' + '.join(x)).reset_index()
     )
-    return reactions_df, gene_list
+    return df, gene_list
 
 def generate_initial_state_from_genes(gene_list):
     """
@@ -830,7 +830,6 @@ def process_param_set(rows, label, base_config):
         init_states, reactions_df, full_param_dict)
     # --- Identify k_on-containing reactions ---
     k_on_reaction_indices = np.where(reactions_df['propensity'].str.contains("k_on"))[0]
-
     # --- Create two drifted variants: one up (scale>1), one down (scale<1) ---
     update_prop_up = make_time_scaled_update(
     update_prop, k_on_reaction_indices, final_value=1.66, t_start=1500, tau=15, t_offset=0
@@ -838,7 +837,7 @@ def process_param_set(rows, label, base_config):
     update_prop_down = make_time_scaled_update(
         update_prop, k_on_reaction_indices, final_value=0.12, t_start=1500, tau=15, t_offset=0
     )
-
+    
     t_parent_end = base_config['simulation_time_before_division']
 
     update_prop_up_twins = make_time_scaled_update(
@@ -847,7 +846,26 @@ def process_param_set(rows, label, base_config):
     update_prop_down_twins = make_time_scaled_update(
         update_prop, k_on_reaction_indices, final_value=0.12, t_start=1500, tau=15, t_offset=t_parent_end
     )
+    # Quick verification
+    print("\n=== CHECKING TIME-SCALED UPDATES ===")
+    print(f"k_on reaction indices being modified: {k_on_reaction_indices}")
+    print(f"Number of reactions affected: {len(k_on_reaction_indices)}")
+    print("\nAffected reactions:")
+    for idx in k_on_reaction_indices:
+        print(f"  [{idx}] {reactions_df.iloc[idx]['propensity']}")
 
+    # Test at key time points
+    test_times = [0, 1500, 1507.5, 1515, 2000]
+    print("\nScaling factors at key times:")
+    for t in test_times:
+        if t < 1500:
+            factor = 1.0
+        elif t < 1515:
+            factor = 1.0 + (1.66 - 1.0) * (t - 1500) / 15
+        else:
+            factor = 1.66
+        print(f"  t={t}: factor={factor:.4f}")
+    print("=" * 50 + "\n")
     print("Starting base simulation")
     # 1) Run base simulation
     # --- Split into two subpopulations with opposite drifts ---
@@ -904,41 +922,73 @@ def process_param_set(rows, label, base_config):
     rep_samples_down = gillespie_simulation_all_cells(update_prop_down_twins, update_matrix,
                                                     pop0_down_twins, rep_time,
                                                     np.zeros(2 * n_cells_half, dtype=np.int64))
-
+    
+    # Combine everything
     # Combine everything
     rep_samples = np.concatenate([rep_samples_up, rep_samples_down], axis=0)
 
     # Convert to dataframe
     df_rep = convert_samples_to_df(rep_samples, species_index)
 
-    # Total twin cells
-    n_total = 2 * n_cells  # both populations together
+    # ------------------------------- 
+    # CELL-LEVEL METADATA
+    # ------------------------------- 
+    n_cells_total = rep_samples.shape[0]  # This should be 2 * n_cells (twins!)
+    n_parents_half = n_cells // 2
 
-    # --- Replicate (twin ID) ---
-    replicate_ids = np.tile([1, 2], n_total // 2)
-    print(min(df_rep['cell_id']), max(df_rep['cell_id']))
-    df_rep['replicate'] = replicate_ids[df_rep['cell_id']]
-
-    # --- Clone IDs ---
-    clone_ids_up = np.repeat(np.arange(0, n_cells), 2)             # clones 0–2999
-    clone_ids_down = np.repeat(np.arange(2*n_cells, n_cells), 2)   # clones 3000–5999
+    # --- Clone IDs (parent cell that gave rise to this twin) ---
+    # For up drift: parents 0 to n_parents_half-1, each produces 2 twins
+    # For down drift: parents n_parents_half to n_cells-1, each produces 2 twins
+    clone_ids_up = np.tile(np.arange(n_parents_half), 2)                           # [0,1,2,...,N-1, 0,1,2,...,N-1]
+    clone_ids_down = np.tile(np.arange(n_parents_half, n_cells), 2)               # [N,N+1,...,2N-1, N,N+1,...,2N-1]
     clone_ids = np.concatenate([clone_ids_up, clone_ids_down])
 
+    # --- Replicate IDs (which twin: 1 or 2) ---
+    # First half of each group is replicate 1, second half is replicate 2
+    replicate_ids_up = np.concatenate([
+        np.ones(n_parents_half, dtype=int),      # first set of up twins
+        np.full(n_parents_half, 2, dtype=int)    # second set of up twins
+    ])
+    replicate_ids_down = np.concatenate([
+        np.ones(n_cells - n_parents_half, dtype=int),      # first set of down twins
+        np.full(n_cells - n_parents_half, 2, dtype=int)    # second set of down twins
+    ])
+    replicate_ids = np.concatenate([replicate_ids_up, replicate_ids_down])
+
+    # --- State labels (inherited from parent) ---
+    cell_states = np.array(
+        ["up"] * (n_parents_half * 2) +                    # all twins from "up" parents
+        ["down"] * ((n_cells - n_parents_half) * 2)        # all twins from "down" parents
+    )
+
+    # ------------------------------- 
+    # ASSIGN TO DATAFRAME
+    # ------------------------------- 
+    assert len(clone_ids) == n_cells_total, f"clone_ids length mismatch: {len(clone_ids)} vs {n_cells_total}"
+    assert len(replicate_ids) == n_cells_total, f"replicate_ids length mismatch: {len(replicate_ids)} vs {n_cells_total}"
+    assert len(cell_states) == n_cells_total, f"cell_states length mismatch: {len(cell_states)} vs {n_cells_total}"
+
     df_rep['clone_id'] = clone_ids[df_rep['cell_id']]
-
-    # --- State labels ---
-    state_labels = np.repeat(["up"] * (2 * n_cells_half) + ["down"] * (2 * n_cells_half), len(rep_time))
-    df_rep['state'] = state_labels[df_rep['cell_id']]
-
-    # --- Cell ID ---
-    df_rep['cell_id'] = df_rep.index // len(rep_time)
-
-
-    # --- Correct state assignment ---
-    n_cells_half = n_cells // 2
-    # each parent produces two twins → first half of clones are "up", second "down"
-    cell_states = np.array(["up"] * (2 * n_cells_half) + ["down"] * (2 * n_cells_half))
+    df_rep['replicate'] = replicate_ids[df_rep['cell_id']]
     df_rep['state'] = cell_states[df_rep['cell_id']]
+
+    # Verification
+    assert df_rep.groupby('cell_id')['replicate'].nunique().eq(1).all(), "Each cell should have one replicate ID"
+    assert df_rep.groupby('cell_id')['clone_id'].nunique().eq(1).all(), "Each cell should have one clone ID"
+    assert df_rep.groupby('cell_id')['state'].nunique().eq(1).all(), "Each cell should have one state"
+    print(f"✓ Metadata assignment verified: {n_cells_total} cells, {n_cells} clones, 2 replicates per clone")
+
+
+    # -------------------------------
+    # ASSIGN TO DATAFRAME (time-safe)
+    # -------------------------------
+    print(len(df_rep))
+    print(len(clone_ids))
+    print(max(df_rep['cell_id']))
+    df_rep['clone_id']  = clone_ids[df_rep['cell_id']]
+    df_rep['replicate'] = replicate_ids[df_rep['cell_id']]
+    df_rep['state']     = cell_states[df_rep['cell_id']]
+    assert df_rep.groupby('cell_id')['replicate'].nunique().eq(1).all()
 
     # 4) Save
     timestamp = datetime.now().strftime("%d%m%Y_%H%M%S")
