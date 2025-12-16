@@ -488,6 +488,8 @@ def infer_with_twinfer(path_to_simulation_file= None,
     try:
         result =  {
             "all_gene_pairs": all_gene_pairs,
+            "gene_lists": {"no_regulation":no_regulation, "single_state_regulation":single_state_regulation, "multiple_states_no_reg": multiple_states_no_reg, "multiple_states_and_reg": multiple_states_and_reg},
+            "potential_regulation": potential_regulation,
             "final_directed_edges": final_directed_edges,
             "direction_matrix": direction_matrix, 
             "unfiltered_direction_matrix": unfiltered_direction_matrix, 
@@ -500,6 +502,8 @@ def infer_with_twinfer(path_to_simulation_file= None,
     except:
         result = {
             "all_gene_pairs": all_gene_pairs,
+            "gene_lists": {"no_regulation":no_regulation, "single_state_regulation":single_state_regulation, "multiple_states_no_reg": multiple_states_no_reg, "multiple_states_and_reg": multiple_states_and_reg},
+            "potential_regulation": potential_regulation,
             "final_directed_edges": None,
             "direction_matrix": None, 
             "unfiltered_direction_matrix": None, 
