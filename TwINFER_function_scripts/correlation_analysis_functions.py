@@ -724,9 +724,11 @@ def identify_reg_if_multiple_states(twin_correlation_matrix_t1, twin_correlation
             print(f"Testing for multiple states. Correlation at time t1 = {corr_t1} and at time t2 = {corr_t2}")
             if corr_t1 == 0:
                 relative_change = np.inf if corr_t2 != 0 else 0
+            elif corr_t2 < 0:
+                relative_change = abs(corr_t2 - corr_t1) / abs(corr_t1)
             else:
                 relative_change = (corr_t2 - corr_t1) / abs(corr_t1)
-
+            
             if relative_change > threshold_relative_increase:
                 multiple_states_and_reg.append((gene_i, gene_j))
             else:
