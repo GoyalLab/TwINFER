@@ -1,0 +1,61 @@
+name: twinfer
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.12
+  - pip
+
+  # Core numerics
+  - numpy=2.2
+  - scipy=1.16
+  - pandas=2.3
+
+  # Plotting
+  - matplotlib=3.10
+  - seaborn=0.13
+
+  # Stats / ML
+  - scikit-learn=1.7
+  - statsmodels=0.14
+
+  # Performance
+  - numba=0.61
+  - llvmlite=0.44
+  - joblib
+
+  # Single-cell
+  - scanpy=1.11
+  - anndata=0.12
+  - umap-learn
+
+  # Graphs
+  - networkx
+
+  # Jupyter
+  - jupyter
+  - ipykernel
+  - ipywidgets
+  - notebook
+  - jupyterlab
+
+  # IO
+  - h5py
+  - zarr
+  - openpyxl
+  - xlrd
+  - pillow
+  - pyyaml
+
+  # Utilities
+  - tqdm
+  - natsort
+
+  - pip:
+      - adjusttext>=1.3
+      - tqdm-joblib>=0.0.5
+      - session-info2
+      - mygene
+      - biothings-client
