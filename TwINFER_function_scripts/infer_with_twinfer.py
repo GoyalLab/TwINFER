@@ -479,12 +479,6 @@ def infer_with_twinfer(path_to_simulation_file= None,
     #             plot_network(direction_matrix, gene_list, final_directed_edges)
     #         else:
     #             plot_network(direction_matrix, gene_list, final_directed_edges)
-    unfiltered_direction_matrix = direction_matrix
-    if final_directed_edges:
-        for i in direction_matrix.index:
-            for j in direction_matrix.columns:
-                if i != j and (i, j) not in final_directed_edges:
-                    direction_matrix.loc[i,j] = 0
     try:
         result =  {
             "all_gene_pairs": all_gene_pairs,
