@@ -365,13 +365,14 @@ def compute_correlation_matrix(gene_matrix_1, gene_matrix_2, gene_list, gene_pai
    # Compute correlations
    for i, j in pairs_to_compute:
        corr = spearmanr(gene_matrix_1[i, :], gene_matrix_2[j, :]).correlation
-       raw_matrix[i, j] = corr if not np.isnan(corr) else 0.0
+       raw_matrix[i, j] = corr
    
    return pd.DataFrame(raw_matrix, index=gene_list, columns=gene_list)
 
-def single_cell_shuffle(gene_matrix_1, gene_matrix_2, gene_list, shuffle_pairs):
+def single_cell_shuffle(gene_matrix_1, gene_matrix_2, gene_list, shuffle_pairs, seed=101010):
+            rng = np.random.default_rng(seed)
             n_cells = gene_matrix_1.shape[1]
-            shuffled_indices = np.random.permutation(n_cells)
+            shuffled_indices = rng.permutation(n_cells)
             return compute_correlation_matrix(gene_matrix_1, gene_matrix_2[:, shuffled_indices], 
                                                   gene_list, shuffle_pairs)
 
@@ -384,7 +385,8 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
                                           n_shuffles=10000,
                                           verbose=False,
                                           return_gene_corr_thresholds = True,
-                                          n_cores_to_use = 4):
+                                          n_cores_to_use = 4,
+                                          base_seed = 101010):
     """
     Splits gene-gene pairs based on absolute correlation threshold.
     
@@ -411,11 +413,12 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
     
     if use_scramble:       
         # Generate null distribution
-        
-        
-        shuffled_results = Parallel(n_jobs=n_cores_to_use, verbose=0)(
-            delayed(single_cell_shuffle)(gene_matrix, gene_matrix, gene_list, all_pairs) 
-            for _ in range(n_shuffles)
+        rng = np.random.default_rng(base_seed)
+        seeds = rng.integers(0, 2**32 - 1, size=n_shuffles, dtype=np.uint32)
+
+        shuffled_results = Parallel(n_jobs=n_cores_to_use)(
+            delayed(single_cell_shuffle)(gene_matrix, gene_matrix, gene_list, all_pairs, int(seed))
+            for seed in seeds
         )
         
         percentile_threshold = (1 - p_val_threshold) * 100
@@ -429,7 +432,7 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
         if use_scramble:
             shuffled_vals = [r.loc[gi, gj]for r in shuffled_results]
             
-            current_threshold = np.percentile(shuffled_vals, percentile_threshold)
+            current_threshold = np.nanpercentile(shuffled_vals, percentile_threshold)
             
             if verbose:
                 p_value = np.mean(np.array(shuffled_vals) >= abs(corr_val))
@@ -795,7 +798,8 @@ def get_cross_correlations(rep_0_t1,
         raw_matrix.loc[gene_1, gene_2] = corr
     return raw_matrix
 
-def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gene_pairs, threshold=0.01, n_shuffles=10000, n_cores_to_use = 4, verbose = False):
+def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gene_pairs, threshold=0.01, n_shuffles=10000, n_cores_to_use = 4, verbose = False,
+                                          base_seed = 101010):
     """
     Identify directed edges that cross significance thresholds using shuffled null distribution.
     
@@ -849,12 +853,13 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
     gene_matrix_t2 = np.array(gene_matrix_t2)
     
     # Safe parallel processing
-    
-    # Get shuffled correlations using existing single_cell_shuffle function
-    shuffled_results = Parallel(n_jobs=n_cores_to_use, verbose=0)(
-        delayed(single_cell_shuffle)(gene_matrix_t1, gene_matrix_t2, gene_list, gene_pairs)
-        for _ in range(n_shuffles)
-    )
+    rng = np.random.default_rng(base_seed)
+    seeds = rng.integers(0, 2**32 - 1, size=n_shuffles, dtype=np.uint32)
+
+    shuffled_results = Parallel(n_jobs=n_cores_to_use)(
+            delayed(single_cell_shuffle)(gene_matrix_t1, gene_matrix_t2, gene_list, gene_pairs, int(seed))
+            for seed in seeds
+        )
     
     # Identify significant directed edges
     significant_edges = []
@@ -868,12 +873,53 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
         shuffled_vals = []
         for result in shuffled_results:
             shuffled_matrix = result
-            shuffled_vals.append(abs(shuffled_matrix.loc[gene_1, gene_2]))
+            shuffled_vals.append((shuffled_matrix.loc[gene_1, gene_2]))
         
         # Calculate threshold for this pair
-        pair_threshold = np.percentile(shuffled_vals, percentile_threshold)
+        pair_threshold = np.nanpercentile(shuffled_vals, percentile_threshold)
+        vals = np.asarray(shuffled_vals)
+        vals = vals[~np.isnan(vals)]
+        print(f"Number of Nans: {len(shuffled_vals) - len(vals)} out of {len(shuffled_vals)}")
+        N = len(vals)
+
+        p_value = (np.sum(np.abs(vals) >= abs(actual_corr))) / (N)
         if verbose:
-            print(f"{gene_1} -> {gene_2}: threshold = {pair_threshold}, actual = {actual_corr}")
+            print(f"{gene_1} -> {gene_2}: threshold = {pair_threshold}, actual = {actual_corr}, p-value = {p_value}")
+            plt.figure(figsize=(6, 4))
+
+            plt.hist(
+                shuffled_vals,
+                bins=40,
+                density=True,
+                color="lightgray",
+                edgecolor="black"
+            )
+
+            # Threshold line
+            plt.axvline(
+                pair_threshold,
+                color="red",
+                linestyle="--",
+                linewidth=2,
+                label=f"{percentile_threshold}th percentile = {pair_threshold:.4g}"
+            )
+
+            # Actual correlation line
+            plt.axvline(
+                actual_corr,
+                color="blue",
+                linestyle="-",
+                linewidth=2,
+                label=f"actual = {actual_corr:.4g}"
+            )
+
+            plt.xlabel("Shuffled Spearman correlation")
+            plt.ylabel("Density")
+            plt.title(f"Null distribution: {gene_1} → {gene_2}")
+            plt.legend(frameon=False)
+
+            plt.tight_layout()
+            plt.show()
         # Check if actual correlation crosses threshold
         if abs(actual_corr) > pair_threshold:
             significant_edges.append((gene_1, gene_2))    
