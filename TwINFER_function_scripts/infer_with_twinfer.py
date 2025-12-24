@@ -218,7 +218,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
         gene_params = None
         print("Could not ascertain corresponding parameter rows to check for gene parameters")
 
-    valid_options = ["single-state", "all-edges", "all-regulation"]
+    valid_options = ["single-state", "all-edges", "all-potential-regulation"]
     if infer_direction_for_which_edges not in valid_options:
         raise ValueError(f"infer_direction_for_which_edges must be one of {valid_options}, got '{infer_direction_for_which_edges}'")
         
@@ -400,12 +400,12 @@ def infer_with_twinfer(path_to_simulation_file= None,
             
             final_directed_edges = identify_actual_directed_edges(across_t_twin1, across_t_twin2, direction_matrix, gene_pairs=all_gene_pairs, threshold = p_value_threshold_cross_correlation, n_cores_to_use = n_cores, verbose = True)
         
-    elif infer_direction_for_which_edges == "all-regulation":
-        if len(single_state_regulation) > 0 or len(multiple_states_and_reg):
-                combined_list = single_state_regulation + multiple_states_and_reg
+    elif infer_direction_for_which_edges == "all-potential-regulation":
+        if len(single_state_regulation) > 0 or len(multiple_states_and_reg) > 0 or len(multiple_states_gene_pairs) > 0:
+                combined_list = single_state_regulation + multiple_states_and_reg + multiple_states_no_reg
                 bidirectional_pairs = {(a, b) for (a, b) in combined_list} | \
                       {(b, a) for (a, b) in combined_list}
-                genes = {g for pair in single_state_regulation for g in pair}
+                genes = {g for pair in combined_list for g in pair}
                 self_pairs = {(g, g) for g in genes}
 
                 # Final
@@ -440,7 +440,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
     if plot_correlation_matrices_as_heatmap and not direction_matrix.empty:
         all_gene_pairs = list(product(gene_list, repeat=2))
         no_reg_pairs = [pair for pair in all_gene_pairs if pair not in final_directed_edges]
-        if infer_direction_for_which_edges == "all-regulation" and multiple_states_and_reg:
+        if infer_direction_for_which_edges == "all-potential-regulation" and multiple_states_and_reg:
             plot_matrix_as_heatmap(
                 corr_matrix=direction_matrix,
                 gene_list=gene_list,
@@ -454,7 +454,23 @@ def infer_with_twinfer(path_to_simulation_file= None,
                 black_out_self = True,
                 symmetric = False,
                 draw_diagonal_multi_state_reg = True,
-                multi_state_reg_edges = multiple_states_and_reg
+                multi_state_reg_edges = multiple_states_gene_pairs
+            )
+        elif infer_direction_for_which_edges == "single-state" and multiple_states_and_reg:
+            plot_matrix_as_heatmap(
+                corr_matrix=direction_matrix,
+                gene_list=gene_list,
+                no_regulation=no_reg_pairs,                   
+                potential_regulation=final_directed_edges,     
+                title=r"Twin cross-correlation $\hat{\rho}^{\dagger}_{x(t_{1}) \to y(t_{2})}$",
+                add_gene_labels=True,
+                add_time=False,
+                time=[t1, t2],
+                gray_out_no_reg=True,
+                black_out_self = True,
+                symmetric = False,
+                draw_diagonal_multi_state_reg = True,
+                multi_state_reg_edges = multiple_states_gene_pairs
             )
         else:
             plot_matrix_as_heatmap(
@@ -462,7 +478,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
                 gene_list=gene_list,
                 no_regulation=no_reg_pairs,                   
                 potential_regulation=final_directed_edges,     
-                title=r"Direction: Twin cross-correlation $\hat{\rho}^{\dagger}_{x(t_{1}) \to y(t_{2})}$",
+                title=r"Twin cross-correlation $\hat{\rho}^{\dagger}_{x(t_{1}) \to y(t_{2})}$",
                 add_gene_labels=True,
                 add_time=False,
                 time=[t1, t2],

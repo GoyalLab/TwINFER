@@ -7,6 +7,7 @@ from scipy.stats import rankdata
 from itertools import combinations, permutations
 import os
 from joblib import Parallel, delayed
+from scipy import stats
 
 def steady_state_calc(param_dict, interaction_matrix, gene_list,
                                    sim_data, scale_k=None):
@@ -373,8 +374,59 @@ def single_cell_shuffle(gene_matrix_1, gene_matrix_2, gene_list, shuffle_pairs, 
             rng = np.random.default_rng(seed)
             n_cells = gene_matrix_1.shape[1]
             shuffled_indices = rng.permutation(n_cells)
-            return compute_correlation_matrix(gene_matrix_1, gene_matrix_2[:, shuffled_indices], 
-                                                  gene_list, shuffle_pairs)
+            return compute_correlation_matrix(gene_matrix_1, gene_matrix_2[:, shuffled_indices], gene_list, shuffle_pairs)
+
+
+def plot_qq_distribution(shuffled, obs_value, gene_pair_name):
+    # Visualization
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+    
+    # 1. Histogram with fitted normal distribution
+    ax1 = axes[0]
+    n, bins, patches = ax1.hist(shuffled, bins=50, density=True, alpha=0.7, 
+                                 edgecolor='black', label='Shuffled data')
+
+
+    # Fit normal distribution
+    mu, sigma = stats.norm.fit(shuffled)
+    x = np.linspace(shuffled.min(), shuffled.max(), 100)
+    fitted_normal = stats.norm.pdf(x, mu, sigma)
+    ax1.plot(x, fitted_normal, 'r-', linewidth=2, label=f'Normal fit\nμ={mu:.4f}, σ={sigma:.4f}')
+    # 2. Get the actual histogram data (x = bin centers, y = density)
+    y_actual, bin_edges = np.histogram(shuffled, bins=30, density=True)
+    x = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+    # 3. Calculate predicted PDF values at those centers
+    y_pred = stats.norm.pdf(x, mu, sigma)
+
+    # 4. Compute R2
+    residuals = y_actual - y_pred
+    ss_res = np.sum(residuals**2)
+    ss_tot = np.sum((y_actual - np.mean(y_actual))**2)
+    r_squared = 1 - (ss_res / ss_tot)
+    print(f"R-squared = {r_squared}")
+    # Mark observed value
+    ax1.axvline(obs_value, color='green', linestyle='--', linewidth=2, 
+                label=f'Actual correlation = {obs_value:.4f}')
+    
+    ax1.set_xlabel('Correlation coefficient')
+    ax1.set_ylabel('Density')
+    ax1.set_title(f'Histogram with Normal Fit\n{gene_pair_name}')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # 2. Q-Q plot
+    ax2 = axes[1]
+    stats.probplot(shuffled, dist="norm", plot=ax2)
+    ax2.set_title(f'Q-Q Plot\n{gene_pair_name}')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+    plt.tight_layout()
+    plt.show()
+    if r_squared > 0.3:
+        return True
+    else:
+        return False
 
 def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
                                           pairwise_gene_gene_correlation_matrix, 
@@ -424,23 +476,33 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
         percentile_threshold = (1 - p_val_threshold) * 100
 
     no_regulation, potential_regulation = [], []
-    gene_corr_thresholds = {}
+    p_value_calc = {}
+    is_significant = False
     for gi, gj in all_pairs:
         corr_val = pair_correlations[(gi, gj)]
         current_threshold = threshold
         
         if use_scramble:
-            shuffled_vals = [r.loc[gi, gj]for r in shuffled_results]
+            shuffled_vals = np.asarray(
+                [r.loc[gi, gj] for r in shuffled_results],
+                dtype=float
+            )
             
-            current_threshold = np.nanpercentile(shuffled_vals, percentile_threshold)
-            
+            # Calculate p-value directly (no threshold needed)
+            p_plus = np.mean(shuffled_vals >= corr_val)
+            p_minus = np.mean(shuffled_vals <= corr_val)
+            p_value = min(2 * p_plus, 2 * p_minus, 1.0)
+            is_significant = p_value < p_val_threshold
+
+            print(f"Observed correlation: {corr_val:.4f}")
+            print(f"p-value: {p_value:.4f}")
+            print(f"Significant at α={p_val_threshold}: {is_significant}")
             if verbose:
-                p_value = np.mean(np.array(shuffled_vals) >= abs(corr_val))
                 direction_str = "-"
                 plt.figure(figsize=(6, 4))
                 plt.hist(shuffled_vals, bins=50, color="skyblue", alpha=0.7, edgecolor="k")
-                plt.axvline(current_threshold, color="red", linestyle="--", label=f"threshold={current_threshold:.3f}")
-                plt.axvline(-1*current_threshold, color="red", linestyle="--")
+                # plt.axvline(current_threshold, color="red", linestyle="--", label=f"threshold={current_threshold:.3f}")
+                # plt.axvline(-1*current_threshold, color="red", linestyle="--")
                 plt.axvline(corr_val, color="black", linestyle="-", label=f"actual={(corr_val):.3f}")
                 plt.title(f"Gene correlation: {gi} {direction_str} {gj}, p-val = {p_value:.3f}")
                 plt.xlabel(r"gene correlation $\rho$")
@@ -448,16 +510,20 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
                 plt.legend()
                 plt.tight_layout()
                 plt.show()
+            
+            if is_significant:
+                gene_pair_name = f"{gi}-{gj}"
+                is_relatively_normal = plot_qq_distribution(shuffled_vals, corr_val, gene_pair_name)
         
         # Classify pairs
-        gene_corr_thresholds[(gi, gj)] = current_threshold
-        if abs(corr_val) > current_threshold:
+        p_value_calc[(gi, gj)] = p_value
+        if is_significant and is_relatively_normal:
             potential_regulation.append((gi, gj))
         else:
             no_regulation.append((gi, gj))
         
     
-    return no_regulation, potential_regulation, gene_corr_thresholds
+    return no_regulation, potential_regulation, p_value_calc
 
 def calculate_pair_correlation(rep_0, rep_1, gene_list, type_comparison="twin"):
     """
@@ -873,35 +939,29 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
         shuffled_vals = []
         for result in shuffled_results:
             shuffled_matrix = result
-            shuffled_vals.append((shuffled_matrix.loc[gene_1, gene_2]))
-        
+            shuffled_vals.append(shuffled_matrix.loc[gene_1, gene_2])
+        shuffled_vals = np.array(shuffled_vals)
         # Calculate threshold for this pair
-        pair_threshold = np.nanpercentile(shuffled_vals, percentile_threshold)
-        vals = np.asarray(shuffled_vals)
-        vals = vals[~np.isnan(vals)]
-        print(f"Number of Nans: {len(shuffled_vals) - len(vals)} out of {len(shuffled_vals)}")
-        N = len(vals)
-
-        p_value = (np.sum(np.abs(vals) >= abs(actual_corr))) / (N)
+        p_plus = np.mean(shuffled_vals >= actual_corr)
+        p_minus = np.mean(shuffled_vals <= actual_corr)
+        p_value = min(2 * p_plus, 2 * p_minus, 1.0)
+        is_significant = p_value < threshold
+        print(f"Observed correlation: {actual_corr:.4f}")
+        print(f"p-value: {p_value:.4f}")
+        print(f"Significant at α={threshold}: {is_significant}")
+        gene_pair_name = f"{gene_1} -> {gene_2}"
+        if is_significant:
+            
+            is_relatively_normal = plot_qq_distribution(shuffled_vals, actual_corr, gene_pair_name)
         if verbose:
-            print(f"{gene_1} -> {gene_2}: threshold = {pair_threshold}, actual = {actual_corr}, p-value = {p_value}")
+            print(f"{gene_pair_name}: actual = {actual_corr}, p-value = {p_value}")
             plt.figure(figsize=(6, 4))
 
             plt.hist(
                 shuffled_vals,
                 bins=40,
-                density=True,
                 color="lightgray",
                 edgecolor="black"
-            )
-
-            # Threshold line
-            plt.axvline(
-                pair_threshold,
-                color="red",
-                linestyle="--",
-                linewidth=2,
-                label=f"{percentile_threshold}th percentile = {pair_threshold:.4g}"
             )
 
             # Actual correlation line
@@ -914,13 +974,13 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
             )
 
             plt.xlabel("Shuffled Spearman correlation")
-            plt.ylabel("Density")
+            plt.ylabel("number of scrambles")
             plt.title(f"Null distribution: {gene_1} → {gene_2}")
             plt.legend(frameon=False)
 
             plt.tight_layout()
             plt.show()
         # Check if actual correlation crosses threshold
-        if abs(actual_corr) > pair_threshold:
+        if is_significant and is_relatively_normal:
             significant_edges.append((gene_1, gene_2))    
     return significant_edges

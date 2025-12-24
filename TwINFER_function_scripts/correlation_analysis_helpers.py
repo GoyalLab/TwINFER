@@ -329,11 +329,14 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
 
     # Format gene names: gene_1 → g1
     # ---- Sort genes AND matrix together (single source of truth) ----
-    sorted_genes, sorted_indices = sort_genes_numerically(gene_list)
+    sorted_genes, _ = sort_genes_numerically(gene_list)
 
-    gene_list   = sorted_genes
-    base_names  = gene_list
-    plot_matrix = corr_matrix.iloc[sorted_indices, sorted_indices]
+    gene_list  = list(sorted_genes)
+    base_names = gene_list
+
+    # IMPORTANT: align by *names*, not by iloc positions
+    plot_matrix = corr_matrix.reindex(index=gene_list, columns=gene_list)
+
 
 
     # Format axis labels
@@ -396,7 +399,7 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
 
     # --- Choose colormap adaptively ---
     if cmap is None and vmin < 0 and vmax > 0:
-        cmap = make_reds_blues_colormap()
+        cmap = make_reds_blues_colormap(vmin=vmin, vmax=vmax)
         center_span = max(abs(vmin), abs(vmax))
         norm = TwoSlopeNorm(vmin=-center_span, vcenter=0.0, vmax=center_span)
     else:
@@ -416,7 +419,8 @@ def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential
         cmap=cmap,
         vmin=vmin,
         vmax=vmax,
-        norm=norm,
+        # center = 0,
+        # norm=norm,
         xticklabels=col_labels,
         yticklabels=row_labels,
         square=True,
@@ -542,10 +546,33 @@ def print_summary(no_regulation,
     print_section("4. Multiple States with Regulation", multiple_states_and_reg)
 
 # --- Helpers ---
-def make_reds_blues_colormap():
-    reds = plt.cm.Reds(np.linspace(1, 0, 128))   # deep red → white
-    blues = plt.cm.Blues(np.linspace(0, 1, 128)) # white → deep blue
-    colors = np.vstack((reds, blues))
+from matplotlib.colors import TwoSlopeNorm, LinearSegmentedColormap, ListedColormap
+from matplotlib.patches import Rectangle
+import seaborn as sns
+from pathlib import Path
+
+def make_reds_blues_colormap(vmin=-0.05, vmax=0.18):
+    """Custom red–white–blue colormap with pure white at 0, asymmetric."""
+    # Calculate where 0 falls in the range [vmin, vmax]
+    zero_position = (0 - vmin) / (vmax - vmin)
+    
+    # Number of colors for each segment (proportional to range)
+    n_total = 256
+    n_reds = int(zero_position * n_total)  # colors from vmin to 0
+    n_blues = n_total - n_reds  # colors from 0 to vmax
+    
+    # Calculate intensity based on actual distance from zero
+    # For reds: map from vmin to 0, so max intensity at vmin
+    red_intensity = abs(vmin) / max(abs(vmin), abs(vmax))  # 0.05/0.18 ≈ 0.28
+    # For blues: map from 0 to vmax, so max intensity at vmax  
+    blue_intensity = abs(vmax) / max(abs(vmin), abs(vmax))  # 0.18/0.18 = 1.0
+    
+    # Create color arrays with scaled intensities
+    reds = plt.cm.Reds(np.linspace(0.8 * red_intensity, 0, n_reds))  # scaled dark to light red
+    whites = np.ones((1, 4))  # pure white at 0
+    blues = plt.cm.Blues(np.linspace(0, 0.8 * blue_intensity, n_blues))  # light to scaled dark blue
+    
+    colors = np.vstack((reds, whites, blues))
     return LinearSegmentedColormap.from_list('RedsBlues', colors)
 
 def shrink_arrow_endpoints(x1, y1, x2, y2, shrink_source=0.2, shrink_target=0.2, lateral_offset=0.0, scaled_shrink_val = 0.25):
