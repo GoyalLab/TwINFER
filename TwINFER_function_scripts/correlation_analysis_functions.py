@@ -379,7 +379,7 @@ def single_cell_shuffle(gene_matrix_1, gene_matrix_2, gene_list, shuffle_pairs, 
 
 def plot_qq_distribution(shuffled, obs_value, gene_pair_name):
     # Visualization
-    fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
     # 1. Histogram with fitted normal distribution
     ax1 = axes[0]
@@ -392,19 +392,6 @@ def plot_qq_distribution(shuffled, obs_value, gene_pair_name):
     x = np.linspace(shuffled.min(), shuffled.max(), 100)
     fitted_normal = stats.norm.pdf(x, mu, sigma)
     ax1.plot(x, fitted_normal, 'r-', linewidth=2, label=f'Normal fit\nμ={mu:.4f}, σ={sigma:.4f}')
-    # 2. Get the actual histogram data (x = bin centers, y = density)
-    y_actual, bin_edges = np.histogram(shuffled, bins=30, density=True)
-    x = (bin_edges[:-1] + bin_edges[1:]) / 2
-
-    # 3. Calculate predicted PDF values at those centers
-    y_pred = stats.norm.pdf(x, mu, sigma)
-
-    # 4. Compute R2
-    residuals = y_actual - y_pred
-    ss_res = np.sum(residuals**2)
-    ss_tot = np.sum((y_actual - np.mean(y_actual))**2)
-    r_squared = 1 - (ss_res / ss_tot)
-    print(f"R-squared = {r_squared}")
     # Mark observed value
     ax1.axvline(obs_value, color='green', linestyle='--', linewidth=2, 
                 label=f'Actual correlation = {obs_value:.4f}')
@@ -415,18 +402,34 @@ def plot_qq_distribution(shuffled, obs_value, gene_pair_name):
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     
-    # 2. Q-Q plot
     ax2 = axes[1]
-    stats.probplot(shuffled, dist="norm", plot=ax2)
+
+    (osm, osr), (slope, intercept, r) = stats.probplot(
+        shuffled, dist="norm"
+    )
+
+    ax2.scatter(osm, osr, s=12, alpha=0.6, label='Quantiles')
+    ax2.plot(
+        osm,
+        slope * osm + intercept,
+        'r--',
+        label=f'QQ fit (R² = {r**2:.4f})'
+    )
+
     ax2.set_title(f'Q-Q Plot\n{gene_pair_name}')
-    ax2.grid(True, alpha=0.3)
+    ax2.set_xlabel('Theoretical quantiles')
+    ax2.set_ylabel('Sample quantiles')
     ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
     plt.tight_layout()
     plt.show()
-    if r_squared > 0.3:
-        return True
-    else:
-        return False
+
+    # =========================
+    # 3. Decision (QQ-based)
+    # =========================
+    qq_r2 = r ** 2
+    return qq_r2 > 0.90
 
 def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
                                           pairwise_gene_gene_correlation_matrix, 
