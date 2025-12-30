@@ -92,12 +92,26 @@ if __name__ == "__main__":
             "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
             "rows_to_use": [[5]*2], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
             "output_folder": f"{path_to_output}", #Path to the output folder
-            "log_file": f"{path_to_output}/logs/A_to_B_median_parameter.log",  # Path to the log file for this simulation
+            "log_file": f"{path_to_output}/logs/Figure3.log",  # Path to the log file for this simulation
             "type": "A_rep_B_B_to_A",  # Name of the network used -- will be in the filename
             "multiple_interaction_type": "additive",
             "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
             "number_of_cores_per_parameter": num_cores_available, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
-        }
+        },
+        {
+        'n_cells': 6000,
+        'simulation_time_before_division': 1500,
+        'twin_simulation_time_after_division': 48,
+        'twin_measurement_resolution': 1,
+        "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_5_gene_linear_cascade.txt",  # Will be updated per network type
+        "param_csv":f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv",  
+        "rows_to_use": [[0,0,0,0,0]],
+        "output_folder": f"{path_to_output}", #Path to the output folder
+        "log_file": f"{path_to_output}/logs/Figure3.log", 
+        "type": "five_gene_cascade", 
+        "number_of_parallel_parameters": 1,
+        "number_of_cores_per_parameter": num_cores_available,
+    }
     ]
     # ==========================================================
     # Select config by array index (with sanity check)
