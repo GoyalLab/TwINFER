@@ -14,7 +14,7 @@ eval "$(conda shell.bash hook)"
 conda activate twinfer
 start_index=$((600 * SLURM_ARRAY_TASK_ID))
 path_to_parameter_sheet="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/parameter_scan_simulations/simulation_details/parameters_3genes_positive_reg_pi_on_r_add_scaled.csv"
-path_to_connectivity_matrix="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/parameter_scan_simulations/simulation_details/connectivity_matrix_A_B.txt"
+path_to_connectivity_matrix="/home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/simulation_example_input_data/connectivity_matrix_2_gene_no_interaction.txt"
 path_to_output_folder="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/parameter_scan_simulations/A_B/"
 path_to_log_file="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/parameter_scan_simulations/logs/A_B.jsonl"
 type_of_interaction="A_B"
