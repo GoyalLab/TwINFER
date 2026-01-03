@@ -308,7 +308,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
         pairwise_gene_gene_correlation_matrix = calculate_pairwise_gene_gene_correlation_matrix(
             all_t1_t2_measurements, gene_list
         )
-        no_regulation, potential_regulation, gene_corr_thresholds  = check_gene_gene_correlation_threshold(
+        no_regulation, potential_regulation, gene_corr_thresholds, p_values  = check_gene_gene_correlation_threshold(
             all_t1_t2_measurements, pairwise_gene_gene_correlation_matrix, gene_list,  threshold = threshold_gene_gene_corr, use_scramble = True, 
             p_val_threshold = p_val_threshold_scrambled_gene_correlation, verbose = show_scrambled_distribution_gene_correlation, n_cores_to_use = n_cores, return_gene_corr_thresholds = return_gene_corr_thresholds
         )
@@ -524,4 +524,5 @@ def infer_with_twinfer(path_to_simulation_file= None,
         }
     if return_gene_corr_thresholds:
         result['gene_corr_thresholds'] = gene_corr_thresholds
+        result['gene_gene_corr_p_values'] = p_values
     return result

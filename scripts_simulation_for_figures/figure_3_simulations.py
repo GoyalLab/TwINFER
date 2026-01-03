@@ -58,7 +58,7 @@ if __name__ == "__main__":
             'simulation_time_before_division': 1500, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
             'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
             'twin_measurement_resolution': 1, #The time between each measurement of twin cells [hours]. For example, if twin_sampling_duration is 12 and twin_measurement_resolution is 1, the final dataframe will contain hourly measurements for 12 hours (0 is birth).
-            "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_represses_B.txt", #path to the connectivity matrix specifying the GRN to simulate
+            "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_rep_B.txt", #path to the connectivity matrix specifying the GRN to simulate
             "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
             "rows_to_use": [[4]*2], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
             "output_folder": f"{path_to_output}", #Path to the output folder

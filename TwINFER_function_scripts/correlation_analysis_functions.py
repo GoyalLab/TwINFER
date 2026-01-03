@@ -480,6 +480,7 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
 
     no_regulation, potential_regulation = [], []
     p_value_calc = {}
+    threshold_p = {}
     is_significant = False
     for gi, gj in all_pairs:
         corr_val = pair_correlations[(gi, gj)]
@@ -496,7 +497,7 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
             p_minus = np.mean(shuffled_vals <= corr_val)
             p_value = min(2 * p_plus, 2 * p_minus, 1.0)
             is_significant = p_value < p_val_threshold
-
+            corr_threshold = np.nanpercentile(np.abs(shuffled_vals), 100 * (1 - p_val_threshold / 2))
             print(f"Observed correlation: {corr_val:.4f}")
             print(f"p-value: {p_value:.4f}")
             print(f"Significant at α={p_val_threshold}: {is_significant}")
@@ -519,6 +520,7 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
                 is_relatively_normal = plot_qq_distribution(shuffled_vals, corr_val, gene_pair_name)
         
         # Classify pairs
+        threshold_p[(gi, gj)] = corr_threshold
         p_value_calc[(gi, gj)] = p_value
         if is_significant and is_relatively_normal:
             potential_regulation.append((gi, gj))
@@ -526,7 +528,7 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
             no_regulation.append((gi, gj))
         
     
-    return no_regulation, potential_regulation, p_value_calc
+    return no_regulation, potential_regulation, threshold_p, p_value_calc
 
 def calculate_pair_correlation(rep_0, rep_1, gene_list, type_comparison="twin"):
     """
