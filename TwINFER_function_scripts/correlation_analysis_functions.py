@@ -935,7 +935,7 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
     # Identify significant directed edges
     significant_edges = []
     percentile_threshold = (1 - threshold) * 100
-    
+    print(f"number of gene pairs = {len(gene_pairs)}")
     for gene_1, gene_2 in gene_pairs:
         # Get actual correlation
         actual_corr = direction_raw_matrix.loc[gene_1, gene_2]
@@ -956,7 +956,6 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
         print(f"Significant at α={threshold}: {is_significant}")
         gene_pair_name = f"{gene_1} -> {gene_2}"
         if is_significant:
-            
             is_relatively_normal = plot_qq_distribution(shuffled_vals, actual_corr, gene_pair_name)
         if verbose:
             print(f"{gene_pair_name}: actual = {actual_corr}, p-value = {p_value}")

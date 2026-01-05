@@ -345,7 +345,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
     # print(twin_pair_correlation_matrix_t2)
     if plot_correlation_matrices_as_heatmap:
         plot_matrix_as_heatmap( corr_matrix=twin_pair_correlation_matrix_t1, gene_list=gene_list, no_regulation=no_regulation, potential_regulation=potential_regulation,
-            title=rf"Twin pair correlations $\hat{{\rho}}_{{\Delta}}(t_1)$ at time {t1}h", add_gene_labels=True, add_time=True, time=[t1], gray_out_no_reg=True, black_out_self = True, symmetric = True
+            title=rf"Twin pair correlations $\hat{{\rho}}_{{\Delta}}(t_1)$ at time {t1}h", add_gene_labels=True, add_time=False, time=[t1], gray_out_no_reg=True, black_out_self = True, symmetric = True
         )
         
         plot_matrix_as_heatmap(corr_matrix=random_pair_correlation_matrix_t1, gene_list=gene_list, no_regulation=no_regulation, potential_regulation=potential_regulation,
