@@ -46,7 +46,7 @@ if __name__ == "__main__":
             "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_and_B.txt", #path to the connectivity matrix specifying the GRN to simulate
             "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
             "rows_to_use": [[0]*2], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
-            "output_folder": f"{path_to_output}", #Path to the output folder
+            "output_folder": f"{path_to_output}/A_and_B/", #Path to the output folder
             "log_file": f"{path_to_output}/logs/Figure3.log",  # Path to the log file for this simulation
             "type": "A_and_B",  # Name of the network used -- will be in the filename
             "multiple_interaction_type": "additive",
@@ -61,7 +61,7 @@ if __name__ == "__main__":
             "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_rep_B.txt", #path to the connectivity matrix specifying the GRN to simulate
             "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
             "rows_to_use": [[4]*2], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
-            "output_folder": f"{path_to_output}", #Path to the output folder
+            "output_folder": f"{path_to_output}/A_rep_B/", #Path to the output folder
             "log_file": f"{path_to_output}/logs/Figure3.log",  # Path to the log file for this simulation
             "type": "A_rep_B",  # Name of the network used -- will be in the filename
             "multiple_interaction_type": "additive",
@@ -76,7 +76,7 @@ if __name__ == "__main__":
             "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_and_B_both_repress.txt", #path to the connectivity matrix specifying the GRN to simulate
             "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
             "rows_to_use": [[4]*2], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
-            "output_folder": f"{path_to_output}", #Path to the output folder
+            "output_folder": f"{path_to_output}/A_and_B_both_repress/", #Path to the output folder
             "log_file": f"{path_to_output}/logs/Figure3.log",  # Path to the log file for this simulation
             "type": "A_and_B_both_repress",  # Name of the network used -- will be in the filename
             "multiple_interaction_type": "additive",
@@ -91,7 +91,7 @@ if __name__ == "__main__":
             "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_represses_B_B_activates_A.txt", #path to the connectivity matrix specifying the GRN to simulate
             "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
             "rows_to_use": [[5]*2], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
-            "output_folder": f"{path_to_output}", #Path to the output folder
+            "output_folder": f"{path_to_output}/A_rep_B_B_to_A/", #Path to the output folder
             "log_file": f"{path_to_output}/logs/Figure3.log",  # Path to the log file for this simulation
             "type": "A_rep_B_B_to_A",  # Name of the network used -- will be in the filename
             "multiple_interaction_type": "additive",
@@ -106,7 +106,7 @@ if __name__ == "__main__":
         "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_5_gene_linear_cascade.txt",  # Will be updated per network type
         "param_csv":f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv",  
         "rows_to_use": [[0,0,0,0,0]],
-        "output_folder": f"{path_to_output}", #Path to the output folder
+        "output_folder": f"{path_to_output}/five_gene_cascade/", #Path to the output folder
         "log_file": f"{path_to_output}/logs/Figure3.log", 
         "type": "five_gene_cascade", 
         "number_of_parallel_parameters": 1,
