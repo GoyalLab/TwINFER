@@ -871,9 +871,21 @@ def generate_K_from_steady_state_calc(param_dict, connectivity_matrix, gene_list
         regs = np.where(connectivity_matrix[:,i]!=0)[0]
 
         reg_eff = 0.0
+        # signs of all regulators: +1 (activation), -1 (repression)
+        reg_signs = np.sign(connectivity_matrix[regs, i])
+
+        # majority vote
+        sign_sum = np.sum(reg_signs)
+
+        if sign_sum > 0:
+            reg_sign = 1.0
+        elif sign_sum < 0:
+            reg_sign = -1.0
+        else:
+            reg_sign = 0.0   # tie: equal activators and repressors
         k_add = param_dict.get(f"{{k_add_{gene}}}", 0.0)
         
-        k_on_eff = k_on + k_add*target_hill  # or replace k_on completely if no basal allowed
+        k_on_eff = k_on + reg_sign*k_add*target_hill  # or replace k_on completely if no basal allowed
         burst_prob = k_on_eff/(k_on_eff+k_off)
         m = k_prod_mRNA * burst_prob / k_deg_mRNA
         protein_levels[i] = max(m * k_prod_prot / k_deg_prot, 0.1)
