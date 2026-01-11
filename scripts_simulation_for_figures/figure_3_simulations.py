@@ -31,7 +31,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_index", type=int, default=0)
     args, _ = parser.parse_known_args()
-    config_index = args.config_index
+    config_index = 3 #args.config_index
     print(f"🔧 Running base_config #{config_index}")
 
     # ==========================================================

@@ -1093,7 +1093,7 @@ def setup_gillespie_params_from_reactions(init_states: pd.DataFrame,
 # %% Vectorized extraction
 
 def convert_samples_to_df(samples: np.ndarray, species_index: dict,
-                              types=('mRNA','protein')) -> pd.DataFrame:
+                              types=('mRNA','protein', "_A", "_I")) -> pd.DataFrame:
     """
     Extracts mRNA and protein data from simulation samples and organizes it into a pandas DataF
     Parameters:
@@ -1101,7 +1101,7 @@ def convert_samples_to_df(samples: np.ndarray, species_index: dict,
                               Each entry represents the count of a species at a given cell and time step.
         species_index (dict): A dictionary mapping species names to their respective indices in the samples array.
         types (tuple, optional): A tuple of strings specifying the types of species to extract (e.g., 'mRNA', 'protein').
-                                 Defaults to ('mRNA', 'prote
+                                 Defaults to ('mRNA', 'protein')
     Returns:
         pd.DataFrame: A pandas DataFrame containing the extracted data. The DataFrame includes the following columns:
                       - 'cell_id': The ID of the cell (integer).
@@ -1109,6 +1109,7 @@ def convert_samples_to_df(samples: np.ndarray, species_index: dict,
                       - Columns for each extracted species, named according to the species_index keys.
     """
     n_cells, n_time, _ = samples.shape
+    print([name for name in species_index if name.endswith(("_A", "_I"))])
     sel = [(name,idx) for name,idx in species_index.items()
            if any(name.endswith(t) for t in types)]
     names, idxs = zip(*sel)
@@ -1749,6 +1750,57 @@ def validate_regulatory_configuration(connectivity_matrix):
                     "Opposing-sign combinatorial regulation is not supported."
                 )
 
+import numpy as np
+
+def divide_mother_cell_content(
+    mother_states,
+    species_index,
+    seed=None,
+    partition_suffixes=("_mRNA", "_protein"),
+    p_major=0.5,          # 0.6 means 60/40, 0.7 means 70/30
+    randomize_polarity=True,
+):
+    rng = np.random.default_rng(seed)
+
+    mother_states = mother_states.astype(np.int64)
+    n_species, n_cells = mother_states.shape
+
+    twin_1 = np.empty_like(mother_states)
+    twin_2 = np.empty_like(mother_states)
+
+    # partition only mRNA + protein explicitly
+    partition_indices = np.array(
+        [idx for name, idx in species_index.items()
+         if name.endswith(partition_suffixes)],
+        dtype=np.int64
+    )
+    copy_indices = np.setdiff1d(np.arange(n_species), partition_indices)
+
+    # copy everything else (promoters, etc.)
+    twin_1[copy_indices] = mother_states[copy_indices]
+    twin_2[copy_indices] = mother_states[copy_indices]
+
+    # total molecules available to split (your "keep mean = M" rule)
+    doubled = 2 * mother_states[partition_indices]  # shape: (n_part, n_cells)
+
+    # per-cell probability for twin_1
+    if randomize_polarity:
+        # mask[j] = True => twin_1 is the major daughter for cell j
+        mask = rng.random(n_cells) < 0.5
+        p_cell = np.where(mask, p_major, 1.0 - p_major)  # shape: (n_cells,)
+    else:
+        p_cell = np.full(n_cells, p_major)
+
+    # broadcast p_cell across partitioned species rows
+    draw = rng.binomial(doubled, p_cell[None, :])
+
+    twin_1[partition_indices] = draw
+    twin_2[partition_indices] = doubled - draw
+
+    return twin_1, twin_2
+
+
+
 # --- Worker for a single parameter set ---
 def process_param_set(rows, label, base_config):
     """
@@ -1774,6 +1826,8 @@ def process_param_set(rows, label, base_config):
     scale_K = base_config.get("scale_K", None)
     log_pi_on = base_config.get("log_pi_on", False)
     use_given_K = base_config.get("use_given_K", False)
+    divide_binomial = base_config.get("divide_binomial", False)
+    p_major = base_config.get("p_major", 0.5)
     K_to_use = base_config.get("K_to_use", None)
     if use_given_K and K_to_use:
         print("Using given hill Constants.")
@@ -1868,7 +1922,11 @@ def process_param_set(rows, label, base_config):
     prefix = f"{label}_{timestamp}_ncells_{n_cells}_{base_config['type']}_{id}"
     df_base.to_csv(f"{base_config['output_folder']}/simulation_before_division_df_{prefix}.csv", index=False)
     rep_time = sample_twins_time_points
-    pop0_rep = np.concatenate([final_states.T, final_states.T], axis=1)
+    if divide_binomial:
+        twin_1, twin_2 = divide_mother_cell_content(final_states.T, species_index=species_index,seed=101010, p_major=p_major)
+        pop0_rep = np.concatenate([twin_1, twin_2], axis=1)
+    else:
+        pop0_rep = np.concatenate([final_states.T, final_states.T], axis=1)
     verbose_flags = np.zeros(2*n_cells, dtype=np.int64)
 
     if log_pi_on:
