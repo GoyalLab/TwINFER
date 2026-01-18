@@ -8,20 +8,22 @@
 #SBATCH --job-name=A_to_B
 #SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/k_add_simulations/slurm_log/slurmLog-%A-%x.out
 #SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/k_add_simulations/slurm_log/slurmLog-%A-%x.err
+#SBATCH --array=0-9
 
 eval "$(conda shell.bash hook)"
 conda activate twinfer
 start_index=$((200 * SLURM_ARRAY_TASK_ID))
 end_index=$((start_index+2000))
 
-path_to_parameter="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/k_add_simulations/simulation_details/effect_of_k_add_sampling_positive_with_reps.csv"
-path_to_connectivity_matrix="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/k_add_simulations/simulation_details/connectivity_matrix_A_to_B.txt"
-path_to_output_folder="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/k_add_simulations/A_to_B_reps/"
-path_to_log_file="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/k_add_simulations/logs/A_to_B.jsonl"
+path_to_code_repo=""
+path_to_connectivity_matrix="${path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_to_B.txt"
+path_to_parameter="${path_to_code_repo}/simulation_example_input_data/median_parameter.csv"
+path_to_output_folder=""
+path_to_log_file="${path_to_output_folder}/logs/A_to_B.jsonl"
 type_of_interaction="A_to_B"
 
 # Run Python script with matching CLI arguments
-python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/TwINFER_function_scripts/gillespie_script.py \
+python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/TwINFER_function_scripts/gillespie_script_variations.py \
     --path_to_connectivity_matrix "$path_to_connectivity_matrix" \
     --param_csv "$path_to_parameter" \
     --row_to_start "$start_index" \

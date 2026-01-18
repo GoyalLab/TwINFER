@@ -4,7 +4,7 @@
 # # Code to simulate a synthetic GRN and infer the network using TwINFER
 # 
 path_to_data = "/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/hill_constant_effect/"
-
+path_to_code_repo = ""
 # %% [markdown]
 # ## Details about the simulation
 
@@ -14,11 +14,11 @@ base_config = {
     'simulation_time_before_division': 1000, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
     'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
     'twin_measurement_resolution': 1, #The time between each measurement of twin cells [hours]. For example, if twin_sampling_duration is 12 and twin_measurement_resolution is 1, the final dataframe will contain hourly measurements for 12 hours (0 is birth).
-    "path_to_connectivity_matrix": f"{path_to_data}/simulation_details/connectivity_matrix_A_to_B.txt", #path to the connectivity matrix specifying the GRN to simulate
-    "param_csv": f"{path_to_data}/simulation_details/median_param.csv", #Path to the parameters for all genes and interaction terms
+    "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_to_B.txt", #path to the connectivity matrix specifying the GRN to simulate
+    "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_param.csv", #Path to the parameters for all genes and interaction terms
     "rows_to_use": [[0,0]], #Rows in the parameter's csv file for each gene - the length should be equal to number of genes in the system
     "output_folder": f"{path_to_data}/simulations/", #Path to folder to store simulation 
-    "log_file": f"{path_to_data}/simulation_details/multiple_hill_constant_median_parameters.jsonl", #Path to the log file
+    "log_file": f"{path_to_data}/logs/multiple_hill_constant_median_parameters.jsonl", #Path to the log file
     "type": "A_to_B",  # Name of the network used -- will be in the filename
     "number_parallel_processes": 3, #Number of parameters to be run in parallel
     "number_of_cores_per_parameter": 9, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
@@ -28,7 +28,6 @@ base_config = {
 # %%
 import sys
 from pathlib import Path
-path_to_code_repo = Path("/home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER")
 sys.path.append(str(path_to_code_repo))
 
 import copy
@@ -41,9 +40,9 @@ set_num_threads(base_config['number_of_cores_per_parameter'])
 print("Threads Numba will use:", get_num_threads())
 
 import importlib
-from TwINFER_function_scripts import gillespie_script
-importlib.reload(gillespie_script)
-from TwINFER_function_scripts.gillespie_script import process_param_set
+from TwINFER_function_scripts import gillespie_script_variations
+importlib.reload(gillespie_script_variations)
+from TwINFER_function_scripts.gillespie_script_variations import process_param_set
 
 # %%
 # Calculation functions
@@ -86,6 +85,7 @@ import copy
 from itertools import product
 from tqdm import tqdm
 from joblib import Parallel, delayed
+import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("chunk_id",nargs="?", default =0,type=int, help="Which chunk of the job array to run (0–4)")
@@ -97,7 +97,7 @@ scale_k_pattern = np.array([
 ])
 # --- setup ---
 scale_k_values = np.linspace(0.1, 4, 10)
-all_tasks = list(product(scale_k_values, range(20)))
+all_tasks = list(product(scale_k_values, range(20))) #can be reduced to 5/10 replicates
 
 # split into 5 chunks
 n_splits = 5
