@@ -49,7 +49,7 @@ base_config_list = [{
     "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
     "number_of_cores_per_parameter": 18, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
 }]
-base_config = base_config_list[0] #change this to one to simulate the no regulation case
+base_config = base_config_list[1] #change this to one to simulate the regulation case
 
 #%%
 #Path to TwINFER code repository
