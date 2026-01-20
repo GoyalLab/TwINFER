@@ -18,10 +18,10 @@ from itertools import product
 
 #%%
 path_to_code_repo = "/home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/"
-output_folder = ""
+output_folder = "/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/del/"
 
 #Common path to data files
-base_config = {
+base_config_list = [{
     'n_cells': 6000, #Number of cells before division (number of twin pairs)
     'simulation_time_before_division': 1500, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
     'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
@@ -34,9 +34,8 @@ base_config = {
     "type": "A_to_B_2_states",  # Name of the network used -- will be in the filename
     "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
     "number_of_cores_per_parameter": 18, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
-}
-
-base_config = {
+},
+{
     'n_cells': 6000, #Number of cells before division (number of twin pairs)
     'simulation_time_before_division': 1500, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
     'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
@@ -49,8 +48,8 @@ base_config = {
     "type": "A_B_no_reg_2_states",  # Name of the network used -- will be in the filename
     "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
     "number_of_cores_per_parameter": 18, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
-}
-
+}]
+base_config = base_config_list[0] #change this to one to simulate the no regulation case
 
 #%%
 #Path to TwINFER code repository
