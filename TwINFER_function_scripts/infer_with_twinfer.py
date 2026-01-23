@@ -432,11 +432,12 @@ def infer_with_twinfer(path_to_simulation_file= None,
     fill_value=0
     )
     unfiltered_direction_matrix = direction_matrix
-    if final_directed_edges:
-        for i in direction_matrix.index:
-            for j in direction_matrix.columns:
-                if i != j and (i, j) not in final_directed_edges:
+    for i in direction_matrix.index:
+        for j in direction_matrix.columns:
+            if i != j and (i, j) not in final_directed_edges:
+                    print(i,j,0)
                     direction_matrix.loc[i,j] = 0
+    print(direction_matrix)
     if plot_correlation_matrices_as_heatmap and not direction_matrix.empty:
         all_gene_pairs = list(product(gene_list, repeat=2))
         no_reg_pairs = [pair for pair in all_gene_pairs if pair not in final_directed_edges]
