@@ -381,7 +381,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
     if have_any_output:
         print_summary(no_regulation, single_state_regulation, multiple_states_no_reg, multiple_states_and_reg)
     direction_matrix = pd.DataFrame()
-    final_directed_edges = None
+    final_directed_edges = set()
     # --- Step 5: Infer directionality of single-state interactions ---
     if infer_direction_for_which_edges == "single-state" :
         if len(single_state_regulation) > 0:
