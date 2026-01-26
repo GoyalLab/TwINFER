@@ -264,8 +264,8 @@ def twin_pair_correlation_matrix(df_twins, gene_list):
     if df_twins.empty:
         return mat
 
-    rep_0 = simulation_data[simulation_data["replicate"] == 1]
-    rep_1 = simulation_data[simulation_data["replicate"] == 2]
+    rep_0 = df_twins[df_twins["replicate"] == 1]
+    rep_1 = df_twins[df_twins["replicate"] == 2]
 
     # --- Must have matching replicates ---
     if rep_0.empty or rep_1.empty:

@@ -435,7 +435,6 @@ def infer_with_twinfer(path_to_simulation_file= None,
     for i in direction_matrix.index:
         for j in direction_matrix.columns:
             if i != j and (i, j) not in final_directed_edges:
-                    print(i,j,0)
                     direction_matrix.loc[i,j] = 0
     print(direction_matrix)
     if plot_correlation_matrices_as_heatmap and not direction_matrix.empty:
