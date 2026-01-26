@@ -16,19 +16,19 @@
 ############################################################################################################
 #Inferring regulation in a single-state using twins
 path="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/parameter_scan_simulations/A_rep_B"
-out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_rep_B"
+out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_rep_B_test"
 
 # Each array task processes a different chunk
 # Make job-specific subfolder
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
   --timepoints 1 20 \
-  --jobs 8 \
+  --jobs 1 \
   --shuffles_gene_gene 10000 \
   --shuffles_random_diff 10000 \
   --shuffles_directed 10000 \
@@ -47,7 +47,7 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_B_
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -72,7 +72,7 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan_rand
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -98,7 +98,7 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan_rand
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -124,7 +124,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -148,7 +148,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -171,7 +171,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -195,7 +195,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -220,7 +220,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -244,7 +244,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -268,7 +268,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -290,7 +290,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -313,7 +313,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -336,7 +336,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -359,7 +359,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -381,7 +381,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -406,7 +406,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \
@@ -429,7 +429,7 @@ mkdir -p "$job_out"
 # job_out="${out}"
 # mkdir -p "$job_out"
 
-# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
 #   --path_to_simulations "$path" \
 #   --output "$job_out" \
 #   --genes gene_1_mRNA gene_2_mRNA \

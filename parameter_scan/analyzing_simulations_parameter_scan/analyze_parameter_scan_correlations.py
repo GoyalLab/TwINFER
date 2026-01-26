@@ -286,12 +286,12 @@ def twin_pair_correlation_matrix(df_twins, gene_list):
     rep_0 = rep_0[rep_0["clone_id"].isin(common_clones)].sort_values("clone_id").reset_index(drop=True)
     rep_1 = rep_1[rep_1["clone_id"].isin(common_clones)].sort_values("clone_id").reset_index(drop=True)
 
-    n = min(len(rep1), len(rep2))
+    n = min(len(rep_0), len(rep_1))
     if n < 3:
         return mat
 
-    X1 = rep1[gene_list].to_numpy()[:n]
-    X2 = rep2[gene_list].to_numpy()[:n]
+    X1 = rep_0[gene_list].to_numpy()[:n]
+    X2 = rep_1[gene_list].to_numpy()[:n]
     D = X1 - X2
 
     S, _ = spearmanr(D, axis=0)
@@ -655,7 +655,8 @@ def run_pipeline(path_to_simulations, output_folder, genes, time_points,
                  seed=2024,
                  start_index=0,
                  mode="single",
-                 csv_path=None):
+                 csv_path=None,
+                 remove_twin_structure=0):
 
     from scipy.stats import brunnermunzel
 
@@ -803,7 +804,7 @@ if __name__ == "__main__":
     parser.add_argument("--start_index", type=int, default=0) 
     parser.add_argument("--mode", type=str, choices=["single", "pair"], default="single", help="Whether to process single simulations or random pairs (25k pairs).") 
     parser.add_argument("--csv", type=str, default=None, help="Path to csv file containing the pairwise combinations of parameters to combine to form two state simulations.") 
-    parser.add_argument("--remove_twin_structure", type=zero_one_int, default=0, help="If true, random cells will be paired and considered as twins, thereby losing all twin information.") 
+    parser.add_argument("--remove_twin_structure", type=int, default=0, help="If true, random cells will be paired and considered as twins, thereby losing all twin information.") 
     args = parser.parse_args()
     path_to_simulations=args.path_to_simulations 
     output_folder=args.output 
