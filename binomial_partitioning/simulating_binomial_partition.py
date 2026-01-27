@@ -24,7 +24,7 @@ if path_to_code_repo not in sys.path:
     sys.path.insert(0, path_to_code_repo)
 
 #Path to output files
-path_to_output = "/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/binomial_partition/"
+path_to_output = "/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/binomial_partition_check/"
 num_cores_available = 26
  #%%
 if __name__ == "__main__":
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     # Run 10 replicates of this config
     # ==========================================================
     for i in range(10):
-        p_major = 0.5*(i+1)
+        p_major = 0.5 + 0.05*i
         # shallow copy so we don't mutate base_config
         cfg = dict(base_config)
         cfg["type"] = f"{original_type}_bias_{p_major}"

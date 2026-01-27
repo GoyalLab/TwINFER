@@ -31,10 +31,10 @@ protein_1 = 29965.104
 protein_2_ffl = 119763.6917
 protein_2_cascade = 119763.6917
 protein_3_cascade = 122672.08966666667
-mutual_reg_2_3 = 125265.1379158951
+mutual_reg_2_3 = 183129.91801931517
 K_matrix = [
     [0, protein_1, protein_1, 0, 0,0,0,0,0,0,0,0,0,0],
-    [0, 0, 0, protein_2_ffl, 0,0,0,0,0,0,0,0,0,0],
+    [0, 0, 0, protein_2_cascade, 0,0,0,0,0,0,0,0,0,0],
     [0]*14,
     [0]*14,
     [0, 0, 0, 0, 0, protein_1, protein_1, 0, 0,0,0,0,0,0],
@@ -61,7 +61,7 @@ base_configs = [
         "rows_to_use": [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
         "output_folder": f"{path_to_output_folder}",
         "log_file": f"{path_to_output_folder}/figure_1_network.jsonl",
-        "type": "figure_1_network",
+        "type": "figure_1_network_check",
         "use_given_K": True,
         "K_to_use":K_matrix,
         "multiple_interaction_type": "additive",
@@ -117,7 +117,7 @@ last_path = None
 # ==========================================================
 # Run 2 replicates of this config
 # ==========================================================
-for i in range(2):
+for i in range(4):
     # shallow copy so we don't mutate base_config
     cfg = dict(base_config)
     cfg["type"] = f"{original_type}_{config_index}_{i}"

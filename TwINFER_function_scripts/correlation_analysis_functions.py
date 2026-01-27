@@ -951,8 +951,7 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
         p_minus = np.mean(shuffled_vals <= actual_corr)
         p_value = min(2 * p_plus, 2 * p_minus, 1.0)
         is_significant = p_value < threshold
-        print(f"Observed correlation: {actual_corr:.4f}")
-        print(f"p-value: {p_value:.4f}")
+        print(f"Observed correlation for {gene_1} -> {gene_2}: {actual_corr:.4f}, p-value: {p_value:.4f}")
         print(f"Significant at α={threshold}: {is_significant}")
         gene_pair_name = f"{gene_1} -> {gene_2}"
         if is_significant:
