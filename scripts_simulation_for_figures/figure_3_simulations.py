@@ -24,14 +24,14 @@ if path_to_code_repo not in sys.path:
     sys.path.insert(0, path_to_code_repo)
 
 #Path to output files
-path_to_output = "/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/test/figure_3_simulations/"
-num_cores_available = 4
+path_to_output = "/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/figure_3_simulations/"
+num_cores_available = 20
  #%%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_index", type=int, default=0)
     args, _ = parser.parse_known_args()
-    config_index = 3 #args.config_index
+    config_index = 4 #args.config_index
     print(f"🔧 Running base_config #{config_index}")
 
     # ==========================================================

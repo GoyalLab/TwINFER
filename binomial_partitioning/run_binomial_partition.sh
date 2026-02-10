@@ -11,5 +11,4 @@
 
 eval "$(conda shell.bash hook)"
 conda activate twinfer-code
-
 python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/binomial_partitioning/simulating_binomial_partition.py
