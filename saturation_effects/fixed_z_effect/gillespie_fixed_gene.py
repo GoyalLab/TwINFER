@@ -72,11 +72,9 @@ def assign_parameters_to_genes(csv_path, gene_list, rows=None):
     except FileNotFoundError:
         raise ValueError(f"Parameter csv file not found at path: {csv_path}")
     n = len(gene_list)
-
+    
     param_dict = {}
     for i,row in enumerate(rows):
-        if i >= n:
-            break
         gene = gene_list[i]
         if int(row) in df.index:
             vals = df.loc[int(row)].copy()
@@ -1801,6 +1799,168 @@ def divide_mother_cell_content(
 
     return twin_1, twin_2
 
+import numpy as np
+
+def make_it_average_func(
+    mother_states,
+    species_index,
+    gene_list_to_average,
+):
+    """
+    Population-level averaging with integer outputs.
+
+    Rules
+    -----
+    *_mRNA, *_protein:
+        Replace with rounded global mean (integer).
+
+    *_A, *_I:
+        Majority vote using mean of *_A.
+        If mean >= 0.5 -> A = 1, I = 0
+        Else           -> A = 0, I = 1
+
+        Ensures A + I = 1 exactly.
+
+    All other species unchanged.
+    """
+
+    mother_states = mother_states.astype(float)
+    n_species, n_cells = mother_states.shape
+
+    twin_1 = mother_states.copy()
+    twin_2 = mother_states.copy()
+
+    for gene in gene_list_to_average:
+
+        # ---------------------------
+        # mRNA + protein
+        # ---------------------------
+        for suffix in ("_mRNA", "_protein"):
+            name = f"{gene}{suffix}"
+            if name in species_index:
+                idx = species_index[name]
+
+                pop_mean = mother_states[idx].mean()
+                int_mean = int(np.rint(pop_mean))  # integer mean
+
+                twin_1[idx, :] = int_mean
+                twin_2[idx, :] = int_mean
+
+        # ---------------------------
+        # Promoter states (_A / _I)
+        # ---------------------------
+        name_A = f"{gene}_A"
+        name_I = f"{gene}_I"
+
+        if name_A in species_index and name_I in species_index:
+            idx_A = species_index[name_A]
+            idx_I = species_index[name_I]
+
+            pop_mean_A = mother_states[idx_A].mean()
+
+            if pop_mean_A >= 0.5:
+                A_val, I_val = 1, 0
+            else:
+                A_val, I_val = 0, 1
+
+            twin_1[idx_A, :] = A_val
+            twin_2[idx_A, :] = A_val
+
+            twin_1[idx_I, :] = I_val
+            twin_2[idx_I, :] = I_val
+
+    return twin_1.astype(np.int64), twin_2.astype(np.int64)
+
+import numpy as np
+
+def make_it_extrema_func(
+    mother_states,
+    species_index,
+    gene_list,
+    gene_to_sort,
+):
+    """
+    Extremal deterministic split based on sorting by gene_to_sort_mRNA.
+
+    Top 50% cells (by gene_to_sort_mRNA):
+        - mRNA/protein = 95th percentile
+        - A = 1, I = 0
+
+    Bottom 50%:
+        - mRNA/protein = 5th percentile
+        - A = 0, I = 1
+
+    Twins are identically assigned.
+    Output dtype: int64
+    """
+
+    mother_states = mother_states.astype(float)
+    n_species, n_cells = mother_states.shape
+
+    twin_1 = mother_states.copy()
+    twin_2 = mother_states.copy()
+
+    # ----------------------------------
+    # Determine sorting index
+    # ----------------------------------
+    sort_name = f"{gene_to_sort}_mRNA"
+    if sort_name not in species_index:
+        raise ValueError(f"{sort_name} not found in species_index")
+
+    sort_idx = species_index[sort_name]
+    sort_values = mother_states[sort_idx]
+
+    # Ascending order
+    sorted_cells = np.argsort(sort_values)
+
+    half = n_cells // 2
+    low_cells = sorted_cells[:half]
+    high_cells = sorted_cells[half:]
+
+    # ----------------------------------
+    # Apply extrema to each gene
+    # ----------------------------------
+    for gene in gene_list:
+
+        # ----- mRNA + protein -----
+        for suffix in ("_mRNA", "_protein"):
+            name = f"{gene}{suffix}"
+            if name in species_index:
+                idx = species_index[name]
+                values = mother_states[idx]
+
+                p5  = int(np.rint(np.percentile(values, 5)))
+                p95 = int(np.rint(np.percentile(values, 95)))
+
+                twin_1[idx, high_cells] = p95
+                twin_1[idx, low_cells]  = p5
+
+                twin_2[idx, high_cells] = p95
+                twin_2[idx, low_cells]  = p5
+
+        # ----- Promoter states -----
+        name_A = f"{gene}_A"
+        name_I = f"{gene}_I"
+
+        if name_A in species_index and name_I in species_index:
+            idx_A = species_index[name_A]
+            idx_I = species_index[name_I]
+
+            # High group active
+            twin_1[idx_A, high_cells] = 1
+            twin_1[idx_I, high_cells] = 0
+
+            twin_2[idx_A, high_cells] = 1
+            twin_2[idx_I, high_cells] = 0
+
+            # Low group inactive
+            twin_1[idx_A, low_cells] = 0
+            twin_1[idx_I, low_cells] = 1
+
+            twin_2[idx_A, low_cells] = 0
+            twin_2[idx_I, low_cells] = 1
+
+    return twin_1.astype(np.int64), twin_2.astype(np.int64)
 
 
 # --- Worker for a single parameter set ---
@@ -1831,6 +1991,10 @@ def process_param_set(rows, label, base_config):
     divide_binomial = base_config.get("divide_binomial", False)
     p_major = base_config.get("p_major", 0.5)
     K_to_use = base_config.get("K_to_use", None)
+    make_it_average = base_config.get("make_it_average", False)
+    make_it_extrema = base_config.get("make_it_extrema", False)
+    gene_to_modify = base_config.get("gene_to_modify", [])
+    gene_to_sort = base_config.get("gene_to_sort", [])
     if use_given_K and K_to_use:
         print("Using given hill Constants.")
     combinatorial_interaction_type = base_config.get("combinatorial_interaction_type", "additive")
@@ -1929,6 +2093,13 @@ def process_param_set(rows, label, base_config):
         pop0_rep = np.concatenate([twin_1, twin_2], axis=1)
     else:
         pop0_rep = np.concatenate([final_states.T, final_states.T], axis=1)
+    if make_it_average:
+        twin_1, twin_2 = make_it_average_func(final_states.T, species_index=species_index, gene_list_to_average=gene_to_modify)
+        pop0_rep = np.concatenate([twin_1, twin_2], axis=1)
+    elif make_it_extrema:
+        twin_1, twin_2 = make_it_extrema_func(final_states.T, species_index=species_index, gene_list=gene_to_modify, gene_to_sort=gene_to_sort)
+        pop0_rep = np.concatenate([twin_1, twin_2], axis=1)
+
     verbose_flags = np.zeros(2*n_cells, dtype=np.int64)
 
     if log_pi_on:

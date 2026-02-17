@@ -498,9 +498,7 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
             p_value = min(2 * p_plus, 2 * p_minus, 1.0)
             is_significant = p_value < p_val_threshold
             corr_threshold = np.nanpercentile(np.abs(shuffled_vals), 100 * (1 - p_val_threshold / 2))
-            print(f"Observed correlation: {corr_val:.4f}")
-            print(f"p-value: {p_value:.4f}")
-            print(f"Significant at α={p_val_threshold}: {is_significant}")
+            print(f"For gene {gi}, gene {gj}, observed correlation: {corr_val:.4f} with p-value: {p_value:.4f}")
             if verbose:
                 direction_str = "-"
                 plt.figure(figsize=(6, 4))
@@ -518,7 +516,8 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
             if is_significant:
                 gene_pair_name = f"{gi}-{gj}"
                 is_relatively_normal = plot_qq_distribution(shuffled_vals, corr_val, gene_pair_name)
-        
+                print(f"For gene {gi}, gene {gj}, null distribution is normal: {is_relatively_normal}")
+
         # Classify pairs
         threshold_p[(gi, gj)] = corr_threshold
         p_value_calc[(gi, gj)] = p_value
@@ -743,8 +742,10 @@ def differentiate_single_state_reg_and_multiple_states(all_t1_t2_measurements, p
                 
             if abs(z_score) > abs(z_score_threshold):
                 multiple_states_gene_pairs.append((gene_i, gene_j))
+                print(f"gene 1: {gene_i}, gene 2: {gene_j}, z_score: {z_score} with threshold {z_score_threshold}")
             else:
                 single_state_regulation.append((gene_i, gene_j))
+                print(f"gene 1: {gene_i}, gene 2: {gene_j}, z_score: {z_score} with threshold {z_score_threshold}")
         except ZeroDivisionError:
             # Handle case where twin correlation is 0
             raise ValueError(f"Division by zero for {gene_i} and {gene_j}")
@@ -956,6 +957,7 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
         gene_pair_name = f"{gene_1} -> {gene_2}"
         if is_significant:
             is_relatively_normal = plot_qq_distribution(shuffled_vals, actual_corr, gene_pair_name)
+            print(f"{gene_pair_name}: normality of null: {is_relatively_normal}")
         if verbose:
             print(f"{gene_pair_name}: actual = {actual_corr}, p-value = {p_value}")
             plt.figure(figsize=(6, 4))
