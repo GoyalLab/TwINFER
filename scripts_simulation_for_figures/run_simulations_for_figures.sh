@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH -A b1042
-#SBATCH -p genomics-himem
+#SBATCH -p genomics
 #SBATCH -N 1
-#SBATCH --cpus-per-task=60
-#SBATCH --mem 200GB
-#SBATCH -t 48:00:00
-#SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/figure_1_network/logs/%A_%a.out
-#SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/figure_1_network/logs/%A_%a.err
+#SBATCH --cpus-per-task=22
+#SBATCH --mem 10GB
+#SBATCH -t 8:00:00
+#SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/figure_3/logs/%A_%a.out
+#SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/figure_1_work/logs/%A_%a.err
 set -eo pipefail
 
 
