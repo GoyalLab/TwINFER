@@ -101,7 +101,26 @@ def assign_parameters_to_genes(csv_path, gene_list, rows=None):
                 param_dict[f"{{{k}_{gene}}}"] = float(v)  # Gene-specific parameter
     return param_dict
 
-#NEW
+def _add_additive_per_edge_reaction(reactions, connectivity_matrix, gene_list, j, curr_gene):
+    """
+    New function for opposing-sign 2-regulator or >2 regulator case.
+    Uses per-edge k_add. Each regulator contributes independently.
+    """
+    regulators_index = np.where(connectivity_matrix[:, j] != 0)[0]
+    for i in regulators_index:
+        regulator = gene_list[i]
+        sign = int(np.sign(connectivity_matrix[i, j]))
+        edge = f"{regulator}_to_{curr_gene}"
+        expr = (
+            f"(({sign}*{{k_add_{edge}}})"
+            f"*({regulator}_protein**{{n_{edge}}})"
+            f"/({{K_{edge}}}**{{n_{edge}}}+{regulator}_protein**{{n_{edge}}}))"
+            f"*{curr_gene}_I"
+        )
+        reactions.append({"species1": f"{curr_gene}_A", "change1": 1,
+                          "species2": f"{curr_gene}_I", "change2": -1,
+                          "propensity": expr, "time": "-"})
+
 def generate_reaction_network_from_matrix(connectivity_matrix: np.ndarray,
                                           combinatorial_interaction_type:str = "additive"):
     """
@@ -286,8 +305,11 @@ def generate_reaction_network_from_matrix(connectivity_matrix: np.ndarray,
                             "time": "-"
                         })
                 else:
-                    print(f"Continue")
-                    
+                    print(f"Gene {curr_gene} has opposing-sign regulators — using per-edge additive logic.")
+                    _add_additive_per_edge_reaction(reactions, connectivity_matrix, gene_list, j, curr_gene)
+            else:
+                print(f"Gene {curr_gene} has {len(regulators_index)} regulators — using per-edge additive logic.")
+                _add_additive_per_edge_reaction(reactions, connectivity_matrix, gene_list, j, curr_gene)        
                     
     df = pd.DataFrame(reactions)
     df['propensity'] = df['propensity'].astype(str)
@@ -398,76 +420,88 @@ def assign_k_values_matrix(param_dict, connectivity_matrix, gene_list, K_to_use)
 def generate_K_from_steady_state_calc(param_dict, connectivity_matrix, gene_list,
                                       target_hill=0.5, scale_K=None):
     """
-    Calculate steady-state protein levels and assign rate constants (k values) 
-    for gene interactions based on the provided parameters and interaction 
+    Calculate steady-state protein levels and assign K values for gene interactions.
 
     Args:
-        param_dict (dict): Dictionary containing parameters for gene regulation, 
-            including burst probabilities, production rates, degradation rates, 
-            and interaction strengths.
-        connectivity_matrix (numpy.ndarray): Matrix representing gene interactions, 
-            where non-zero values indicate regulatory relationships and their signs 
-            (positive for activation, negative for repression).
-        gene_list (list): List of gene names corresponding to the rows and columns 
-            of the connectivity matrix.
-        target_hill (float, optional): Hill function value used to scale regulatory 
-            effects. Default is 0.5.
-        scale_K (numpy.ndarray, optional): Scaling matrix for rate constants. If 
-            None, defaults to a matrix of ones with the same dimensions as the 
-            interaction 
+        param_dict (dict): Dictionary containing parameters for gene regulation.
+        connectivity_matrix (numpy.ndarray): Matrix representing gene interactions.
+        gene_list (list): List of gene names.
+        target_hill (float, optional): Hill function value used to scale regulatory
+                                       effects. Default is 0.5.
+        scale_K (numpy.ndarray, optional): Scaling matrix for K values. If None,
+                                           defaults to a matrix of ones.
     Returns:
-        tuple: A tuple containing:
-            - protein_levels (numpy.ndarray): Array of steady-state protein levels 
-              for each gene.
-            - param_dict (dict): Updated dictionary with assigned rate constants 
-              (k values) for gene intera
-    Notes:
-        - The function calculates steady-state protein levels based on burst 
-          probabilities and production/degradation rates.
-        - Regulatory effects are computed using the connectivity matrix and scaled 
-          by the target Hill function value (default is 0.5).
-        - Rate constants (k values) are assigned based on steady-state protein 
-          levels and multiplied by the scaling matrix.
+        tuple:
+            - protein_levels (numpy.ndarray): Steady-state protein levels per gene.
+            - param_dict (dict): Updated dictionary with assigned K values.
     """
     n_genes = len(gene_list)
     if scale_K is None:
         scale_K = np.ones((n_genes, n_genes))
+
     protein_levels = np.zeros(n_genes)
-    for i,gene in enumerate(gene_list):
-        k_on = param_dict[f'{{k_on_{gene}}}']
-        k_off = param_dict[f'{{k_off_{gene}}}']
+
+    for i, gene in enumerate(gene_list):
+        k_on        = param_dict[f'{{k_on_{gene}}}']
+        k_off       = param_dict[f'{{k_off_{gene}}}']
         k_prod_mRNA = param_dict[f'{{k_prod_mRNA_{gene}}}']
         k_deg_mRNA  = param_dict[f'{{k_deg_mRNA_{gene}}}']
         k_prod_prot = param_dict[f'{{k_prod_protein_{gene}}}']
         k_deg_prot  = param_dict[f'{{k_deg_protein_{gene}}}']
-        regs = np.where(connectivity_matrix[:,i]!=0)[0]
 
-        reg_eff = 0.0
-        # signs of all regulators: +1 (activation), -1 (repression)
-        reg_signs = np.sign(connectivity_matrix[regs, i])
+        regulators = np.where(connectivity_matrix[:, i] != 0)[0]
+        n_regs = len(regulators)
 
-        # majority vote
-        sign_sum = np.sum(reg_signs)
+        if n_regs == 0:
+            k_on_eff = k_on
 
-        if sign_sum > 0:
-            reg_sign = 1.0
-        elif sign_sum < 0:
-            reg_sign = -1.0
+        elif n_regs == 1:
+            # original per-gene k_add path
+            k_add    = param_dict.get(f"{{k_add_{gene}}}", 0.0)
+            sign     = int(np.sign(connectivity_matrix[regulators[0], i]))
+            k_on_eff = k_on + sign * k_add * target_hill
+
+        elif n_regs == 2:
+            sign1 = int(np.sign(connectivity_matrix[regulators[0], i]))
+            sign2 = int(np.sign(connectivity_matrix[regulators[1], i]))
+
+            if sign1 == sign2:
+                # original per-gene k_add path
+                k_add    = param_dict.get(f"{{k_add_{gene}}}", 0.0)
+                k_on_eff = k_on + sign1 * k_add * target_hill
+            else:
+                # new per-edge path — opposing signs
+                reg_eff = 0.0
+                for r in regulators:
+                    edge       = f"{gene_list[r]}_to_{gene}"
+                    k_add_edge = param_dict.get(f"{{k_add_{edge}}}", 0.0)
+                    sign_r     = int(np.sign(connectivity_matrix[r, i]))
+                    reg_eff   += sign_r * k_add_edge * target_hill
+                k_on_eff = k_on + reg_eff
+
         else:
-            reg_sign = 0.0   # tie: equal activators and repressors
-        k_add = param_dict.get(f"{{k_add_{gene}}}", 0.0)
-        
-        k_on_eff = k_on + reg_sign*k_add*target_hill  # or replace k_on completely if no basal allowed
-        burst_prob = k_on_eff/(k_on_eff+k_off)
-        m = k_prod_mRNA * burst_prob / k_deg_mRNA
-        protein_levels[i] = max(m * k_prod_prot / k_deg_prot, 0.1)
-    
-    # assign k values
+            # new per-edge path — >2 regulators
+            reg_eff = 0.0
+            for r in regulators:
+                edge       = f"{gene_list[r]}_to_{gene}"
+                k_add_edge = param_dict.get(f"{{k_add_{edge}}}", 0.0)
+                sign_r     = int(np.sign(connectivity_matrix[r, i]))
+                reg_eff   += sign_r * k_add_edge * target_hill
+            k_on_eff = k_on + reg_eff
+
+        # clamp k_on_eff to avoid negative burst probability
+        k_on_eff_clamped = max(k_on_eff, 0.0)
+        denom             = k_on_eff_clamped + k_off
+        burst_prob        = k_on_eff_clamped / denom if denom > 0 else 0.0
+        m                 = k_prod_mRNA * burst_prob / max(k_deg_mRNA, 1e-12)
+        protein_levels[i] = max(m * k_prod_prot / max(k_deg_prot, 1e-12), 0.1)
+
+    # assign K values
     for i, src in enumerate(gene_list):
         for j, tgt in enumerate(gene_list):
-            if connectivity_matrix[i,j]!=0:
-                key = f"{{K_{src}_to_{tgt}}}"
-                param_dict[key] = protein_levels[i]*scale_K[i,j]
+            if connectivity_matrix[i, j] != 0:
+                param_dict[f"{{K_{src}_to_{tgt}}}"] = protein_levels[i] * scale_K[i, j]
+
     return protein_levels, param_dict
 
 def generate_k_from_max_expression(param_dict, connectivity_matrix, gene_list,
@@ -540,71 +574,90 @@ def generate_k_from_max_expression(param_dict, connectivity_matrix, gene_list,
     return protein_levels, param_dict
 
 def add_interaction_terms(param_dict, connectivity_matrix, gene_list,
-                          n_matrix=None, k_add_list=None, scale_K=None, combinatorial_interaction_type = "additive", use_given_K = None, K_to_use = None):
+                          n_matrix=None, k_add_list=None, scale_K=None,
+                          combinatorial_interaction_type="additive",
+                          use_given_K=None, K_to_use=None):
     """
-    Adds interaction terms to the parameter dictionary based on the connectivity matrix 
-    and gene list, and calculates steady-state paramet
+    Adds interaction terms to the parameter dictionary based on the connectivity matrix
+    and gene list, and calculates steady-state parameters.
+
     Parameters:
         param_dict (dict): Dictionary to store the interaction parameters.
         connectivity_matrix (numpy.ndarray): Matrix representing interactions between genes.
                                             Non-zero values indicate an interaction.
-        gene_list (list): List of gene names corresponding to the rows and columns of 
+        gene_list (list): List of gene names corresponding to the rows and columns of
                           the connectivity matrix.
-        n_matrix (numpy.ndarray, optional): Matrix specifying the 'n' parameter for each 
+        n_matrix (numpy.ndarray, optional): Matrix specifying the 'n' parameter for each
                                             interaction. Defaults to a matrix filled with 2.0.
-        k_add_matrix (numpy.ndarray, optional): Matrix specifying the 'k_add' parameter for 
-                                                each interaction. Defaults to a matrix filled 
-                                                with 1
+        k_add_list (numpy.ndarray, optional): Per-gene k_add values. Used for single-regulator
+                                              and same-sign 2-regulator cases. For opposing-sign
+                                              or >2 regulator cases, per-edge defaults are used.
+        scale_K (numpy.ndarray, optional): Scaling matrix for K values.
+        combinatorial_interaction_type (str): One of 'additive', 'AND', 'OR'.
+        use_given_K (bool, optional): If True, use K_to_use matrix instead of steady-state calc.
+        K_to_use (numpy.ndarray, optional): Matrix of K values to use directly.
+
     Returns:
-        dict: Updated parameter dictionary with interaction terms added.
+        tuple: (protein_levels, updated param_dict)
     """
     n = len(gene_list)
+
     if n_matrix is None:
-        n_matrix = np.full((n,n), 2.0)
+        n_matrix = np.full((n, n), 2.0)
 
     if k_add_list is None:
-        k_add_per_gene = np.zeros(n_genes, dtype=float)
-
-        for j in range(n_genes):
+        k_add_list = np.zeros(n, dtype=float)
+        for j in range(n):
             regulators = np.where(connectivity_matrix[:, j] != 0)[0]
-
             if len(regulators) == 0:
-                continue  # no regulation → k_add stays 0
-
-            target_gene = gene_list[j]
-
-            # Collect any k_add_<src>_to_<target_gene> values from param_dict
-            k_add_values = [
-                v for key, v in param_dict.items()
-                if key.startswith("{k_add_") and key.endswith(f"_to_{target_gene}}}")
-            ]
-
-            if k_add_values:
-                k_add_per_gene[j] = np.mean(k_add_values)
-            else:
-                # Fall back to sign-based default
-                sign = int(np.sign(connectivity_matrix[regulators[0], j]))
-                k_add_per_gene[j] = 6.0 if sign > 0 else 0.8
-    else:
-        if len(k_add_list) != n_genes:
-            raise ValueError(
-                f"k_add_list must have length {n_genes}, got {len(k_add_list)}"
-            )
-        k_add_per_gene = np.array(k_add_list, dtype=float)
+                continue
+            # default based on first regulator sign — used only for per-gene cases
+            sign = int(np.sign(connectivity_matrix[regulators[0], j]))
+            k_add_list[j] = 6.0 if sign > 0 else 0.8
 
     for j in range(n):
         curr_gene = gene_list[j]
+        regulators = np.where(connectivity_matrix[:, j] != 0)[0]
+        n_regs = len(regulators)
 
-        # set k_add ONCE per gene
-        param_dict[f"{{k_add_{curr_gene}}}"] = float(k_add_list[j])
+        if n_regs == 0:
+            continue
 
-        for i in range(n):
-            if connectivity_matrix[i, j] != 0:
+        elif n_regs == 1:
+            # original path — per-gene k_add
+            param_dict[f"{{k_add_{curr_gene}}}"] = float(k_add_list[j])
+
+        elif n_regs == 2:
+            sign1 = int(np.sign(connectivity_matrix[regulators[0], j]))
+            sign2 = int(np.sign(connectivity_matrix[regulators[1], j]))
+
+            if sign1 == sign2:
+                # original path — per-gene k_add
+                param_dict[f"{{k_add_{curr_gene}}}"] = float(k_add_list[j])
+            else:
+                # new path — opposing-sign, per-edge k_add
+                for i in regulators:
+                    edge = f"{gene_list[i]}_to_{curr_gene}"
+                    key = f"{{k_add_{edge}}}"
+                    if key not in param_dict:
+                        edge_sign = int(np.sign(connectivity_matrix[i, j]))
+                        param_dict[key] = 6.0 if edge_sign > 0 else 0.8
+
+        else:
+            # new path — >2 regulators, per-edge k_add
+            for i in regulators:
                 edge = f"{gene_list[i]}_to_{curr_gene}"
-                param_dict[f"{{n_{edge}}}"] = float(n_matrix[i, j])
+                key = f"{{k_add_{edge}}}"
+                if key not in param_dict:
+                    edge_sign = int(np.sign(connectivity_matrix[i, j]))
+                    param_dict[key] = 6.0 if edge_sign > 0 else 0.8
 
-    # print(f"param_dict before steady state calc: {param_dict}")
-    if use_given_K and K_to_use:
+        # set n per edge — all cases
+        for i in regulators:
+            edge = f"{gene_list[i]}_to_{curr_gene}"
+            param_dict[f"{{n_{edge}}}"] = float(n_matrix[i, j])
+
+    if use_given_K and K_to_use is not None:
         return assign_k_values_matrix(param_dict, connectivity_matrix, gene_list, K_to_use)
     else:
         return generate_K_from_steady_state_calc(param_dict, connectivity_matrix, gene_list, scale_K=scale_K)
@@ -694,7 +747,6 @@ def convert_samples_to_df(samples: np.ndarray, species_index: dict,
                       - Columns for each extracted species, named according to the species_index keys.
     """
     n_cells, n_time, _ = samples.shape
-    print([name for name in species_index if name.endswith(("_A", "_I"))])
     sel = [(name,idx) for name,idx in species_index.items()
            if any(name.endswith(t) for t in types)]
     names, idxs = zip(*sel)
@@ -907,7 +959,24 @@ def hill_fn(x, n, k):
 def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
                     window_frac=0.1, param_dict=None, interaction_matrix=None,
                     gene_list=None, verbose=True, combinatorial_interaction_type="additive"):
+    """
+    Check if simulation has reached steady state and matches expected protein levels.
 
+    Args:
+        samples (np.ndarray): Shape (n_cells, n_time, n_species)
+        time_points (np.ndarray): Time values
+        mean_tol (float): Tolerance for relative mean change over last window
+        std_tol (float): Tolerance for relative std change over last window
+        window_frac (float): Fraction of final time used to assess steady state
+        param_dict (dict): All kinetic + interaction parameters
+        interaction_matrix (np.ndarray): (n_genes, n_genes) connectivity matrix
+        gene_list (list): Ordered list of gene names
+        verbose (bool): Whether to print diagnostics
+        combinatorial_interaction_type (str): One of 'additive', 'AND', 'OR'
+    
+    Returns:
+        bool: True if steady state is reached
+    """
     n_cells, n_time, n_species = samples.shape
     window = int(n_time * window_frac)
     if window < 2:
@@ -931,9 +1000,9 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
 
     for t_idx in range(n_time - last_n, n_time):
 
-        proteins_at_t      = samples[:, t_idx, protein_species_idx]   # (n_cells, n_genes)
-        mean_at_t_prot     = proteins_at_t.mean(axis=0)               # (n_genes,)
-        protein_expected   = np.zeros(n_genes)
+        proteins_at_t    = samples[:, t_idx, protein_species_idx]  # (n_cells, n_genes)
+        mean_at_t_prot   = proteins_at_t.mean(axis=0)              # (n_genes,)
+        protein_expected = np.zeros(n_genes)
 
         for i, gene in enumerate(gene_list):
             k_on        = param_dict[f'{{k_on_{gene}}}']
@@ -943,75 +1012,103 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
             k_prod_prot = param_dict[f'{{k_prod_protein_{gene}}}']
             k_deg_prot  = param_dict[f'{{k_deg_protein_{gene}}}']
 
-            regulators  = np.where(interaction_matrix[:, i] != 0)[0]
-            k_add       = param_dict.get(f"{{k_add_{gene}}}", 0.0)
+            regulators = np.where(interaction_matrix[:, i] != 0)[0]
+            n_regs     = len(regulators)
 
-            if len(regulators) == 0:
+            if n_regs == 0:
                 p_on_eff = k_on
 
-            elif len(regulators) == 1:
-                # Matches simulation exactly:
-                # sign * k_add * (TF^n / (K^n + TF^n)) * gene_I
-                r       = regulators[0]
-                edge    = f"{gene_list[r]}_to_{gene}"
-                n_val   = param_dict.get(f"{{n_{edge}}}", 2.0)
-                K_val   = param_dict.get(f"{{K_{edge}}}", 1.0)
-                sign    = int(np.sign(interaction_matrix[r, i]))
-                TF      = proteins_at_t[:, r]
-                hill    = TF**n_val / (K_val**n_val + TF**n_val)
-                reg_eff = sign * k_add * hill          # shape (n_cells,)
-                p_on_eff = k_on + reg_eff              # shape (n_cells,)
+            elif n_regs == 1:
+                # original — per-gene k_add, matches simulation exactly
+                r      = regulators[0]
+                edge   = f"{gene_list[r]}_to_{gene}"
+                k_add  = param_dict.get(f"{{k_add_{gene}}}", 0.0)
+                n_val  = param_dict.get(f"{{n_{edge}}}", 2.0)
+                K_val  = param_dict.get(f"{{K_{edge}}}", 1.0)
+                sign   = int(np.sign(interaction_matrix[r, i]))
+                TF     = proteins_at_t[:, r]
+                hill   = TF**n_val / (K_val**n_val + TF**n_val)
+                p_on_eff = k_on + sign * k_add * hill  # (n_cells,)
 
-            elif len(regulators) == 2:
-                r1, r2   = regulators
-                edge1    = f"{gene_list[r1]}_to_{gene}"
-                edge2    = f"{gene_list[r2]}_to_{gene}"
-                n1       = param_dict.get(f"{{n_{edge1}}}", 2.0)
-                n2       = param_dict.get(f"{{n_{edge2}}}", 2.0)
-                K1       = param_dict.get(f"{{K_{edge1}}}", 1.0)
-                K2       = param_dict.get(f"{{K_{edge2}}}", 1.0)
-                sign     = int(np.sign(interaction_matrix[r1, i]))  # same sign guaranteed
-                TF1      = proteins_at_t[:, r1]
-                TF2      = proteins_at_t[:, r2]
+            elif n_regs == 2:
+                sign1 = int(np.sign(interaction_matrix[regulators[0], i]))
+                sign2 = int(np.sign(interaction_matrix[regulators[1], i]))
 
-                # Normalised terms matching simulation formula
-                u1       = TF1**n1 / K1**n1
-                u2       = TF2**n2 / K2**n2
-                denom    = 1 + u1 + u2 + u1*u2
+                if sign1 == sign2:
+                    # original — per-gene k_add, normalised combinatorial formula
+                    r1, r2 = regulators
+                    edge1  = f"{gene_list[r1]}_to_{gene}"
+                    edge2  = f"{gene_list[r2]}_to_{gene}"
+                    k_add  = param_dict.get(f"{{k_add_{gene}}}", 0.0)
+                    n1     = param_dict.get(f"{{n_{edge1}}}", 2.0)
+                    n2     = param_dict.get(f"{{n_{edge2}}}", 2.0)
+                    K1     = param_dict.get(f"{{K_{edge1}}}", 1.0)
+                    K2     = param_dict.get(f"{{K_{edge2}}}", 1.0)
+                    sign   = sign1
+                    TF1    = proteins_at_t[:, r1]
+                    TF2    = proteins_at_t[:, r2]
+                    u1     = TF1**n1 / K1**n1
+                    u2     = TF2**n2 / K2**n2
+                    denom  = 1 + u1 + u2 + u1*u2
 
-                if comb_type == "additive":
-                    # r1=1, r2=1, r12=2, pre_factor=1.0
-                    numerator = u1 + u2 + 2*u1*u2
-                    pre_factor = 1.0
+                    if comb_type == "additive":
+                        numerator  = u1 + u2 + 2*u1*u2
+                        pre_factor = 1.0
+                    elif comb_type == "or":
+                        numerator  = u1 + u2 + u1*u2
+                        pre_factor = 2.0/3.0
+                    elif comb_type == "and":
+                        numerator  = u1*u2
+                        pre_factor = 2.0
+                    else:
+                        raise ValueError(f"Unknown combinatorial_interaction_type: {combinatorial_interaction_type}")
 
-                elif comb_type == "or":
-                    # r1=1, r2=1, r12=1, pre_factor=2/3
-                    numerator  = u1 + u2 + u1*u2
-                    pre_factor = 2.0/3.0
-
-                elif comb_type == "and":
-                    # r1=0, r2=0, r12=1, pre_factor=2
-                    numerator  = u1*u2
-                    pre_factor = 2.0
+                    reg_eff  = sign * k_add * pre_factor * numerator / denom
+                    p_on_eff = k_on + reg_eff  # (n_cells,)
 
                 else:
-                    raise ValueError(f"Unknown combinatorial_interaction_type: {combinatorial_interaction_type}")
+                    # new — opposing-sign, per-edge k_add, simple additive
+                    reg_eff = np.zeros(n_cells)
+                    for r in regulators:
+                        edge       = f"{gene_list[r]}_to_{gene}"
+                        k_add_edge = param_dict.get(f"{{k_add_{edge}}}", 0.0)
+                        n_val      = param_dict.get(f"{{n_{edge}}}", 2.0)
+                        K_val      = param_dict.get(f"{{K_{edge}}}", 1.0)
+                        sign_r     = int(np.sign(interaction_matrix[r, i]))
+                        TF         = proteins_at_t[:, r]
+                        hill       = TF**n_val / (K_val**n_val + TF**n_val)
+                        reg_eff   += sign_r * k_add_edge * hill
+                    p_on_eff = k_on + reg_eff  # (n_cells,)
 
-                reg_eff  = sign * k_add * pre_factor * numerator / denom
-                p_on_eff = k_on + reg_eff              # shape (n_cells,)
+            else:
+                # new — >2 regulators, per-edge k_add, simple additive
+                reg_eff = np.zeros(n_cells)
+                for r in regulators:
+                    edge       = f"{gene_list[r]}_to_{gene}"
+                    k_add_edge = param_dict.get(f"{{k_add_{edge}}}", 0.0)
+                    n_val      = param_dict.get(f"{{n_{edge}}}", 2.0)
+                    K_val      = param_dict.get(f"{{K_{edge}}}", 1.0)
+                    sign_r     = int(np.sign(interaction_matrix[r, i]))
+                    TF         = proteins_at_t[:, r]
+                    hill       = TF**n_val / (K_val**n_val + TF**n_val)
+                    reg_eff   += sign_r * k_add_edge * hill
+                p_on_eff = k_on + reg_eff  # (n_cells,)
 
-            denom_burst  = np.where(p_on_eff + k_off <= 0, 1e-12, p_on_eff + k_off)
-            burst_prob   = float(np.mean(p_on_eff / denom_burst))
-            m            = k_prod_mRNA * burst_prob / max(k_deg_mRNA, 1e-12)
+            # clamp and compute expected protein
+            p_on_eff_clamped = np.maximum(p_on_eff, 0.0)
+            denom_burst      = p_on_eff_clamped + k_off
+            denom_burst      = np.where(denom_burst <= 0, 1e-12, denom_burst)
+            burst_prob       = float(np.mean(p_on_eff_clamped / denom_burst))
+            m                = k_prod_mRNA * burst_prob / max(k_deg_mRNA, 1e-12)
             protein_expected[i] = max(m * k_prod_prot / max(k_deg_prot, 1e-12), 0.1)
 
         rel_err = np.abs(mean_at_t_prot - protein_expected) / (protein_expected + 1e-12)
         rel_error_tp.append(rel_err)
 
-    rel_error_tp = np.vstack(rel_error_tp)   # (last_n, n_genes)
+    rel_error_tp = np.vstack(rel_error_tp)  # (last_n, n_genes)
 
     # --- Step 3: per-gene success fraction ---
-    frac_within_tol      = np.mean(rel_error_tp < 0.01, axis=0)
+    frac_within_tol       = np.mean(rel_error_tp < 0.01, axis=0)
     steady_match_per_gene = frac_within_tol >= 0.8
     steady_match          = bool(np.all(steady_match_per_gene))
 
@@ -1024,7 +1121,7 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
         print(f"  Steady by param-based protein match:          {steady_match}")
         print(f"  Per-gene fraction of time points within 1% of expected protein:")
         for gene, frac, passed in zip(gene_list, frac_within_tol, steady_match_per_gene):
-            status = "Pass" if passed else "Fail"
+            status = "pass" if passed else "fail"
             print(f"     {gene:>15}: {frac*100:6.2f}%  {status}")
 
     return steady_match
@@ -1121,35 +1218,31 @@ def allocate_event_logs(n_cells):
 def validate_regulatory_configuration(connectivity_matrix):
     """
     Validate that the regulatory configuration is compatible with the current
-    simulation assumptions.
-
-    Rules:
-    - Each gene can have at most 2 regulators
-    - If a gene has 2 regulators, they must have the same sign
+    simulation assumptions. Raises an error for unsupported configurations,
+    and warns for configurations that will use simple additive per-edge logic.
     """
-
     n = connectivity_matrix.shape[0]
     gene_list = [f"gene_{i+1}" for i in range(n)]
+
     for j in range(n):
         regulators = np.where(connectivity_matrix[:, j] != 0)[0]
         n_regs = len(regulators)
 
         if n_regs > 2:
             reg_names = [gene_list[i] for i in regulators]
-            raise ValueError(
+            print(
                 f"Gene '{gene_list[j]}' has {n_regs} regulators {reg_names}. "
-                "Current model supports at most 2 regulators per gene."
+                f"Using simple additive per-edge logic."
             )
 
         if n_regs == 2:
             signs = np.sign(connectivity_matrix[regulators, j]).astype(int)
-
             if signs[0] != signs[1]:
                 reg_names = [gene_list[i] for i in regulators]
-                raise ValueError(
-                    f"Gene '{gene_list[j]}' has opposing regulators {reg_names} "
+                print(
+                    f"Gene '{gene_list[j]}' has opposing-sign regulators {reg_names} "
                     f"(signs {signs.tolist()}). "
-                    "Opposing-sign combinatorial regulation is not supported."
+                    f"Using simple additive per-edge logic."
                 )
 
 def divide_mother_cell_content(
@@ -1229,11 +1322,11 @@ def process_param_set(rows, label, base_config):
     divide_binomial = base_config.get("divide_binomial", False)
     p_major = base_config.get("p_major", 0.5)
     K_to_use = base_config.get("K_to_use", None)
-    if use_given_K and K_to_use:
+    if use_given_K and K_to_use is not None:
         print("Using given hill Constants.")
     combinatorial_interaction_type = base_config.get("combinatorial_interaction_type", "additive")
     if combinatorial_interaction_type not in ['additive', 'AND', 'OR']:
-        raise("The three options for combinatorial interaction type are: 'additive', 'AND', 'OR' ")
+        raise ValueError("The three options for combinatorial interaction type are: 'additive', 'AND', 'OR' ")
     print(f"Log pi on is set to {log_pi_on}")
     print(f"Combinatorial interaction type: {combinatorial_interaction_type}")
     # Build reactions and parameters for this row set
@@ -1255,21 +1348,34 @@ def process_param_set(rows, label, base_config):
             regulators = np.where(connectivity_matrix[:, j] != 0)[0]
 
             if len(regulators) == 0:
-                continue  # no regulation → k_add stays 0
+                continue
 
-            # all regulators must have same sign (validated earlier)
-            sign = int(np.sign(connectivity_matrix[regulators[0], j]))
+            target_gene = gene_list[j]
 
-            if sign > 0:
-                k_add_per_gene[j] = 6.0
+            # check for per-edge k_add values in param_dict from CSV
+            k_add_values = [
+                v for key, v in param_dict.items()
+                if key.startswith("{k_add_") and key.endswith(f"_to_{target_gene}}}")
+            ]
+
+            if k_add_values:
+                # average of CSV-provided per-edge values — used for per-gene cases
+                # for opposing-sign/>2 regulator cases this is ignored in add_interaction_terms
+                k_add_per_gene[j] = np.mean(k_add_values)
+                if len(k_add_values) > 1:
+                    print(f"{target_gene}: averaging {len(k_add_values)} k_add values from CSV → {k_add_per_gene[j]:.4f}")
             else:
-                k_add_per_gene[j] = 0.8
+                # sign-based default — only meaningful for per-gene cases
+                sign = int(np.sign(connectivity_matrix[regulators[0], j]))
+                k_add_per_gene[j] = 6.0 if sign > 0 else 0.8
+
     else:
-        if len(k_add_list) != n_genes:
+        if len(k_add_list) < n_genes:
             raise ValueError(
                 f"k_add_list must have length {n_genes}, got {len(k_add_list)}"
             )
-        k_add_per_gene = np.array(k_add_list, dtype=float)
+        k_add_per_gene = np.array(k_add_list, dtype=float)[:n_genes]
+        print(f"Using provided k_add_list: {k_add_per_gene} out of {len(k_add_list)} provided values")
 
     for j in range(n_genes):
         regulators = np.where(connectivity_matrix[:, j] != 0)[0]
@@ -1374,6 +1480,7 @@ def process_param_set(rows, label, base_config):
     df_rep.to_csv(f"{base_config['output_folder']}/df_{prefix}.csv", index=False)
     # np.savetxt(f"{base_config['output_folder']}/samples_{prefix}.csv", rep_samples.reshape(2*n_cells, -1), delimiter=",")
     # if flag:
+
     record = {
         "id": id,
         "rows": rows,
@@ -1381,7 +1488,8 @@ def process_param_set(rows, label, base_config):
         "type": base_config['type'],
         "timestamp": timestamp,
         "param_dict": full_param_dict,
-        "steady_state": steady_state.tolist()
+        "steady_state": steady_state.tolist() if hasattr(steady_state, 'tolist') else list(steady_state)
+
     }
     os.makedirs(os.path.dirname(base_config['log_file']), exist_ok=True)
     with open(base_config['log_file'],"a") as f:
@@ -1439,7 +1547,7 @@ if __name__ == "__main__":
     parser.add_argument("--scale_K", type=str, default=None, required=False, help="The matrix of values to scale Hill constant K for each interaction. "
                         "Provide as string representation of nested list, e.g., '[[0,1],[0,0]]'. "
                         "Default is matrix of 1s for all interactions.")    
-    parser.add_argument("--log_pi_on", type=str, default=None, required=False, help="Change in activator state of every gene should be logged.")    
+    parser.add_argument("--log_pi_on", action="store_true", default=False, help="If set, the activity of promoter (A/I) and their timing will be recorded and saved for every genes.")   
     parser.add_argument("--k_add_list", type=str, default=None,
                     help="Comma-separated k_add per gene, e.g. '6.0,0.8'")
     parser.add_argument("--n_matrix", type=str, default=None,
@@ -1453,7 +1561,7 @@ if __name__ == "__main__":
     parser.add_argument("--p_major", type=float, default=0.5,
                         help="Major daughter fraction for binomial division (default: 0.5).")
     parser.add_argument("--combinatorial_interaction_type", type=str, default="additive",
-                        choices=["additive", "AND", "OR", "additive_new"],
+                        choices=["additive", "AND", "OR"],
                         help="Combinatorial logic for two-regulator genes (default: additive).")
     args = parser.parse_args()
 
@@ -1461,7 +1569,7 @@ if __name__ == "__main__":
     base_config["path_to_connectivity_matrix"] = args.path_to_connectivity_matrix
     base_config["param_csv"] = args.param_csv
     base_config["row_to_start"] = int(args.row_to_start)
-    base_config["row_to_end"] = int(args.row_to_end)
+    
     base_config["output_folder"] = args.output_folder
     base_config["log_file"] = args.log_file
     base_config["type"] = args.type
@@ -1472,7 +1580,7 @@ if __name__ == "__main__":
     base_config["simulation_time_before_division"] = args.simulation_time_before_division
     base_config["twin_simulation_time_after_division"] = args.twin_simulation_time_after_division
     base_config["twin_measurement_resolution"] = args.twin_measurement_resolution
-    base_config['scale_K'] = args.scale_K
+    base_config['scale_K'] = None
     base_config['log_pi_on']= args.log_pi_on
 
     if args.k_add_list is not None:
@@ -1513,7 +1621,11 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         raise
-    
+    if args.row_to_end is not None:
+        base_config["row_to_end"] = int(args.row_to_end)
+    else:
+        base_config["row_to_end"] = df["pair_id"].max()
+        print(f"row_to_end not specified, defaulting to last pair: {base_config['row_to_end']}")
     # Read the connectivity matrix before using it
     path_to_connectivity_matrix = base_config["path_to_connectivity_matrix"]
     n_genes, mat = read_input_matrix(path_to_connectivity_matrix)  # Ensure mat is defined
@@ -1549,16 +1661,15 @@ if __name__ == "__main__":
         rows = subset.index.tolist()
     
         # Ensure only complete groups are taken
-        if len(rows) > n_genes:
-            print(f"pair {pair}: {len(rows)} rows found, using first {n_genes}: {rows_to_use}")
+        rows_to_use = rows[:n_genes]
+        if len(rows) >= n_genes:
+            if len(rows) > n_genes:
+                print(f"pair {pair}: {len(rows)} rows found, using first {n_genes}: {rows_to_use}")
             if not check_if_file_exists(rows_to_use, base_config["output_folder"], base_config["type"]):
                 row_list.append(rows_to_use)
                 labels.append(f"row_{'_'.join(map(str, rows_to_use))}")
-            # row_list.append(rows[:n_genes])
-            # labels.append(f"row_{'_'.join(map(str, rows))}")
         else:
-            print(rows)
-            print("Error")
+            print(f"pair {pair}: only {len(rows)} rows found, need {n_genes}. Skipping.")
             break
         
     param_sets = list(zip(row_list, labels))
