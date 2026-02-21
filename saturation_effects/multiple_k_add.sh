@@ -5,10 +5,13 @@
 #SBATCH --cpus-per-task=50
 #SBATCH --mem 10GB
 #SBATCH -t 4:00:00
-#SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/saturation_effects/%A_%a.out
-#SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/saturation_effects/%A_%a.err
-#SBATCH --array=0-11
+#SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/saturation_effects/logs/%A_%a.out
+#SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/saturation_effects/logs/%A_%a.err
+#SBATCH --array=15-17
 set -eo pipefail
+
+
+
 
 
 # ---- Conda activation that works both on Quest and inside Singularity
@@ -19,7 +22,7 @@ elif [ -f /home/gzu5140/.conda/etc/profile.d/conda.sh ]; then
     source /home/gzu5140/.conda/etc/profile.d/conda.sh
     conda activate twinfer
 else
-    export PATH="/home/gzu5140/.conda/envs/twinfer/bin:$PATH"
+    export PATH="/home/gzu5140/.conda/envs/twinfer-code/bin:$PATH"
     echo "⚠️ Conda profile not found — using PATH-based activation"
 fi
 

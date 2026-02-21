@@ -239,6 +239,109 @@ base_configs = [
         "number_of_cores_per_parameter": 48, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
         "k_add_list": [9]*3
     },
+    {
+        'n_cells': 6000, #Number of cells before division (number of twin pairs)
+        'simulation_time_before_division': 2000, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
+        'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
+        'twin_measurement_resolution': 1, #The time between each measurement of twin cells [hours]. For example, if twin_sampling_duration is 12 and twin_measurement_resolution is 1, the final dataframe will contain hourly measurements for 12 hours (0 is birth).
+        "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_fan_in.txt", #path to the connectivity matrix specifying the GRN to simulate
+        "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
+        "rows_to_use": [[0]*3], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
+        "output_folder": f"{path_to_output}/fan_in/", #Path to the output folder
+        "log_file": f"{path_to_output}/fan_in.log",  # Name of the network used -- will be in the filename
+        "log_pi_on": True,
+        "type": "fan_in_k_add_3",  # Name of the network used -- will be in the filename
+        "multiple_interaction_type": "additive",
+        "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
+        "number_of_cores_per_parameter": 48, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
+        "k_add_list": [3]*3
+    },
+    {
+        'n_cells': 6000, #Number of cells before division (number of twin pairs)
+        'simulation_time_before_division': 2000, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
+        'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
+        'twin_measurement_resolution': 1, #The time between each measurement of twin cells [hours]. For example, if twin_sampling_duration is 12 and twin_measurement_resolution is 1, the final dataframe will contain hourly measurements for 12 hours (0 is birth).
+        "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_fan_in.txt", #path to the connectivity matrix specifying the GRN to simulate
+        "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
+        "rows_to_use": [[0]*3], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
+        "output_folder": f"{path_to_output}/fan_in/", #Path to the output folder
+        "log_file": f"{path_to_output}/fan_in.log",  # Name of the network used -- will be in the filename
+        "log_pi_on": True,
+        "type": "fan_in_k_add_6",  # Name of the network used -- will be in the filename
+        "multiple_interaction_type": "additive",
+        "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
+        "number_of_cores_per_parameter": 48, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
+        "k_add_list": [6]*3
+    },
+    {
+        'n_cells': 6000, #Number of cells before division (number of twin pairs)
+        'simulation_time_before_division': 2000, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
+        'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
+        'twin_measurement_resolution': 1, #The time between each measurement of twin cells [hours]. For example, if twin_sampling_duration is 12 and twin_measurement_resolution is 1, the final dataframe will contain hourly measurements for 12 hours (0 is birth).
+        "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_fan_in.txt", #path to the connectivity matrix specifying the GRN to simulate
+        "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
+        "rows_to_use": [[0]*3], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
+        "output_folder": f"{path_to_output}/fan_in/", #Path to the output folder
+        "log_file": f"{path_to_output}/fan_in.log",  # Name of the network used -- will be in the filename
+        "log_pi_on": True,
+        "type": "fan_in_k_add_9",  # Name of the network used -- will be in the filename
+        "multiple_interaction_type": "additive",
+        "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
+        "number_of_cores_per_parameter": 48, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
+        "k_add_list": [9]*3
+    },
+    {
+        'n_cells': 6000, #Number of cells before division (number of twin pairs)
+        'simulation_time_before_division': 2000, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
+        'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
+        'twin_measurement_resolution': 1, #The time between each measurement of twin cells [hours]. For example, if twin_sampling_duration is 12 and twin_measurement_resolution is 1, the final dataframe will contain hourly measurements for 12 hours (0 is birth).
+        "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_3_gene_linear_cascade.txt", #path to the connectivity matrix specifying the GRN to simulate
+        "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
+        "rows_to_use": [[0]*3], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
+        "output_folder": f"{path_to_output}/three_cascade/", #Path to the output folder
+        "log_file": f"{path_to_output}/three_cascade.log",  # Name of the network used -- will be in the filename
+        "log_pi_on": True,
+        "type": "three_cascade_k_add_3",  # Name of the network used -- will be in the filename
+        "multiple_interaction_type": "additive",
+        "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
+        "number_of_cores_per_parameter": 48, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
+        "k_add_list": [3]*3
+    },
+    {
+        'n_cells': 6000, #Number of cells before division (number of twin pairs)
+        'simulation_time_before_division': 2000, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
+        'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
+        'twin_measurement_resolution': 1, #The time between each measurement of twin cells [hours]. For example, if twin_sampling_duration is 12 and twin_measurement_resolution is 1, the final dataframe will contain hourly measurements for 12 hours (0 is birth).
+        "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_3_gene_linear_cascade.txt", #path to the connectivity matrix specifying the GRN to simulate
+        "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
+        "rows_to_use": [[0]*3], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
+        "output_folder": f"{path_to_output}/three_cascade/", #Path to the output folder
+        "log_file": f"{path_to_output}/three_cascade.log",  # Name of the network used -- will be in the filename
+        "log_pi_on": True,
+        "type": "three_cascade_k_add_6",  # Name of the network used -- will be in the filename
+        "multiple_interaction_type": "additive",
+        "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
+        "number_of_cores_per_parameter": 48, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
+        "k_add_list": [6]*3
+    },
+    {
+        'n_cells': 6000, #Number of cells before division (number of twin pairs)
+        'simulation_time_before_division': 2000, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
+        'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
+        'twin_measurement_resolution': 1, #The time between each measurement of twin cells [hours]. For example, if twin_sampling_duration is 12 and twin_measurement_resolution is 1, the final dataframe will contain hourly measurements for 12 hours (0 is birth).
+        "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_3_gene_linear_cascade.txt", #path to the connectivity matrix specifying the GRN to simulate
+        "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
+        "rows_to_use": [[0]*3], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
+        "output_folder": f"{path_to_output}/three_cascade/", #Path to the output folder
+        "log_file": f"{path_to_output}/three_cascade.log",  # Name of the network used -- will be in the filename
+        "log_pi_on": True,
+        "type": "three_cascade_k_add_9",  # Name of the network used -- will be in the filename
+        "multiple_interaction_type": "additive",
+        "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
+        "number_of_cores_per_parameter": 48, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
+        "k_add_list": [9]*3
+    },
+    
 ]
 # ==========================================================
 # Select config by array index (with sanity check)

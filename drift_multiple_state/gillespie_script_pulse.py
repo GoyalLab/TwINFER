@@ -744,34 +744,30 @@ def run_simulation(update_propensities, update_matrix, pop0, time_points, n_cell
 import numpy as np
 import numba
 
-def time_dependent_kon(k_on_base, t, t_switch=950, tau=100, scale=3.0):
-    """
-    Smoothly scales k_on after t_switch using a tanh function.
-    k_on(t) = k_on_base * [1 + (scale - 1) * 0.5 * (1 + tanh((t - t_switch) / tau))]
-    """
-    return k_on_base * (1 + (scale - 1) * 0.5 * (1 + np.tanh((t - t_switch) / tau)))
-
-
 def make_time_scaled_update(update_func, k_on_genes, final_value=2.0, t_start=950, tau=100, t_offset=0.0):
     """
-    Linearly increases k_on for specified genes from 1.0 → final_value 
-    between t_start and t_start + tau (using global time t + t_offset).
-    After the ramp, k_on stays constant at final_value.
+    Pulse: linearly increases k_on for specified genes from 1.0 → final_value 
+    between t_start and t_start + tau/2, then linearly back down to 1.0
+    between t_start + tau/2 and t_start + tau.
+    After the pulse, k_on returns to 1.0.
     """
     @numba.njit(fastmath=True)
     def wrapped(prop, pop, t):
         update_func(prop, pop, t)
         t_global = t + t_offset
 
-        # Linear ramp between t_start and t_start + tau
         if t_global < t_start:
             factor = 1.0
-        elif t_global < t_start + tau:
-            # interpolate linearly from 1.0 → final_value
-            frac = (t_global - t_start) / tau
+        elif t_global < t_start + tau / 2:
+            # ramp up
+            frac = (t_global - t_start) / (tau / 2)
             factor = 1.0 + (final_value - 1.0) * frac
+        elif t_global < t_start + tau:
+            # ramp down
+            frac = (t_global - (t_start + tau / 2)) / (tau / 2)
+            factor = final_value - (final_value - 1.0) * frac
         else:
-            factor = final_value
+            factor = 1.0
 
         for g_idx in k_on_genes:
             prop[g_idx] *= factor
@@ -832,21 +828,22 @@ def process_param_set(rows, label, base_config):
     k_on_reaction_indices = np.where(
         reactions_df['propensity'].str.contains("k_on") & 
         reactions_df['species1'].str.contains("gene_1")
-    )[0]    # --- Create two drifted variants: one up (scale>1), one down (scale<1) ---
+    )[0]  
+    # --- Create two drifted variants: one up (scale>1), one down (scale<1) ---
     update_prop_up = make_time_scaled_update(
-    update_prop, k_on_reaction_indices, final_value=1.66, t_start=1500, tau=15, t_offset=0
+    update_prop, k_on_reaction_indices, final_value=8, t_start=1500, tau=15, t_offset=0
     )
     update_prop_down = make_time_scaled_update(
-        update_prop, k_on_reaction_indices, final_value=0.12, t_start=1500, tau=15, t_offset=0
+        update_prop, k_on_reaction_indices, final_value=1, t_start=1500, tau=15, t_offset=0
     )
     
     t_parent_end = base_config['simulation_time_before_division']
 
     update_prop_up_twins = make_time_scaled_update(
-        update_prop, k_on_reaction_indices, final_value=1.66, t_start=1500, tau=5, t_offset=t_parent_end
+        update_prop, k_on_reaction_indices, final_value=8, t_start=1500, tau=15, t_offset=t_parent_end
     )
     update_prop_down_twins = make_time_scaled_update(
-        update_prop, k_on_reaction_indices, final_value=0.12, t_start=1500, tau=5, t_offset=t_parent_end
+        update_prop, k_on_reaction_indices, final_value=1, t_start=1500, tau=15, t_offset=t_parent_end
     )
     # Quick verification
     print("\n=== CHECKING TIME-SCALED UPDATES ===")
@@ -857,15 +854,15 @@ def process_param_set(rows, label, base_config):
         print(f"  [{idx}] {reactions_df.iloc[idx]['propensity']}")
 
     # Test at key time points
-    test_times = [0, 1500, 1507.5, 1515, 2000]
+    test_times = [0, 1500, 1502.5, 1505, 1507.5, 1515, 2000]
     print("\nScaling factors at key times:")
     for t in test_times:
         if t < 1500:
             factor = 1.0
-        elif t < 1515:
-            factor = 1.0 + (1.66 - 1.0) * (t - 1500) / 15
+        elif t < 1505:
+            factor = 1.0 + (4 - 1) * (t - 1500) / 5
         else:
-            factor = 1.66
+            factor = 1.0
         print(f"  t={t}: factor={factor:.4f}")
     print("=" * 50 + "\n")
     print("Starting base simulation")
