@@ -1624,7 +1624,7 @@ if __name__ == "__main__":
     if args.row_to_end is not None:
         base_config["row_to_end"] = int(args.row_to_end)
     else:
-        base_config["row_to_end"] = df["pair_id"].max()
+        base_config["row_to_end"] = df["row_to_start"] + 1
         print(f"row_to_end not specified, defaulting to last pair: {base_config['row_to_end']}")
     # Read the connectivity matrix before using it
     path_to_connectivity_matrix = base_config["path_to_connectivity_matrix"]

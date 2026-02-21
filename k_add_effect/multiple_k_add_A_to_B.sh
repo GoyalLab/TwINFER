@@ -11,14 +11,16 @@
 #SBATCH --array=0-9
 
 eval "$(conda shell.bash hook)"
-conda activate twinfer
+conda activate twinfer-code
 start_index=$((200 * SLURM_ARRAY_TASK_ID))
 end_index=$((start_index+2000))
 
-path_to_code_repo=""
+path_to_code_repo="/home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/"
 path_to_connectivity_matrix="${path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_to_B.txt"
-path_to_parameter="${path_to_code_repo}/simulation_example_input_data/median_parameter.csv"
-path_to_output_folder=""
+
+#Path to parameter file generated using parameters_for_multiple_k_add.ipynb
+path_to_parameter="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/test/k_add_simulations/effect_of_k_add_sampling_positive_with_reps.csv"
+path_to_output_folder="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/test/"
 path_to_log_file="${path_to_output_folder}/logs/A_to_B.jsonl"
 type_of_interaction="A_to_B"
 
