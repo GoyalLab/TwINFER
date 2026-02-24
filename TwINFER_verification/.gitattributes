@@ -1,4 +1,0 @@
-*.csv filter=lfs diff=lfs merge=lfs -text
-TwINFER_verification/TF_Link/*.csv filter=lfs diff=lfs merge=lfs -text
-TwINFER_verification/TF_Link/tf_link_data/*.csv filter=lfs diff=lfs merge=lfs -text
-TF_Link/**/*.csv filter=lfs diff=lfs merge=lfs -text
