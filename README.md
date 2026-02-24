@@ -10,3 +10,5 @@ The code and data to estimate parameters from the literature can be found in the
 The scripts_analyse_figure_data contains the scripts to ananlyse simulations to obtain the data for making plots in the figures.
 
 The scripts_to_plot_figure contains the code to make the plots found in the figures.
+
+The specific details of code need to reproduce the exact plots in the figure, starting from simulations, analysis and making the final plot is provided on this [Google sheet](https://docs.google.com/spreadsheets/d/1dc1jYql7xb4ZE71f3lR6cSMpQq1c9PkpWk9iuyNDUtk/edit?usp=sharing). All the data can be found in this [folder](https://drive.google.com/drive/folders/1apg1QFkGD_QGuxIaUuTUs-l7r6ofpGsA?usp=sharing) and references in the sheet are with respect to this. Paths in the individual files may need to be set as necessary.
