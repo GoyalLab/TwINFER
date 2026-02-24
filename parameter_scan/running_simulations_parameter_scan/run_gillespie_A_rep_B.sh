@@ -11,7 +11,7 @@
 #SBATCH --array=0-39
 
 eval "$(conda shell.bash hook)"
-conda activate twinfer
+conda activate twinfer-code
 start_index=$((600 * SLURM_ARRAY_TASK_ID))
 path_to_parameter_sheet="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/parameter_scan_simulations/simulation_details/parameters_3genes_repression_reg_pi_on_r_add_scaled.csv"
 path_to_connectivity_matrix="/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/parameter_scan_simulations/simulation_details/connectivity_matrix_A_rep_B.txt"

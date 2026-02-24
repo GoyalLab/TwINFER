@@ -11,7 +11,7 @@
 #SBATCH --array=0-39
 
 eval "$(conda shell.bash hook)"
-conda activate twinfer
+conda activate twinfer-code
 start_index=$((600 * SLURM_ARRAY_TASK_ID))
 end_index=$(start_index + 600)
 

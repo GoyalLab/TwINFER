@@ -831,7 +831,7 @@ def process_param_set(rows, label, base_config):
     # --- Identify k_on-containing reactions ---
     k_on_reaction_indices = np.where(
         reactions_df['propensity'].str.contains("k_on") & 
-        reactions_df['species1'].str.contains("gene_1")
+        reactions_df['species1'].str.contains("gene_1", "gene_2")
     )[0]    # --- Create two drifted variants: one up (scale>1), one down (scale<1) ---
     update_prop_up = make_time_scaled_update(
     update_prop, k_on_reaction_indices, final_value=1.66, t_start=1500, tau=15, t_offset=0
@@ -843,10 +843,10 @@ def process_param_set(rows, label, base_config):
     t_parent_end = base_config['simulation_time_before_division']
 
     update_prop_up_twins = make_time_scaled_update(
-        update_prop, k_on_reaction_indices, final_value=1.66, t_start=1500, tau=5, t_offset=t_parent_end
+        update_prop, k_on_reaction_indices, final_value=1.66, t_start=1500, tau=15, t_offset=t_parent_end
     )
     update_prop_down_twins = make_time_scaled_update(
-        update_prop, k_on_reaction_indices, final_value=0.12, t_start=1500, tau=5, t_offset=t_parent_end
+        update_prop, k_on_reaction_indices, final_value=0.12, t_start=1500, tau=15, t_offset=t_parent_end
     )
     # Quick verification
     print("\n=== CHECKING TIME-SCALED UPDATES ===")

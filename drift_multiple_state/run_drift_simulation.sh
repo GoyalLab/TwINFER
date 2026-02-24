@@ -6,10 +6,10 @@
 #SBATCH --mem=6GB
 #SBATCH --time=4:00:00
 #SBATCH --job-name=drift_simulation
-#SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/pulse_three_gene_motif_longer_pulse/slurmLog-%A_%a-%x.out
-#SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/pulse_three_gene_motif_longer_pulse/slurmLog-%A_%a-%x.err
+#SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/drift_simulations/logs/slurmLog-%A_%a-%x.out
+#SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/drift_simulations/logs/slurmLog-%A_%a-%x.err
 
 eval "$(conda shell.bash hook)"
 conda activate twinfer-code
 echo 1
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/drift_multiple_state/simulate_pulse.py --config_index $((${SLURM_ARRAY_TASK_ID:-0}))
+~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/drift_multiple_state/simulate_drift_multiple_states.py

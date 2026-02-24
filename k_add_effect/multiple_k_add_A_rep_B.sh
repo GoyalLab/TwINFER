@@ -9,6 +9,7 @@
 #SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/k_add_simulations/slurm_log/slurmLog-%A-%x.out
 #SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/k_add_simulations/slurm_log/slurmLog-%A-%x.err
 #SBATCH --array=0-9
+
 eval "$(conda shell.bash hook)"
 conda activate twinfer
 start_index=$((200 * SLURM_ARRAY_TASK_ID))
