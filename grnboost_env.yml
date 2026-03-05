@@ -1,0 +1,11 @@
+name: grnboost_env
+channels:
+  - defaults
+dependencies:
+  - python=3.10.15
+  - numpy[version='<2']
+  - pandas[version='<2.2']
+  - scipy[version='<1.12']
+  - scanpy
+  - arboreto
+  - ipykernel
