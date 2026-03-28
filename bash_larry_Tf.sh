@@ -3,10 +3,10 @@
 #SBATCH -p genomics
 #SBATCH -N 1
 #SBATCH --cpus-per-task=55
-#SBATCH --mem 50GB
-#SBATCH -t 4:00:00
-#SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/figure_5/%A_%a.out
-#SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/figure_5/%A_%a.err
+#SBATCH --mem 150GB
+#SBATCH -t 24:00:00
+#SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/analysisData/Top_50_most_variable_genes_12032026//%A_%a.out
+#SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/analysisData/Top_50_most_variable_genes_12032026/%A_%a.err
 set -eo pipefail
 
 
@@ -31,7 +31,7 @@ python -V
 echo
 
 # ---- Run simulation directly from /home
-cd "/home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/"
+cd "//home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/"
 
 echo "[$(date)] Starting analysis ..."
 ~/.conda/envs/twinfer-code/bin/python -u run_larry_more_TF.py

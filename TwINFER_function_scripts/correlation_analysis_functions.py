@@ -377,7 +377,17 @@ def single_cell_shuffle(gene_matrix_1, gene_matrix_2, gene_list, shuffle_pairs, 
             return compute_correlation_matrix(gene_matrix_1, gene_matrix_2[:, shuffled_indices], gene_list, shuffle_pairs)
 
 
-def plot_qq_distribution(shuffled, obs_value, gene_pair_name):
+def plot_qq_distribution(shuffled_full, obs_value, gene_pair_name):
+    shuffled_full = np.asarray(shuffled_full)
+    shuffled = shuffled_full[np.isfinite(shuffled_full)]
+        
+    # with 10k shuffles, anything under 9000 usable values is suspicious
+    if len(shuffled) < 0.01*len(shuffled_full):
+        return False
+        
+    # zero variance → degenerate distribution → not normal
+    if np.std(shuffled) == 0:
+        return False
     # Visualization
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     

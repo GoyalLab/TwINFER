@@ -53,6 +53,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
                         remove_twin_structure = False,
                         return_gene_corr_thresholds = False,
                         match_sim_details = True,
+                        gene_list_given = None,
                         n_cores = 4):
     """
     Infer gene regulatory interactions from simulated or experimental twin-cell data
@@ -210,7 +211,10 @@ def infer_with_twinfer(path_to_simulation_file= None,
 
     # Load gene parameters and connectivity structure
     n_genes, interaction_matrix = read_input_matrix(path_to_connectivity_matrix)
-    gene_list = [f"gene_{i}" for i in np.arange(1, n_genes + 1)]
+    if gene_list_given:
+        gene_list = gene_list_given
+    else:
+        gene_list = [f"gene_{i}" for i in np.arange(1, n_genes + 1)]
     try:
         gene_params = get_param_data(param_df, param_index_from_file_name, n_genes)
         print(gene_params)

@@ -87,9 +87,9 @@ plt.rcParams['ytick.labelsize'] = 12    # y-axis tick labels
 plt.rcParams['legend.fontsize'] = 12    # legend text
 
 data_path = "real_data/"
-path_to_plots = f"/home/gzu5140/Keerthana_b1042/grnInference/plots/figure_5_myeloid_progenitors_50_var_TF/"
+path_to_plots = f"/home/gzu5140/Keerthana_b1042/grnInference/plots/Top_50_most_variable_genes_12032026/"
 os.makedirs(path_to_plots, exist_ok=True)
-path_to_plot_data = Path("/home/gzu5140/Keerthana_b1042/grnInference/analysisData/figure_5_myeloid_progenitors_50_var_TF/")
+path_to_plot_data = Path("/home/gzu5140/Keerthana_b1042/grnInference/analysisData/Top_50_most_variable_genes_12032026/")
 path_to_plot_data.mkdir(exist_ok=True)
 
 #Load the h5ad file
@@ -123,15 +123,9 @@ gene_list_Neutrophil = ['Muc13', 'Srgn', 'Ccl9', 'Plac8', 'Snrpf','Prtn3','Elane
 gene_list_Monocyte = ['Rbms1', 'Tuba1b','Sirpa', 'Ttf1', 'H3f3b', 'Set', 'Tk1', 'Fkbp4', 'Hspd1', 'Emb'] #Monocyte
 gene_list_Regulator_TF = ['Gata1', 'Gata2', 'Gfi1', 'Fli1', 'Spi1', 'Tal1',  'Cebpa', 'Jun', 'Egr1', 'Nab2', 'Klf1', 'Zfpm1'] #TF involved in hematopoiesis regulation
 gene_list_50_genes = ['Ybx1', 'Ttf1', 'Hmgb1', 'Ybx3', 'Nfkb1', 'Hmgb2', 'Srebf2', 'Smarce1', 'Csde1', 'Jund', 'Tsc22d1', 'Max', 'Sp1', 'Bcl11a', 'Irf9', 'Myc', 'Mef2c', 'Ssrp1', 'Tcf4', 'Cbfb', 'Trp53', 'Arid1a', 'Stat3', 'Sub1', 'Mta2', 'Xbp1', 'Cers2', 'Etv6', 'Ubtf', 'Ikzf1', 'Foxp1', 'Smarcc2', 'Dnajc2', 'Zmiz1', 'Nfe2l2', 'Gtf2i', 'Atf4', 'Sox4', 'Cdc5l', 'Zfp422', 'Usf2', 'Mta1', 'Gata2', 'Mafg', 'Creb1', 'Atf2', 'Klf6', 'Runx1', 'Mbd3', 'Rfx7']
-gene_list_50_most_variable = ['2610305D13Rik', 'Ahr', 'Alx4', 'Arid1b', 'Arid4b', 'Arx', 'Bcl11b',
-       'C030039L03Rik', 'Eomes', 'Etv1', 'Gata2', 'Hey1', 'Hivep3', 'Hmga2',
-       'Hnf4a', 'Hsf4', 'Id2', 'Id3', 'Irf1', 'Irf4', 'Irf7', 'Irf8', 'Klf2',
-       'Klf6', 'Lhx2', 'Mycn', 'Nr2f2', 'Nr4a3', 'Pbx1', 'Plagl1', 'Prdm10',
-       'Prox2', 'Rsl1', 'Satb1', 'Six4', 'Snai1', 'Spib', 'Spic', 'Tcf7',
-       'Tcf7l2', 'Tox', 'Tsc22d1', 'Tshz1', 'Ybx2', 'Zeb1', 'Zfp236', 'Zfp345',
-       'Zfp551', 'Zfp74', 'Zfp85']
-
-
+gene_list_50_most_variable = ['MEIS1', 'RAD51', 'GFI1B', 'SPI1', 'HCFC1', 'MEF2C', 'IKZF1', 'JUN', 'IRF1', 'MYC', 'HDAC2', 'STAT3', 'NOTCH1', 'FOS', 'SATB1', 'ESR1', 'NFAT5', 'EBF1', 'GATA2', 'GFI1', 'ETS1', 'CBX7', 'CBFB', 'FOXO1', 'NR4A1', 'BMI1', 'IRF8', 'ELF4', 'BACH2', 'BHLHE40', 'POU2AF1', 'JUNB', 'NR1H3', 'STAT6', 'TCF7', 'SMAD4', 'STAT1', 'BCL11B', 'EGR2', 'STAT2', 'ELF1', 'CTSG', 'ELANE', 'MPO', 'MPL', 'CCL9', 'DUSP1', 'TYROBP', 'CLEC12A', 'LTB', 'LY6A', 'RGS1', 'IGKC', 'PROCR', 'RAB44', 'PDZK1IP1', 'SELL', 'ESAM', 'F630028O10RIK', 'MYL10', 'MAGED1', 'TRIM47', 'CD48', 'TBXAS1', 'BC035044', 'NEURL3', 'CST7', 'HACD4', 'MS4A3', 'RTP4', 'PGLYRP2', 'HK3', 'IFI44', 'NKG7', 'MMRN1', 'ATP8B4', 'MSMO1', 'GIMAP5', 'SERPINA3G', 'SLC18A2', 'ANXA3', 'NCEH1', 'DENND2D', 'PCP4L1', 'GIMAP1', 'LAPTM4B', 'PQLC3', 'RHOF', 'PEAR1', 'IL21R', 'LY6C2', 'LDHB', 'MS4A6B', 'RAB32', 'AP3S1', 'GBP2', 'PADI4', 'MYO1F', 'CASP1', 'CTSL', 'ALAS1', 'ITIH5', 'EMILIN1', 'ZFP386', 'TCP11L2', 'CISH', 'VILL', 'PPP1R15A', 'AFAP1L1', 'SMPDL3A', 'TCN2', 'OASL2', 'FES', 'LBP', 'ADGRG3', 'MFGE8', 'GLIPR2', 'IGTP', '2610035D17RIK', 'FUT7', 'CSGALNACT2', 'ORAI3', 'CD79B', 'MAPKAPK3', 'SIGIRR', 'TGM2', 'CSF2RB', 'OSBPL1A', 'TNFRSF21', 'MS4A6C', 'ADSSL1', 'ANXA2', 'DENND1C', 'KRT18', 'IGHM', 'SLC35B4', 'CAMK1', '1110059E24RIK', 'SNX4', 'GLB1']
+gene_list_50_most_variable = [g.lower() for g in gene_list_50_most_variable]
+gene_list_500_most_variable = ['meis1', 'rad51', 'gfi1b', 'spi1', 'hcfc1', 'mef2c', 'ikzf1', 'jun', 'irf1', 'myc', 'hdac2', 'stat3', 'notch1', 'fos', 'satb1', 'esr1', 'nfat5', 'ebf1', 'gata2', 'gfi1', 'ets1', 'cbx7', 'cbfb', 'foxo1', 'nr4a1', 'bmi1', 'irf8', 'elf4', 'bach2', 'bhlhe40', 'pou2af1', 'junb', 'nr1h3', 'stat6', 'tcf7', 'smad4', 'stat1', 'bcl11b', 'egr2', 'stat2', 'elf1', 'ctsg', 'elane', 'mpo', 'mpl', 'ccl9', 'dusp1', 'tyrobp', 'clec12a', 'ltb', 'ly6a', 'rgs1', 'igkc', 'procr', 'rab44', 'pdzk1ip1', 'sell', 'esam', 'f630028o10rik', 'myl10', 'maged1', 'trim47', 'cd48', 'tbxas1', 'bc035044', 'neurl3', 'cst7', 'hacd4', 'ms4a3', 'rtp4', 'pglyrp2', 'hk3', 'ifi44', 'nkg7', 'mmrn1', 'atp8b4', 'msmo1', 'gimap5', 'serpina3g', 'slc18a2', 'anxa3', 'nceh1', 'dennd2d', 'pcp4l1', 'gimap1', 'laptm4b', 'pqlc3', 'rhof', 'pear1', 'il21r', 'ly6c2', 'ldhb', 'ms4a6b', 'rab32', 'ap3s1', 'gbp2', 'padi4', 'myo1f', 'casp1', 'ctsl', 'alas1', 'itih5', 'emilin1', 'zfp386', 'tcp11l2', 'cish', 'vill', 'ppp1r15a', 'afap1l1', 'smpdl3a', 'tcn2', 'oasl2', 'fes', 'lbp', 'adgrg3', 'mfge8', 'glipr2', 'igtp', '2610035d17rik', 'fut7', 'csgalnact2', 'orai3', 'cd79b', 'mapkapk3', 'sigirr', 'tgm2', 'csf2rb', 'osbpl1a', 'tnfrsf21', 'ms4a6c', 'adssl1', 'anxa2', 'dennd1c', 'krt18', 'ighm', 'slc35b4', 'camk1', '1110059e24rik', 'snx4', 'glb1', 'anxa1', 'pstpip1', 'ptgs1', 'ctso', 'tor3a', 'plek', 'il15', 'cpt1a', 'tmem43', 'gng11', 'pafah2', 'cpa3', 'myo1g', 'sla', 'vps16', 'spns3', 'atg12', 'idh1', 'serpinb1a', 'nampt', 'rnf13', 'atp13a1', 'sfxn3', 'stx7', 'f11r', 'cpq', 'mfsd1', 'tcirg1', 'tespa1', 'ebi3', 'ube2l6', 'ica1', 'cd74', 'csad', 'vldlr', 'trim44', 'icam1', 'zfp35', 'grina', 'pak1', 'ctps2', 'colgalt1', 'slc28a2', 'flt3', 'csf3r', 'stxbp4', 'cd53', 'ric8a', 'ncf1', 'unc93b1', 'slc39a6', 'g6pdx', 'snap23', 'myct1', 'slco3a1', 'sqle', 'casp4', 'bap1', 'epsti1', 'gimap6', 'st8sia4', 'hells', 'dok2', 'gypc', 'mettl7a1', 'lgals8', 'gbp3', 'spns2', 'prps2', 'tie1', 'ythdf3', 'jak3', 'tmem206', 'gosr2', 'plac8', 'sdhaf2', 'myadm', 'gng12', 'slc2a1', 'cdt1', 'fcer1g', 'pfkp', 'pttg1ip', 'tfpi', 'lcp2', 'cln5', 'prss57', 'serpinb9', 'cd300a', 'stk25', 'uba3', 'rnase6', 'acot9', 'sh2d5', 'fdft1', 'elmo2', 'ctla2b', 'rnf115', 'atad1', 'zfp24', 'dhrs3', 'bcl2', 'pcmtd2', 'st6galnac4', 'arhgef18', 'zfp871', 'fuca2', 'fzr1', 'bace1', 'foxred1', 'irak3', 'plekhb2', 'abcd1', 'nde1', 'swap70', 'trim35', 'erlin1', 'dpp4', 'tmx3', 'nek9', 'trp53i11', 'zfp397', 'pacsin2', 'tyms', 'wars', 'ada', 'itpk1', 'scarf1', 'zfp62', 'man2a2', 'abcg2', 'crk', 'arhgap27', 'prim1', 'gyg', 'pold1', 'usp11', 'cd9', 'fig4', 'flot2', 'fads1', 'ahcyl1', 'arl6ip6', 'rgs2', 'dnajc5', 'pecam1', 'prodh', 'uhrf1', 'pqlc1', 'pim2', 'cdk19', 'cd82', 'ubap1', 'samd9l', 'maged2', 'inpp1', 'rnf125', 'usp8', 'gbp7', 'cers4', 'nfam1', 'ranbp3', 'mpnd', 'gcnt2', 'f2rl3', 'pld3', 'wdr5', 'milr1', 'lonp2', 'sgms1', 'mtap', 'itfg1', 'ap1g2', 'sdf2l1', 'panx1', 'tmem97', 'fgd2', 'erap1', 'il15ra', 'lyn', 'itm2a', 'poglut1', 'mtfr1', 'plppr3', 'rab31', 'gpr65', 'appl2', 'gmfb', 'capn7', 'cdca4', 'usp37', 'ppil4', 'cnot10', 'cerk', 'fam136a', 'exoc2', '1600014c10rik', 'plin3', 'slfn8', 'dhx58', 'inpp5b', 'phactr2', 'ube2g2', 'dhfr', 'akap8l', 'wdr4', 'dus1l', 'fam76b', 'mfsd14b', 'vps33b', 'ncln', 'tmem229b', 'tk2', 'mast3', 'emcn', 'paqr7', 'map4k2', 'wdr45b', 'rnasel', 'pmpca', 'ptdss1', 'ak3', 'relt', 'far1', 'slc19a1', 'lrmp', 'rgcc', 'man2b2', 'zfp451', 'casp2', 'ccdc50', 'plekho2', 'itsn1', 'prmt7', 'nup107', 'tars', 'klhl7', 'atp6ap2', 'calu', 'parp9', 'morc3', 'il12a', 'arap1', 'psat1', 'gusb', 'hars2', 'rasa4', 'tpst2', 'clcn4', 'tmem129', 'chmp3', 'psen1', 'ado', 'shmt1', 'ssh3', 'cstf2', 'ftsj3', 'abcb8', 'fam91a1', 'acox1', 'tmx4', 'pxk', 'trmt2a', 'slc30a5', 'myo5a', 'ldah', 'haus2', 'thumpd1', 'ndrg1', 'mis12', 'usp3', 'gsr', 'tmem71', 'zfp945', 'msh6', 'ppat', 'socs5', 'bag2', 'tfr2', 'cul2', 'dcaf13', 'metap1', 'bid', 'zfp367', 'prkab1', 'gm5111', 'cd69', 'apoe', 'trmt2b', 'ubr7', 'coa5', 'sesn1', 'golt1b', 'ccl4', 'armc8', 'hacd3', 'plaa', 'lig1', 'cyb5r1', 'chka', 'leprot', 'usp10', 'arid5a', 'tubgcp3', 'slc25a46', 'vav3', 'pno1', 'mrpl37', 'zfp157', 'calcrl', 'ccnb2', 'snx30', 'csgalnact1', 'tmx1', 'tbc1d9b', 'arl8b', 'fcho2', 'top2a', 'emid1', 'mad2l1', 'plxnc1', 'il27ra', 'galnt6', 'lonp1', 'arhgef6', 'iigp1', 'tmem164', 'igsf6', 'iars', 'gdi1', 'stard7', '4833439l19rik', 'sgpl1', 'wdr55', 'rangap1', 'xaf1', 'rassf4', 'prpf4', 'por', 'kat7', 'pcmtd1', 'rpa1', 'man1a', 'wdr75', 'tnip3', 'epb41l4b', 'hist1h2bc', 'tmem30a', 'eml4', 'rfc5', 'prep', 'hexa', 'fam168b', 'casp12', 'nudcd3', 'irgm2', 'arhgef39', 'unk', 'klhl24', 'crnkl1', 'slc6a6', 'mlkl', 'ctsf', 'rab37', 'gmcl1', 'trmt11', 'rfc4', 'ino80d', 'kif23', 'cd52', 'gmnn', 'ppp6c', 'agps', 'stt3b', 'arl11', 'nudt19', 'lztr1', 'gria3', 'neu1']
 #Gene set to use for current analysis
 gene_set_name = "Top_50_most_variable_genes" #For Neutrophils, modify this to Neutrophil
 curr_gene_list = gene_list_50_most_variable #For neutrophil, modify this to gene_list_Neutrophil
@@ -140,6 +134,7 @@ gene_subset = [s + '_mRNA' for s in curr_gene_list]
 t1 = 2
 t2 = 4
 t3 = 6
+adata.var_names = pd.Index([g.lower() for g in adata.var_names])
 
 #Subset the data into different time points - includes both barcoded and not barcoded cells (hence, all)
 adata.obs['cell_id'] = adata.obs.index
@@ -147,23 +142,28 @@ adata_t1_all = adata[(adata.obs['Time point'] == t1)].copy()
 adata_t2_all = adata[(adata.obs['Time point'] == t2)].copy()
 adata_t3_all = adata[(adata.obs['Time point'] == t3)].copy()
 
+
 # All cells at time t1 to calculate gene correlation
 def make_all_cells_table(adata_t, timepoint, gene_subset, curr_gene_list):
     df = pd.DataFrame({
         'clone_id': adata_t.obs['clone_id'].values,
-        'cell_id': adata_t.obs['cell_id'].values,
+        'cell_id':  adata_t.obs['cell_id'].values,
     })
-
-    # dummy but consistent fields to match twin format
-    df['pair_id'] = df['cell_id'].astype(str) + f"_single_{timepoint}"
+    df['pair_id']   = df['cell_id'].astype(str) + f"_single_{timepoint}"
     df['replicate'] = 1
     df['time_step'] = timepoint
 
-    # add expression
-    df[gene_subset] = adata_t[df.cell_id, curr_gene_list].X.toarray()
+    expr = pd.DataFrame(
+        adata_t[df.cell_id, [g.lower() for g in curr_gene_list]].X.toarray(),
+        columns=gene_subset,
+        index=df.index
+    )
+    return pd.concat([df, expr], axis=1)
 
-    return df
+import pandas as pd
 
+# verify
+print(adata.var_names[:5])
 gene_subset = [s + '_mRNA' for s in curr_gene_list]
 t1_data_all_cells = make_all_cells_table(
     adata_t1_all, t1, gene_subset, curr_gene_list
@@ -399,9 +399,21 @@ t1_data['time_step'] = np.repeat(t1, len(t1_data))
 t2_data['time_step'] = np.repeat(t2, len(t2_data))
 t3_data['time_step'] = np.repeat(t3, len(t3_data))
 
-t1_data[gene_subset] = adata_t1[t1_data.cell_id, curr_gene_list].X.toarray()
-t2_data[gene_subset] = adata_t2[t2_data.cell_id, curr_gene_list].X.toarray()
-t3_data[gene_subset] = adata_t3[t3_data.cell_id, curr_gene_list].X.toarray()
+# t1_data[gene_subset] = adata_t1[t1_data.cell_id, curr_gene_list].X.toarray()
+# t2_data[gene_subset] = adata_t2[t2_data.cell_id, curr_gene_list].X.toarray()
+# t3_data[gene_subset] = adata_t3[t3_data.cell_id, curr_gene_list].X.toarray()
+
+expr_t1 = pd.DataFrame(adata_t1[t1_data.cell_id, curr_gene_list].X.toarray(),
+                        columns=gene_subset, index=t1_data.index)
+t1_data = pd.concat([t1_data, expr_t1], axis=1)
+
+expr_t2 = pd.DataFrame(adata_t2[t2_data.cell_id, curr_gene_list].X.toarray(),
+                        columns=gene_subset, index=t2_data.index)
+t2_data = pd.concat([t2_data, expr_t2], axis=1)
+
+expr_t3 = pd.DataFrame(adata_t3[t3_data.cell_id, curr_gene_list].X.toarray(),
+                        columns=gene_subset, index=t3_data.index)
+t3_data = pd.concat([t3_data, expr_t3], axis=1)
 
 # ### Create tables for across t twin pairs
 across_t_clones = list(set(adata_t1.obs.clone_id).intersection(adata_t2.obs.clone_id))
@@ -434,12 +446,28 @@ for clone_id in across_t_clones:
 
             pair_counter += 1
 
-across_t_data_t1 = pd.DataFrame(rows_t1)
-across_t_data_t2 = pd.DataFrame(rows_t2)
+base_t1 = pd.DataFrame(rows_t1)
+across_t_data_t1 = pd.concat([
+    base_t1,
+    pd.DataFrame(
+        adata_t1[base_t1['cell_id'], curr_gene_list].X.toarray(),
+        columns=gene_subset,
+        index=base_t1.index
+    )
+], axis=1)
 
-across_t_data_t1[gene_subset] = adata_t1[across_t_data_t1.cell_id, curr_gene_list].X.toarray()
-across_t_data_t2[gene_subset] = adata_t2[across_t_data_t2.cell_id, curr_gene_list].X.toarray()
+base_t2 = pd.DataFrame(rows_t2)
+across_t_data_t2 = pd.concat([
+    base_t2,
+    pd.DataFrame(
+        adata_t2[base_t2['cell_id'], curr_gene_list].X.toarray(),
+        columns=gene_subset,
+        index=base_t2.index
+    )
+], axis=1)
+
 across_t_data = pd.concat([across_t_data_t1, across_t_data_t2])
+
 
 print(f"Number of t1 twins: {int(t1_data.shape[0]/2)}")
 print(f"Number of t2 twins: {int(t2_data.shape[0]/2)}")
@@ -512,109 +540,124 @@ p_val_threshold_scrambled_gene_correlation = 0.02
 show_scrambled_distribution_gene_correlation = False
 z_score_threshold_two_states = 10
 n_shuffles=10000
-
-# # --- Step 1: Pairwise gene-gene correlations at t1: day 2 ---
-pairwise_gene_gene_correlation_matrix_t1 = calculate_pairwise_gene_gene_correlation_matrix(
-    all_t1_measurements, curr_gene_list
-)
-print(pairwise_gene_gene_correlation_matrix_t1)
-no_regulation_t1, potential_regulation_t1, threshold, _ = check_gene_gene_correlation_threshold(
-    all_t1_measurements, pairwise_gene_gene_correlation_matrix_t1, curr_gene_list, n_shuffles = n_shuffles, use_scramble = True, p_val_threshold = p_val_threshold_scrambled_gene_correlation, verbose = show_scrambled_distribution_gene_correlation, n_cores_to_use=10
-)
-
-pairwise_gene_gene_correlation_matrix_t1.to_csv("pairwise_gene_gene_correlation_matrix_t1.csv")
-
-# --- Step 1: Pairwise gene-gene correlations at t2: day 4 ---
-pairwise_gene_gene_correlation_matrix_t2 = calculate_pairwise_gene_gene_correlation_matrix(
-    all_t2_measurements, curr_gene_list
-)
-no_regulation_t2, potential_regulation_t2, _, _= check_gene_gene_correlation_threshold(
-    all_t2_measurements, pairwise_gene_gene_correlation_matrix_t2, curr_gene_list, use_scramble = True, p_val_threshold = p_val_threshold_scrambled_gene_correlation, verbose = show_scrambled_distribution_gene_correlation,  n_cores_to_use=50
-)
-
-pairwise_gene_gene_correlation_matrix_t2.to_csv("pairwise_gene_gene_correlation_matrix_t2.csv")
-
-
-# --- Step 1: Pairwise gene-gene correlations at
-# 
-#  t3: day 6 ---
-pairwise_gene_gene_correlation_matrix_t3 = calculate_pairwise_gene_gene_correlation_matrix(
-    t3_data_all_cells, curr_gene_list
-)
-no_regulation_t3, potential_regulation_t3, _, _ = check_gene_gene_correlation_threshold(
-    t3_data_all_cells, pairwise_gene_gene_correlation_matrix_t3, curr_gene_list, use_scramble = True, p_val_threshold = p_val_threshold_scrambled_gene_correlation, verbose = show_scrambled_distribution_gene_correlation,  n_cores_to_use=50
-)
-
-if plot_correlation_matrices_as_heatmap:
-    plot_matrix_as_heatmap(corr_matrix=pairwise_gene_gene_correlation_matrix_t3, gene_list=curr_gene_list, no_regulation=no_regulation_t3, potential_regulation=potential_regulation_t3,
-        title=f"Gene-gene correlations for {gene_set_name}", add_gene_labels=True, add_time=False, gray_out_no_reg=False, black_out_self = True
-    )
-
-pairwise_gene_gene_correlation_matrix_t3.to_csv("pairwise_gene_gene_correlation_matrix_t3.csv")
-
-# === Combine and save all timepoint results ===
-rows = []
-
-for tp, (no_reg, pot_reg, corr_mat) in {
-    "t1": (no_regulation_t1, potential_regulation_t1, pairwise_gene_gene_correlation_matrix_t1),
-    "t2": (no_regulation_t2, potential_regulation_t2, pairwise_gene_gene_correlation_matrix_t2),
-    "t3": (no_regulation_t3, potential_regulation_t3, pairwise_gene_gene_correlation_matrix_t3),
-}.items():
-
-    all_pairs = set(tuple(sorted(p)) for p in no_reg + pot_reg)
-
-    for g1, g2 in all_pairs:
-        # lookup correlation (try both orders)
-        if g1 in corr_mat.index and g2 in corr_mat.columns:
-            corr_val = corr_mat.loc[g1, g2]
-        elif g2 in corr_mat.index and g1 in corr_mat.columns:
-            corr_val = corr_mat.loc[g2, g1]
-        else:
-            corr_val = None
-
-        pair_sorted = tuple(sorted((g1, g2)))
-        if pair_sorted in [tuple(sorted(p)) for p in pot_reg]:
-            category = "potential_regulation"
-        elif pair_sorted in [tuple(sorted(p)) for p in no_reg]:
-            category = "no_regulation"
-        else:
-            category = "uncategorized"
-
-        rows.append([g1, g2, corr_val, category, tp])
-
-# Create DataFrame
-df = pd.DataFrame(rows, columns=["gene_1", "gene_2", "correlation", "category", "timepoint"])
-
-# Define output filename with timestamp
-outfile = path_to_plot_data / f"gene_pair_results_{gene_set_name}.csv"
-
-# Save file
-df.to_csv(outfile, index=False)
-
-# Print confirmation with readable date/time
-print(f"Saved {len(df)} pairs to {outfile.name}")
-
-# === Load saved CSV ===
+#
+## # --- Step 1: Pairwise gene-gene correlations at t1: day 2 ---
+#pairwise_gene_gene_correlation_matrix_t1 = calculate_pairwise_gene_gene_correlation_matrix(
+#    all_t1_measurements, curr_gene_list
+#)
+#print(pairwise_gene_gene_correlation_matrix_t1)
+#no_regulation_t1, potential_regulation_t1, threshold, _ = check_gene_gene_correlation_threshold(
+#    all_t1_measurements, pairwise_gene_gene_correlation_matrix_t1, curr_gene_list, n_shuffles = n_shuffles, use_scramble = True, p_val_threshold = p_val_threshold_scrambled_gene_correlation, verbose = show_scrambled_distribution_gene_correlation, n_cores_to_use=50
+#)
+#
+#pairwise_gene_gene_correlation_matrix_t1.to_csv("pairwise_gene_gene_correlation_matrix_t1.csv")
+#
+## --- Step 1: Pairwise gene-gene correlations at t2: day 4 ---
+#pairwise_gene_gene_correlation_matrix_t2 = calculate_pairwise_gene_gene_correlation_matrix(
+#    all_t2_measurements, curr_gene_list
+#)
+#no_regulation_t2, potential_regulation_t2, _, _= check_gene_gene_correlation_threshold(
+#    all_t2_measurements, pairwise_gene_gene_correlation_matrix_t2, curr_gene_list, use_scramble = True, p_val_threshold = p_val_threshold_scrambled_gene_correlation, verbose = show_scrambled_distribution_gene_correlation,  n_cores_to_use=50
+#)
+#
+#pairwise_gene_gene_correlation_matrix_t2.to_csv("pairwise_gene_gene_correlation_matrix_t2.csv")
+#
+#
+## --- Step 1: Pairwise gene-gene correlations at
+## 
+##  t3: day 6 ---
+#pairwise_gene_gene_correlation_matrix_t3 = calculate_pairwise_gene_gene_correlation_matrix(
+#    t3_data_all_cells, curr_gene_list
+#)
+#no_regulation_t3, potential_regulation_t3, _, _ = check_gene_gene_correlation_threshold(
+#    t3_data_all_cells, pairwise_gene_gene_correlation_matrix_t3, curr_gene_list, use_scramble = True, p_val_threshold = p_val_threshold_scrambled_gene_correlation, verbose = show_scrambled_distribution_gene_correlation,  n_cores_to_use=50
+#)
+#
+#if plot_correlation_matrices_as_heatmap:
+#    plot_matrix_as_heatmap(corr_matrix=pairwise_gene_gene_correlation_matrix_t3, gene_list=curr_gene_list, no_regulation=no_regulation_t3, potential_regulation=potential_regulation_t3,
+#        title=f"Gene-gene correlations for {gene_set_name}", add_gene_labels=True, add_time=False, gray_out_no_reg=False, black_out_self = True
+#    )
+#
+#pairwise_gene_gene_correlation_matrix_t3.to_csv("pairwise_gene_gene_correlation_matrix_t3.csv")
+#
+## === Combine and save all timepoint results ===
+#rows = []
+#
+#for tp, (no_reg, pot_reg, corr_mat) in {
+#    "t1": (no_regulation_t1, potential_regulation_t1, pairwise_gene_gene_correlation_matrix_t1),
+#    "t2": (no_regulation_t2, potential_regulation_t2, pairwise_gene_gene_correlation_matrix_t2),
+#    "t3": (no_regulation_t3, potential_regulation_t3, pairwise_gene_gene_correlation_matrix_t3),
+#}.items():
+#
+#    all_pairs = set(tuple(sorted(p)) for p in no_reg + pot_reg)
+#
+#    for g1, g2 in all_pairs:
+#        # lookup correlation (try both orders)
+#        if g1 in corr_mat.index and g2 in corr_mat.columns:
+#            corr_val = corr_mat.loc[g1, g2]
+#        elif g2 in corr_mat.index and g1 in corr_mat.columns:
+#            corr_val = corr_mat.loc[g2, g1]
+#        else:
+#            corr_val = None
+#
+#        pair_sorted = tuple(sorted((g1, g2)))
+#        if pair_sorted in [tuple(sorted(p)) for p in pot_reg]:
+#            category = "potential_regulation"
+#        elif pair_sorted in [tuple(sorted(p)) for p in no_reg]:
+#            category = "no_regulation"
+#        else:
+#            category = "uncategorized"
+#
+#        rows.append([g1, g2, corr_val, category, tp])
+#
+## Create DataFrame
+#df = pd.DataFrame(rows, columns=["gene_1", "gene_2", "correlation", "category", "timepoint"])
+#
+## Define output filename with timestamp
+#outfile = path_to_plot_data / f"gene_pair_results_{gene_set_name}.csv"
+#
+## Save file
+#df.to_csv(outfile, index=False)
+#
+## Print confirmation with readable date/time
+#print(f"Saved {len(df)} pairs to {outfile.name}")
+#
+## === Load saved CSV ===
 df = pd.read_csv(path_to_plot_data / f"gene_pair_results_{gene_set_name}.csv")
-
-# === Reconstruct lists and matrices ===
+#
+## === Reconstruct lists and matrices ===
 no_regulation = {}
 potential_regulation = {}
 pairwise_gene_gene_correlation_matrix = {}
 
+# for tp, sub in df.groupby("timepoint"):
+#     # Lists of tuples
+#     no_regulation[tp] = list(zip(sub.loc[sub["category"] == "no_regulation", "gene_1"],
+#                                  sub.loc[sub["category"] == "no_regulation", "gene_2"]))
+#     potential_regulation[tp] = list(zip(sub.loc[sub["category"] == "potential_regulation", "gene_1"],
+#                                         sub.loc[sub["category"] == "potential_regulation", "gene_2"]))
+#     # Pivot to matrix
+#     corr_mat = sub.pivot_table(index="gene_1", columns="gene_2", values="correlation")
+#     # make symmetric since we only stored one order per pair
+#     corr_mat = corr_mat.combine_first(corr_mat.T)
+#     pairwise_gene_gene_correlation_matrix[tp] = corr_mat
+
 for tp, sub in df.groupby("timepoint"):
-    # Lists of tuples
     no_regulation[tp] = list(zip(sub.loc[sub["category"] == "no_regulation", "gene_1"],
                                  sub.loc[sub["category"] == "no_regulation", "gene_2"]))
     potential_regulation[tp] = list(zip(sub.loc[sub["category"] == "potential_regulation", "gene_1"],
                                         sub.loc[sub["category"] == "potential_regulation", "gene_2"]))
-    # Pivot to matrix
-    corr_mat = sub.pivot_table(index="gene_1", columns="gene_2", values="correlation")
-    # make symmetric since we only stored one order per pair
-    corr_mat = corr_mat.combine_first(corr_mat.T)
-    pairwise_gene_gene_correlation_matrix[tp] = corr_mat
 
-# === Extract t1, t2, t3 structures ===
+    # Build symmetric matrix explicitly
+    all_genes = sorted(set(sub["gene_1"]).union(set(sub["gene_2"])))
+    mat = pd.DataFrame(np.nan, index=all_genes, columns=all_genes)
+    for _, row in sub.iterrows():
+        g1, g2, val = row["gene_1"], row["gene_2"], row["correlation"]
+        mat.loc[g1, g2] = val
+        mat.loc[g2, g1] = val  # fill both directions explicitly
+    pairwise_gene_gene_correlation_matrix[tp] = mat
+
+## === Extract t1, t2, t3 structures ===
 no_regulation_t1 = no_regulation["t1"]
 no_regulation_t2 = no_regulation["t2"]
 no_regulation_t3 = no_regulation["t3"]
@@ -634,115 +677,116 @@ for tp in ["t1", "t2", "t3"]:
           f"matrix {pairwise_gene_gene_correlation_matrix[tp].shape}")
 
 # --- Step 2: Twin/random correlations at day 2 ---
-twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1 = calculate_twin_random_pair_correlations(
-    all_t1_measurements, t1_twins, curr_gene_list
-)
-# print(twin_pair_correlation_matrix_t2)
-if plot_correlation_matrices_as_heatmap:
-    plot_matrix_as_heatmap(corr_matrix=twin_pair_correlation_matrix_t1, gene_list=curr_gene_list, no_regulation=no_regulation_t1, potential_regulation=potential_regulation_t1,
-        title=f"Twin pair correlations at time d{t1}", add_gene_labels=True, add_time=False, gray_out_no_reg=True, black_out_self=True
-    )
-
-    plot_matrix_as_heatmap(corr_matrix=random_pair_correlation_matrix_t1, gene_list=curr_gene_list, no_regulation=no_regulation_t1, potential_regulation=potential_regulation_t1,
-        title=f"Random pair correlations across both time points", add_gene_labels=True, add_time=False, time=[t1], gray_out_no_reg=True, black_out_self=True
-    )
-
-# --- Step 3: Classify regulation type: single-state vs multiple-states ---
-multiple_states_gene_pairs_t1, single_state_regulation_t1 = differentiate_single_state_reg_and_multiple_states(
-    all_t1_measurements, potential_regulation_t1, twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1, curr_gene_list, z_score_threshold=z_score_threshold_two_states
-)
-print(multiple_states_gene_pairs_t1, single_state_regulation_t1)
-
-# --- Step 2: Twin/random correlations at day 4 ---
-twin_pair_correlation_matrix_t2, random_pair_correlation_matrix_t2 = calculate_twin_random_pair_correlations(
-    all_t2_measurements, t2_twins, curr_gene_list
-)
-# print(twin_pair_correlation_matrix_t2)
-if plot_correlation_matrices_as_heatmap:
-    plot_matrix_as_heatmap( corr_matrix=twin_pair_correlation_matrix_t2, gene_list=curr_gene_list, no_regulation=no_regulation_t2, potential_regulation=potential_regulation_t2,
-        title=f"Twin pair correlations at time d{t2}", add_gene_labels=True, add_time=False, time=[t2], gray_out_no_reg=True, vmin = -0.4, vmax=0.4, black_out_self=True
-    )
-
-    plot_matrix_as_heatmap( corr_matrix=random_pair_correlation_matrix_t2, gene_list=curr_gene_list, no_regulation=no_regulation_t2, potential_regulation=potential_regulation_t2,
-        title=f"Random pair correlations across both time points", add_gene_labels=True, add_time=False, time=[t2], gray_out_no_reg=True, vmin = -0.4, vmax=0.4, black_out_self=True
-    )
-
-# # --- Step 3: Classify regulation type: single-state vs multiple-states ---
-multiple_states_gene_pairs_t2, single_state_regulation_t2 = differentiate_single_state_reg_and_multiple_states(
-    all_t2_measurements, potential_regulation_t2, twin_pair_correlation_matrix_t2, random_pair_correlation_matrix_t2, curr_gene_list, z_score_threshold=z_score_threshold_two_states
-)
-print(multiple_states_gene_pairs_t2, single_state_regulation_t2)
-
-
-if len(multiple_states_gene_pairs_t1) > 0:
-
-    multiple_states_no_reg, multiple_states_and_reg = identify_reg_if_multiple_states(
-        twin_pair_correlation_matrix_t1,twin_pair_correlation_matrix_t2,random_pair_correlation_matrix_t1,
-        random_pair_correlation_matrix_t2,multiple_states_gene_pairs_t1,curr_gene_list
-        )
-else:
-    multiple_states_no_reg, multiple_states_and_reg = [], []
-
-# ----------------------------------
-# Collect all classified pairs
-# ----------------------------------
-scenario_pair_lists_t2 = {
-    "single-state, no regulation": no_regulation_t2,
-    "single-state, regulation": single_state_regulation_t2,
-    "multiple states":multiple_states_gene_pairs_t2
-}
-
-records_t2 = []
-
-for scenario, pairs in scenario_pair_lists_t2.items():
-    for g1, g2 in pairs:
-        g1, g2 = sorted((g1, g2))   # normalize
-        records_t2.append({
-            "gene_1": g1,
-            "gene_2": g2,
-            "scenario": scenario,
-            "timepoint": "t2"        # optional but strongly recommended
-        })
-
-df_pair_classification_t2 = pd.DataFrame(records_t2)
-
-# sanity check
-assert not df_pair_classification_t2.duplicated(
-    ["gene_1", "gene_2", "timepoint"]
-).any()
-
-df_pair_classification_t2.to_csv(f"{path_to_plot_data}/all_gene_pair_classification_{gene_set_name}_day_4.csv")
-
-# ----------------------------------
-# Collect all classified pairs
-# ----------------------------------
-scenario_pair_lists_t1 = {
-    "single-state, no regulation": no_regulation_t1,
-    "single-state, regulation": single_state_regulation_t1,
-    "multiple states": multiple_states_gene_pairs_t1
-}
-
-records_t1 = []
-
-for scenario, pairs in scenario_pair_lists_t1.items():
-    for g1, g2 in pairs:
-        g1, g2 = sorted((g1, g2))   # normalize
-        records_t1.append({
-            "gene_1": g1,
-            "gene_2": g2,
-            "scenario": scenario,
-            "timepoint": "t1"        # optional but strongly recommended
-        })
-
-df_pair_classification_t1 = pd.DataFrame(records_t1)
-
-# sanity check
-assert not df_pair_classification_t1.duplicated(
-    ["gene_1", "gene_2", "timepoint"]
-).any()
-
-df_pair_classification_t1.to_csv(f"{path_to_plot_data}/all_gene_pair_classification_{gene_set_name}.csv")
-
+#twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1 = calculate_twin_random_pair_correlations(
+#    all_t1_measurements, t1_twins, curr_gene_list
+#)
+## print(twin_pair_correlation_matrix_t2)
+#if plot_correlation_matrices_as_heatmap:
+#    plot_matrix_as_heatmap(corr_matrix=twin_pair_correlation_matrix_t1, gene_list=curr_gene_list, no_regulation=no_regulation_t1, potential_regulation=potential_regulation_t1,
+#        title=f"Twin pair correlations at time d{t1}", add_gene_labels=True, add_time=False, gray_out_no_reg=True, black_out_self=True
+#    )
+#
+#    plot_matrix_as_heatmap(corr_matrix=random_pair_correlation_matrix_t1, gene_list=curr_gene_list, no_regulation=no_regulation_t1, potential_regulation=potential_regulation_t1,
+#        title=f"Random pair correlations across both time points", add_gene_labels=True, add_time=False, time=[t1], gray_out_no_reg=True, black_out_self=True
+#    )
+#
+## --- Step 3: Classify regulation type: single-state vs multiple-states ---
+#multiple_states_gene_pairs_t1, single_state_regulation_t1 = differentiate_single_state_reg_and_multiple_states(
+#    all_t1_measurements, potential_regulation_t1, twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1, curr_gene_list, z_score_threshold=z_score_threshold_two_states
+#)
+#print(multiple_states_gene_pairs_t1, single_state_regulation_t1)
+#
+## --- Step 2: Twin/random correlations at day 4 ---
+#twin_pair_correlation_matrix_t2, random_pair_correlation_matrix_t2 = calculate_twin_random_pair_correlations(
+#    all_t2_measurements, t2_twins, curr_gene_list
+#)
+## print(twin_pair_correlation_matrix_t2)
+#if plot_correlation_matrices_as_heatmap:
+#    plot_matrix_as_heatmap( corr_matrix=twin_pair_correlation_matrix_t2, gene_list=curr_gene_list, no_regulation=no_regulation_t2, potential_regulation=potential_regulation_t2,
+#        title=f"Twin pair correlations at time d{t2}", add_gene_labels=True, add_time=False, time=[t2], gray_out_no_reg=True, vmin = -0.4, vmax=0.4, black_out_self=True
+#    )
+#
+#    plot_matrix_as_heatmap( corr_matrix=random_pair_correlation_matrix_t2, gene_list=curr_gene_list, no_regulation=no_regulation_t2, potential_regulation=potential_regulation_t2,
+#        title=f"Random pair correlations across both time points", add_gene_labels=True, add_time=False, time=[t2], gray_out_no_reg=True, vmin = -0.4, vmax=0.4, black_out_self=True
+#    )
+#
+## # --- Step 3: Classify regulation type: single-state vs multiple-states ---
+#multiple_states_gene_pairs_t2, single_state_regulation_t2 = differentiate_single_state_reg_and_multiple_states(
+#    all_t2_measurements, potential_regulation_t2, twin_pair_correlation_matrix_t2, random_pair_correlation_matrix_t2, curr_gene_list, z_score_threshold=z_score_threshold_two_states
+#)
+#print(multiple_states_gene_pairs_t2, single_state_regulation_t2)
+#
+#
+#if len(multiple_states_gene_pairs_t1) > 0:
+#
+#    multiple_states_no_reg, multiple_states_and_reg = identify_reg_if_multiple_states(
+#        twin_pair_correlation_matrix_t1,twin_pair_correlation_matrix_t2,random_pair_correlation_matrix_t1,
+#        random_pair_correlation_matrix_t2,multiple_states_gene_pairs_t1,curr_gene_list
+#        )
+#else:
+#    multiple_states_no_reg, multiple_states_and_reg = [], []
+#
+## ----------------------------------
+## Collect all classified pairs
+## ----------------------------------
+#scenario_pair_lists_t2 = {
+#    "single-state, no regulation": no_regulation_t2,
+#    "single-state, regulation": single_state_regulation_t2,
+#    "multiple states":multiple_states_gene_pairs_t2
+#}
+#
+#records_t2 = []
+#
+#for scenario, pairs in scenario_pair_lists_t2.items():
+#    for g1, g2 in pairs:
+#        g1, g2 = sorted((g1, g2))   # normalize
+#        records_t2.append({
+#            "gene_1": g1,
+#            "gene_2": g2,
+#            "scenario": scenario,
+#            "timepoint": "t2"        # optional but strongly recommended
+#        })
+#
+#df_pair_classification_t2 = pd.DataFrame(records_t2)
+#
+## sanity check
+#assert not df_pair_classification_t2.duplicated(
+#    ["gene_1", "gene_2", "timepoint"]
+#).any()
+#
+#df_pair_classification_t2.to_csv(f"{path_to_plot_data}/all_gene_pair_classification_{gene_set_name}_day_4.csv")
+#
+## ----------------------------------
+## Collect all classified pairs
+## ----------------------------------
+#scenario_pair_lists_t1 = {
+#    "single-state, no regulation": no_regulation_t1,
+#    "single-state, regulation": single_state_regulation_t1,
+#    "multiple states": multiple_states_gene_pairs_t1
+#}
+#
+#records_t1 = []
+#
+#for scenario, pairs in scenario_pair_lists_t1.items():
+#    for g1, g2 in pairs:
+#        g1, g2 = sorted((g1, g2))   # normalize
+#        records_t1.append({
+#            "gene_1": g1,
+#            "gene_2": g2,
+#            "scenario": scenario,
+#            "timepoint": "t1"        # optional but strongly recommended
+#        })
+#
+#df_pair_classification_t1 = pd.DataFrame(records_t1)
+#
+## sanity check
+#assert not df_pair_classification_t1.duplicated(
+#    ["gene_1", "gene_2", "timepoint"]
+#).any()
+#
+#df_pair_classification_t1.to_csv(f"{path_to_plot_data}/all_gene_pair_classification_{gene_set_name}.csv")
+df_pair_classification_t1 = pd.read_csv(f"{path_to_plot_data}/all_gene_pair_classification_{gene_set_name}.csv")
+df_pair_classification_t2 = pd.read_csv(f"{path_to_plot_data}/all_gene_pair_classification_{gene_set_name}_day_4.csv")
 consistent_pairs = (
     set(potential_regulation_t1)
     & set(potential_regulation_t2)
