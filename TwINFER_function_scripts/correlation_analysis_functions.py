@@ -510,19 +510,24 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
             corr_threshold = np.nanpercentile(np.abs(shuffled_vals), 100 * (1 - p_val_threshold / 2))
             print(f"For gene {gi}, gene {gj}, observed correlation: {corr_val:.4f} with p-value: {p_value:.4f}")
             if verbose:
-                direction_str = "-"
-                plt.figure(figsize=(6, 4))
-                plt.hist(shuffled_vals, bins=50, color="skyblue", alpha=0.7, edgecolor="k")
-                # plt.axvline(current_threshold, color="red", linestyle="--", label=f"threshold={current_threshold:.3f}")
-                # plt.axvline(-1*current_threshold, color="red", linestyle="--")
-                plt.axvline(corr_val, color="black", linestyle="-", label=f"actual={(corr_val):.3f}")
-                plt.title(f"Gene correlation: {gi} {direction_str} {gj}, p-val = {p_value:.3f}")
-                plt.xlabel(r"gene correlation $\rho$")
-                plt.ylabel("number of scrambles")
-                plt.legend()
-                plt.tight_layout()
-                plt.show()
-            
+                try:
+                    direction_str = "-"
+                    plt.figure(figsize=(6, 4))
+                    plt.hist(shuffled_vals, bins=50, color="skyblue", alpha=0.7, edgecolor="k")
+                    # plt.axvline(current_threshold, color="red", linestyle="--", label=f"threshold={current_threshold:.3f}")
+                    # plt.axvline(-1*current_threshold, color="red", linestyle="--")
+                    plt.axvline(corr_val, color="black", linestyle="-", label=f"actual={(corr_val):.3f}")
+                    plt.title(f"Gene correlation: {gi} {direction_str} {gj}, p-val = {p_value:.3f}")
+                    plt.xlabel(r"gene correlation $\rho$")
+                    plt.ylabel("number of scrambles")
+                    plt.legend()
+                    plt.tight_layout()
+                    plt.show()
+                except:
+                    print(f"Error encountered when calculating correlation for Gene correlation: {gi} {direction_str} {gj}")
+                    no_regulation.append((gi, gj))
+                    continue
+                
             if is_significant:
                 gene_pair_name = f"{gi}-{gj}"
                 is_relatively_normal = plot_qq_distribution(shuffled_vals, corr_val, gene_pair_name)
@@ -969,32 +974,36 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
             is_relatively_normal = plot_qq_distribution(shuffled_vals, actual_corr, gene_pair_name)
             print(f"{gene_pair_name}: normality of null: {is_relatively_normal}")
         if verbose:
-            print(f"{gene_pair_name}: actual = {actual_corr}, p-value = {p_value}")
-            plt.figure(figsize=(6, 4))
+            try:
+                print(f"{gene_pair_name}: actual = {actual_corr}, p-value = {p_value}")
+                plt.figure(figsize=(6, 4))
 
-            plt.hist(
-                shuffled_vals,
-                bins=40,
-                color="lightgray",
-                edgecolor="black"
-            )
+                plt.hist(
+                    shuffled_vals,
+                    bins=40,
+                    color="lightgray",
+                    edgecolor="black"
+                )
 
-            # Actual correlation line
-            plt.axvline(
-                actual_corr,
-                color="blue",
-                linestyle="-",
-                linewidth=2,
-                label=f"actual = {actual_corr:.4g}"
-            )
+                # Actual correlation line
+                plt.axvline(
+                    actual_corr,
+                    color="blue",
+                    linestyle="-",
+                    linewidth=2,
+                    label=f"actual = {actual_corr:.4g}"
+                )
 
-            plt.xlabel("Shuffled Spearman correlation")
-            plt.ylabel("number of scrambles")
-            plt.title(f"Null distribution: {gene_1} → {gene_2}")
-            plt.legend(frameon=False)
+                plt.xlabel("Shuffled Spearman correlation")
+                plt.ylabel("number of scrambles")
+                plt.title(f"Null distribution: {gene_1} → {gene_2}")
+                plt.legend(frameon=False)
 
-            plt.tight_layout()
-            plt.show()
+                plt.tight_layout()
+                plt.show()
+            except:
+                    print(f"Error encountered when calculating correlation for Gene correlation: {gene_1} -> {gene_2}")
+                    continue
         # Check if actual correlation crosses threshold
         if is_significant and is_relatively_normal:
             significant_edges.append((gene_1, gene_2))    
