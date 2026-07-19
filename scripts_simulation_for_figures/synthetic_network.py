@@ -32,8 +32,8 @@ base_configs = [
         'twin_simulation_time_after_division': 48,
         'twin_measurement_resolution': 1,
         "path_to_connectivity_matrix": "/home/gzu5140/Keerthana_b1042/TwINFER/input_data/cycle.txt", #path to the connectivity matrix specifying the GRN to simulate
-        "param_csv": f"/home/gzu5140/Keerthana_b1042/TwINFER/code/TwINFER/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
-        "rows_to_use": [[0]*12],
+        "param_csv": f"/home/gzu5140/Keerthana_b1042/TwINFER/input_data/network_sweep/parameters.csv", #Path to the parameters for all genes and interaction terms
+        "rows_to_use": [[0]*6],
         "output_folder": f"{path_to_output_folder}",
         "log_file": f"{path_to_output_folder}/logs/cycle.jsonl",
         "type": "cycle",

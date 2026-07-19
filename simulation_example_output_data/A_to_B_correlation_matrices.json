@@ -1,0 +1,117 @@
+{
+  "all_gene_pairs": [
+    [
+      "gene_1",
+      "gene_1"
+    ],
+    [
+      "gene_1",
+      "gene_2"
+    ],
+    [
+      "gene_2",
+      "gene_1"
+    ],
+    [
+      "gene_2",
+      "gene_2"
+    ]
+  ],
+  "gene_lists": {
+    "no_regulation": [],
+    "single_state_regulation": [
+      [
+        "gene_1",
+        "gene_2"
+      ]
+    ],
+    "multiple_states_no_reg": [],
+    "multiple_states_and_reg": []
+  },
+  "potential_regulation": [
+    [
+      "gene_1",
+      "gene_2"
+    ]
+  ],
+  "final_directed_edges": [
+    [
+      "gene_2",
+      "gene_2"
+    ],
+    [
+      "gene_1",
+      "gene_2"
+    ]
+  ],
+  "direction_matrix": {
+    "gene_1": {
+      "gene_1": 0.020328341985481682,
+      "gene_2": 0.0
+    },
+    "gene_2": {
+      "gene_1": 0.15185526901672028,
+      "gene_2": 0.15810229428458974
+    }
+  },
+  "unfiltered_direction_matrix": {
+    "gene_1": {
+      "gene_1": 0.020328341985481682,
+      "gene_2": 0.0
+    },
+    "gene_2": {
+      "gene_1": 0.15185526901672028,
+      "gene_2": 0.15810229428458974
+    }
+  },
+  "pairwise_gene_gene_correlation_matrix": {
+    "gene_1": {
+      "gene_1": 1.0,
+      "gene_2": 0.053058966571979435
+    },
+    "gene_2": {
+      "gene_1": 0.05305896657197944,
+      "gene_2": 1.0
+    }
+  },
+  "twin_pair_correlation_matrix_t2": {
+    "gene_1": {
+      "gene_1": 1.0,
+      "gene_2": 0.07521609905076587
+    },
+    "gene_2": {
+      "gene_1": 0.07521609905076587,
+      "gene_2": 0.9999999999999999
+    }
+  },
+  "random_pair_correlation_matrix_t2": {
+    "gene_1": {
+      "gene_1": 1.0,
+      "gene_2": 0.08162566011165945
+    },
+    "gene_2": {
+      "gene_1": 0.08162566011165945,
+      "gene_2": 1.0
+    }
+  },
+  "twin_pair_correlation_matrix_t1": {
+    "gene_1": {
+      "gene_1": 1.0,
+      "gene_2": -0.01163120026918609
+    },
+    "gene_2": {
+      "gene_1": -0.01163120026918609,
+      "gene_2": 1.0
+    }
+  },
+  "random_pair_correlation_matrix_t1": {
+    "gene_1": {
+      "gene_1": 1.0,
+      "gene_2": 0.08162566011165945
+    },
+    "gene_2": {
+      "gene_1": 0.08162566011165945,
+      "gene_2": 1.0
+    }
+  }
+}

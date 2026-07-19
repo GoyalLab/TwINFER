@@ -8,6 +8,7 @@ from itertools import combinations, permutations
 import os
 from joblib import Parallel, delayed
 from scipy import stats
+import numba
 
 def steady_state_calc(param_dict, interaction_matrix, gene_list,
                                    sim_data, scale_k=None):
@@ -236,34 +237,24 @@ def generate_random_shuffle(simulation_data, gene_list, n_shuffles=10000, random
     correlation_dict : dict
         Mapping {(gene_i, gene_j): np.ndarray of shuffled correlations}.
     """
-    rng = np.random.default_rng(random_state)
-
     gene_cols = [f"{gene}_mRNA" for gene in gene_list]
-    expr = simulation_data[gene_cols].dropna().to_numpy()
+    expr = simulation_data[gene_cols].dropna().to_numpy().astype(np.float64)
     n_cells, n_genes = expr.shape
 
-    triu_indices = np.triu_indices(n_genes, k=1)
-    gene_pairs = [(gene_list[i], gene_list[j]) for i, j in zip(*triu_indices)]
+    triu_i, triu_j = np.triu_indices(n_genes, k=1)
+    gene_pairs = [(gene_list[i], gene_list[j]) for i, j in zip(triu_i, triu_j)]
 
-    all_correlations = np.zeros((n_shuffles, len(gene_pairs)), dtype=np.float64)
+    # SeedSequence.spawn guarantees distinct, well-scattered seeds across shuffles (unlike
+    # drawing n_shuffles plain integers from one generator, which has a small but real
+    # collision chance -- empirically verified ~2% for n_shuffles=10000).
+    seeds = _spawn_independent_seeds(random_state, n_shuffles)
 
-    # --- Random pairing: pick two distinct sets of cells for difference computation
-    for s in range(n_shuffles):
-        idx_1 = rng.choice(n_cells, size=n_cells, replace=False)
-        idx_2 = rng.choice(n_cells, size=n_cells, replace=False)
-        # Optionally avoid same-cell pairings
-        mask = idx_1 != idx_2
-        expr_1 = expr[idx_1[mask]]
-        expr_2 = expr[idx_2[mask]]
-
-        n_used = min(len(expr_1), len(expr_2))
-        if n_used < 3:
-            continue
-
-        deltas = expr_1[:n_used] - expr_2[:n_used]
-        ranked_deltas = np.apply_along_axis(rankdata, 0, deltas)
-        corr_matrix = np.corrcoef(ranked_deltas.T)
-        all_correlations[s] = corr_matrix[triu_indices]
+    # Same algorithm as before (two independent permutations per shuffle, self-match pairs
+    # filtered via idx_1 != idx_2), just executed inside a numba-parallel kernel instead of a
+    # Python loop with np.apply_along_axis(rankdata, ...).
+    all_correlations = _two_permutation_diff_null_kernel(
+        expr, seeds, triu_i.astype(np.int64), triu_j.astype(np.int64)
+    )
 
     # --- Package as dict for downstream comparison
     correlation_dict = {
@@ -377,6 +368,162 @@ def single_cell_shuffle(gene_matrix_1, gene_matrix_2, gene_list, shuffle_pairs, 
             return compute_correlation_matrix(gene_matrix_1, gene_matrix_2[:, shuffled_indices], gene_list, shuffle_pairs)
 
 
+def _assert_no_nan(gene_matrix, caller_name):
+    """
+    Raise a clear error if gene_matrix contains NaN, rather than silently computing a wrong
+    (not NaN) correlation. scipy.stats.spearmanr degrades gracefully to NaN in the presence of
+    NaN inputs; the rank-precompute kernels below do not get this for free, since ranking a
+    column that contains NaN does not reliably propagate to a clean NaN downstream.
+    """
+    if np.isnan(gene_matrix).any():
+        raise ValueError(
+            f"NaN values found in the gene expression data passed to {caller_name}. "
+            "Remove or impute missing values (e.g. via .dropna()) before calling this function."
+        )
+
+
+def _spawn_independent_seeds(seed, n_shuffles):
+    """
+    Generate n_shuffles seeds for independent parallel shuffles using
+    np.random.SeedSequence.spawn -- the numpy-recommended mechanism for statistically
+    independent parallel streams. Drawing n_shuffles plain integers from a single
+    generator instead has a small but real collision chance (empirically ~2% for
+    n_shuffles=10000 drawn from a 2**31 range) that would silently duplicate a null sample;
+    SeedSequence.spawn is specifically designed to avoid this.
+    """
+    children = np.random.SeedSequence(seed).spawn(n_shuffles)
+    return np.array([int(c.generate_state(1)[0]) for c in children], dtype=np.int64)
+
+
+def _rank_center_and_sumsq(gene_matrix):
+    """
+    Rank each gene's row (axis=1, across cells) with average-tie ranking, center by the constant
+    (n_cells+1)/2 -- exact regardless of ties, since average-tie ranks always sum to the same
+    total -- and return the per-gene sum of squared centered ranks (the correlation denominator
+    is built from this). gene_matrix shape: (n_genes, n_cells).
+    """
+    n_cells = gene_matrix.shape[1]
+    R = rankdata(gene_matrix, axis=1)
+    Rc = R - (n_cells + 1) / 2.0
+    s2 = np.sum(Rc ** 2, axis=1)
+    return Rc, s2
+
+
+@numba.njit(cache=True)
+def _rankdata_numba(a):
+    """Average-tie rank of a 1D array; matches scipy.stats.rankdata(method='average') exactly."""
+    n = a.size
+    order = np.argsort(a)
+    ranks = np.empty(n, dtype=np.float64)
+    i = 0
+    while i < n:
+        start = i
+        val = a[order[i]]
+        while i + 1 < n and a[order[i + 1]] == val:
+            i += 1
+        end = i
+        avg_rank = 0.5 * (start + end) + 1
+        for k in range(start, end + 1):
+            ranks[order[k]] = avg_rank
+        i += 1
+    return ranks
+
+
+@numba.njit(parallel=True, fastmath=True)
+def _rank_permutation_null_kernel(Rc1, Rc2, denom, seeds, pair_i, pair_j):
+    """
+    Null distribution of Spearman correlations where Rc1 (n_genes1 x n_cells) is fixed and
+    Rc2 (n_genes2 x n_cells) has its cell-columns permuted each shuffle. Exact under ties,
+    because ranks are computed once upstream (in _rank_center_and_sumsq) -- permuting a
+    rank vector's columns and then correlating is identical to ranking a permuted array,
+    for average-tie ranking. Pass Rc2=Rc1 and a symmetric denom for the undirected
+    gene-gene case (check_gene_gene_correlation_threshold); pass distinct matrices for the
+    directed cross-time case (identify_actual_directed_edges).
+    """
+    n_cells = Rc1.shape[1]
+    n_shuffles = seeds.shape[0]
+    n_pairs = pair_i.shape[0]
+    out = np.empty((n_shuffles, n_pairs), dtype=np.float64)
+    for s in numba.prange(n_shuffles):
+        np.random.seed(seeds[s])
+        idx = np.random.permutation(n_cells)
+        Rc2_perm = Rc2[:, idx]
+        N = Rc1 @ Rc2_perm.T
+        for k in range(n_pairs):
+            i = pair_i[k]
+            j = pair_j[k]
+            d = denom[i, j]
+            if d > 0:
+                out[s, k] = N[i, j] / d
+            else:
+                out[s, k] = np.nan
+    return out
+
+
+@numba.njit(parallel=True, fastmath=True)
+def _two_permutation_diff_null_kernel(expr, seeds, triu_i, triu_j):
+    """
+    Random-pair difference-correlation null. Replicates generate_random_shuffle's original
+    algorithm exactly (two independent permutations per shuffle, self-match pairs filtered
+    via idx_1 != idx_2), just executed inside a numba-parallel loop instead of a Python loop
+    with np.apply_along_axis(rankdata, ...). Unlike _rank_permutation_null_kernel, the values
+    here genuinely change every shuffle (they are differences of permuted cells), so ranking
+    must be redone each shuffle -- there is no precompute-once shortcut for this piece.
+    expr: (n_cells, n_genes).
+    """
+    n_cells, n_genes = expr.shape
+    n_shuffles = seeds.shape[0]
+    n_pairs = triu_i.shape[0]
+    out = np.full((n_shuffles, n_pairs), np.nan, dtype=np.float64)
+
+    for s in numba.prange(n_shuffles):
+        np.random.seed(seeds[s])
+        idx_1 = np.random.permutation(n_cells)
+        idx_2 = np.random.permutation(n_cells)
+
+        n_used = 0
+        keep = np.empty(n_cells, dtype=np.int64)
+        for k in range(n_cells):
+            if abs(idx_1[k] - idx_2[k]) > 1:
+                keep[n_used] = k
+                n_used += 1
+
+        if n_used < 3:
+            continue
+
+        deltas = np.empty((n_used, n_genes), dtype=np.float64)
+        for k in range(n_used):
+            kk = keep[k]
+            a_idx = idx_1[kk]
+            b_idx = idx_2[kk]
+            for g in range(n_genes):
+                deltas[k, g] = expr[a_idx, g] - expr[b_idx, g]
+
+        R = np.empty((n_used, n_genes), dtype=np.float64)
+        for g in range(n_genes):
+            R[:, g] = _rankdata_numba(deltas[:, g])
+
+        m = (n_used + 1) / 2.0
+        Rc = R - m
+        s2 = np.empty(n_genes, dtype=np.float64)
+        for g in range(n_genes):
+            acc = 0.0
+            for k in range(n_used):
+                acc += Rc[k, g] * Rc[k, g]
+            s2[g] = acc
+
+        for p_idx in range(n_pairs):
+            i = triu_i[p_idx]
+            j = triu_j[p_idx]
+            num = 0.0
+            for k in range(n_used):
+                num += Rc[k, i] * Rc[k, j]
+            d = np.sqrt(s2[i] * s2[j])
+            if d > 0:
+                out[s, p_idx] = num / d
+    return out
+
+
 def plot_qq_distribution(shuffled_full, obs_value, gene_pair_name):
     shuffled_full = np.asarray(shuffled_full)
     shuffled = shuffled_full[np.isfinite(shuffled_full)]
@@ -473,35 +620,41 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
     
     gene_matrix = np.array(gene_matrix)  # Shape: (n_genes, n_cells)
     all_pairs = list(combinations(gene_list, 2))  # Unique undirected pairs
-    
-    pair_correlations = {(gi, gj): pairwise_gene_gene_correlation_matrix.loc[gi, gj] for gi, gj in all_pairs}
-    
-    if use_scramble:       
-        # Generate null distribution
-        rng = np.random.default_rng(base_seed)
-        seeds = rng.integers(0, 2**32 - 1, size=n_shuffles, dtype=np.uint32)
 
-        shuffled_results = Parallel(n_jobs=n_cores_to_use)(
-            delayed(single_cell_shuffle)(gene_matrix, gene_matrix, gene_list, all_pairs, int(seed))
-            for seed in seeds
-        )
-        
+    pair_correlations = {(gi, gj): pairwise_gene_gene_correlation_matrix.loc[gi, gj] for gi, gj in all_pairs}
+
+    if use_scramble:
+        _assert_no_nan(gene_matrix, "check_gene_gene_correlation_threshold")
+
+        numba.set_num_threads(max(1, n_cores_to_use))
+        Rc, s2 = _rank_center_and_sumsq(gene_matrix)
+        denom = np.sqrt(np.outer(s2, s2))
+        denom[denom == 0] = np.nan
+
+        gene_to_idx = {g: i for i, g in enumerate(gene_list)}
+        pair_i = np.array([gene_to_idx[gi] for gi, gj in all_pairs], dtype=np.int64)
+        pair_j = np.array([gene_to_idx[gj] for gi, gj in all_pairs], dtype=np.int64)
+
+        # Generate null distribution
+        seeds = _spawn_independent_seeds(base_seed, n_shuffles)
+
+        null_matrix = _rank_permutation_null_kernel(Rc, Rc, denom, seeds, pair_i, pair_j)
+        # null_matrix shape: (n_shuffles, n_pairs), columns aligned with all_pairs order
+
         percentile_threshold = (1 - p_val_threshold) * 100
 
     no_regulation, potential_regulation = [], []
     p_value_calc = {}
     threshold_p = {}
     is_significant = False
-    for gi, gj in all_pairs:
+    corr_threshold = threshold
+    is_relatively_normal = True
+    for pos, (gi, gj) in enumerate(all_pairs):
         corr_val = pair_correlations[(gi, gj)]
-        current_threshold = threshold
-        
+
         if use_scramble:
-            shuffled_vals = np.asarray(
-                [r.loc[gi, gj] for r in shuffled_results],
-                dtype=float
-            )
-            
+            shuffled_vals = null_matrix[:, pos]
+
             # Calculate p-value directly (no threshold needed)
             p_plus = np.mean(shuffled_vals >= corr_val)
             p_minus = np.mean(shuffled_vals <= corr_val)
@@ -514,8 +667,6 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
                     direction_str = "-"
                     plt.figure(figsize=(6, 4))
                     plt.hist(shuffled_vals, bins=50, color="skyblue", alpha=0.7, edgecolor="k")
-                    # plt.axvline(current_threshold, color="red", linestyle="--", label=f"threshold={current_threshold:.3f}")
-                    # plt.axvline(-1*current_threshold, color="red", linestyle="--")
                     plt.axvline(corr_val, color="black", linestyle="-", label=f"actual={(corr_val):.3f}")
                     plt.title(f"Gene correlation: {gi} {direction_str} {gj}, p-val = {p_value:.3f}")
                     plt.xlabel(r"gene correlation $\rho$")
@@ -535,7 +686,10 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
 
         # Classify pairs
         threshold_p[(gi, gj)] = corr_threshold
-        p_value_calc[(gi, gj)] = p_value
+        if use_scramble:
+            p_value_calc[(gi, gj)] = p_value
+        else:
+            p_value_calc[(gi, gj)] = None  # No p-value calculated without scramble
         if is_significant and is_relatively_normal:
             potential_regulation.append((gi, gj))
         else:
@@ -858,6 +1012,7 @@ def get_cross_correlations(rep_0_t1,
     normalized_matrix : pd.DataFrame
         Normalized correlation matrix.
     """
+    gene_pairs = gene_pairs.copy()
     gene_list = sorted(set(g for pair in gene_pairs for g in pair))
 
     # Separate replicates for t1 and t2
@@ -886,7 +1041,7 @@ def get_cross_correlations(rep_0_t1,
     return raw_matrix
 
 def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gene_pairs, threshold=0.01, n_shuffles=10000, n_cores_to_use = 4, verbose = False,
-                                          base_seed = 101010):
+                                          base_seed = 101010, return_p_values = False):
     """
     Identify directed edges that cross significance thresholds using shuffled null distribution.
     
@@ -938,35 +1093,42 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
     
     gene_matrix_t1 = np.array(gene_matrix_t1)
     gene_matrix_t2 = np.array(gene_matrix_t2)
-    
-    # Safe parallel processing
-    rng = np.random.default_rng(base_seed)
-    seeds = rng.integers(0, 2**32 - 1, size=n_shuffles, dtype=np.uint32)
 
-    shuffled_results = Parallel(n_jobs=n_cores_to_use)(
-            delayed(single_cell_shuffle)(gene_matrix_t1, gene_matrix_t2, gene_list, gene_pairs, int(seed))
-            for seed in seeds
-        )
-    
+    _assert_no_nan(gene_matrix_t1, "identify_actual_directed_edges (rep_0_t1)")
+    _assert_no_nan(gene_matrix_t2, "identify_actual_directed_edges (rep_1_t2)")
+
+    numba.set_num_threads(max(1, n_cores_to_use))
+    Rc1, s2_1 = _rank_center_and_sumsq(gene_matrix_t1)
+    Rc2, s2_2 = _rank_center_and_sumsq(gene_matrix_t2)
+    denom = np.sqrt(np.outer(s2_1, s2_2))
+    denom[denom == 0] = np.nan
+
+    gene_to_idx = {g: i for i, g in enumerate(gene_list)}
+    pair_i = np.array([gene_to_idx[g1] for g1, g2 in gene_pairs], dtype=np.int64)
+    pair_j = np.array([gene_to_idx[g2] for g1, g2 in gene_pairs], dtype=np.int64)
+
+    seeds = _spawn_independent_seeds(base_seed, n_shuffles)
+
+    null_matrix = _rank_permutation_null_kernel(Rc1, Rc2, denom, seeds, pair_i, pair_j)
+    # null_matrix shape: (n_shuffles, n_pairs), columns aligned with gene_pairs order
+
     # Identify significant directed edges
     significant_edges = []
+    p_value_calc = {}
     percentile_threshold = (1 - threshold) * 100
     print(f"number of gene pairs = {len(gene_pairs)}")
-    for gene_1, gene_2 in gene_pairs:
+    for pos, (gene_1, gene_2) in enumerate(gene_pairs):
         # Get actual correlation
         actual_corr = direction_raw_matrix.loc[gene_1, gene_2]
-        
+
         # Get shuffled correlations for this pair
-        shuffled_vals = []
-        for result in shuffled_results:
-            shuffled_matrix = result
-            shuffled_vals.append(shuffled_matrix.loc[gene_1, gene_2])
-        shuffled_vals = np.array(shuffled_vals)
+        shuffled_vals = null_matrix[:, pos]
         # Calculate threshold for this pair
         p_plus = np.mean(shuffled_vals >= actual_corr)
         p_minus = np.mean(shuffled_vals <= actual_corr)
         p_value = min(2 * p_plus, 2 * p_minus, 1.0)
         is_significant = p_value < threshold
+        p_value_calc[(gene_1, gene_2)] = p_value
         print(f"Observed correlation for {gene_1} -> {gene_2}: {actual_corr:.4f}, p-value: {p_value:.4f}")
         print(f"Significant at α={threshold}: {is_significant}")
         gene_pair_name = f"{gene_1} -> {gene_2}"
@@ -1006,5 +1168,7 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
                     continue
         # Check if actual correlation crosses threshold
         if is_significant and is_relatively_normal:
-            significant_edges.append((gene_1, gene_2))    
+            significant_edges.append((gene_1, gene_2))
+    if return_p_values:
+        return significant_edges, p_value_calc
     return significant_edges

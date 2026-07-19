@@ -54,7 +54,8 @@ def infer_with_twinfer(path_to_simulation_file= None,
                         return_gene_corr_thresholds = False,
                         match_sim_details = True,
                         gene_list_given = None,
-                        n_cores = 4):
+                        n_cores = 4,
+                        ranked_list = False):
     """
     Infer gene regulatory interactions from simulated or experimental twin-cell data
     using the TwINFER pipeline.
@@ -126,6 +127,13 @@ def infer_with_twinfer(path_to_simulation_file= None,
 
     remove_twin_structure : bool, default=False
         If True, scrambles twin structure and random pairs of cells are labelled as twins instead.
+    ranked_list : bool, default=False
+        If True, adds "ranked_edge_list" to the returned dict: a DataFrame with columns
+        gene_1, gene_2, directional_correlation, p_val, built from every non-zero entry
+        of unfiltered_direction_matrix (self-pairs excluded), for whichever candidate set
+        infer_direction_for_which_edges actually tested this call (single-state,
+        all-potential-regulation, or all-edges -- nothing extra is computed). Ranked by
+        p_val ascending, with |directional_correlation| as the tie-break.
     Returns
     -------
     dict
@@ -321,7 +329,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
             all_t1_measurements, gene_list
         )
            
-        no_regulation, potential_regulation, gene_corr_thresholds = check_gene_gene_correlation_threshold(
+        no_regulation, potential_regulation, gene_corr_thresholds, p_values = check_gene_gene_correlation_threshold(
             all_t2_measurements, pairwise_gene_gene_correlation_matrix, gene_list,  threshold = threshold_gene_gene_corr, use_scramble = True, 
             p_val_threshold = p_val_threshold_scrambled_gene_correlation, verbose = show_scrambled_distribution_gene_correlation, n_cores_to_use = n_cores, return_gene_corr_thresholds = return_gene_corr_thresholds
         )
@@ -386,6 +394,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
         print_summary(no_regulation, single_state_regulation, multiple_states_no_reg, multiple_states_and_reg)
     direction_matrix = pd.DataFrame()
     final_directed_edges = set()
+    directed_p_values = {}
     # --- Step 5: Infer directionality of single-state interactions ---
     if infer_direction_for_which_edges == "single-state" :
         if len(single_state_regulation) > 0:
@@ -401,9 +410,9 @@ def infer_with_twinfer(path_to_simulation_file= None,
             all_gene_pairs = list(all_gene_pairs)
 
             direction_matrix = get_cross_correlations(across_t_twin1, across_t_twin2, gene_pairs=all_gene_pairs)
-            
-            final_directed_edges = identify_actual_directed_edges(across_t_twin1, across_t_twin2, direction_matrix, gene_pairs=all_gene_pairs, threshold = p_value_threshold_cross_correlation, n_cores_to_use = n_cores, verbose = True)
-        
+
+            final_directed_edges, directed_p_values = identify_actual_directed_edges(across_t_twin1, across_t_twin2, direction_matrix, gene_pairs=all_gene_pairs, threshold = p_value_threshold_cross_correlation, n_cores_to_use = n_cores, verbose = True, return_p_values = True)
+
     elif infer_direction_for_which_edges == "all-potential-regulation":
         if len(single_state_regulation) > 0 or len(multiple_states_and_reg) > 0 or len(multiple_states_gene_pairs) > 0:
                 combined_list = single_state_regulation + multiple_states_and_reg + multiple_states_no_reg
@@ -417,7 +426,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
                 all_gene_pairs_all_reg = list(all_gene_pairs_all_reg)
 
                 direction_matrix = get_cross_correlations(across_t_twin1, across_t_twin2, gene_pairs=all_gene_pairs_all_reg)
-                final_directed_edges = identify_actual_directed_edges(across_t_twin1, across_t_twin2, direction_matrix, gene_pairs=all_gene_pairs_all_reg, threshold = p_value_threshold_cross_correlation, n_cores_to_use = n_cores, verbose = True)
+                final_directed_edges, directed_p_values = identify_actual_directed_edges(across_t_twin1, across_t_twin2, direction_matrix, gene_pairs=all_gene_pairs_all_reg, threshold = p_value_threshold_cross_correlation, n_cores_to_use = n_cores, verbose = True, return_p_values = True)
         else:
                 final_directed_edges = []
                 direction_matrix = pd.DataFrame(
@@ -427,7 +436,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
                 )
     else:
         direction_matrix = get_cross_correlations(across_t_twin1, across_t_twin2, gene_pairs=all_gene_pairs)
-        final_directed_edges = identify_actual_directed_edges(across_t_twin1, across_t_twin2, direction_matrix, gene_pairs=all_gene_pairs, threshold = p_value_threshold_cross_correlation, n_cores_to_use = n_cores, verbose = True)
+        final_directed_edges, directed_p_values = identify_actual_directed_edges(across_t_twin1, across_t_twin2, direction_matrix, gene_pairs=all_gene_pairs, threshold = p_value_threshold_cross_correlation, n_cores_to_use = n_cores, verbose = True, return_p_values = True)
     print(final_directed_edges)
     # print(pre_threshold_direction_matrix)
     direction_matrix = direction_matrix.reindex(
@@ -435,7 +444,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
     columns=gene_list,
     fill_value=0
     )
-    unfiltered_direction_matrix = direction_matrix
+    unfiltered_direction_matrix = direction_matrix.copy()
     for i in direction_matrix.index:
         for j in direction_matrix.columns:
             if i != j and (i, j) not in final_directed_edges:
@@ -498,14 +507,45 @@ def infer_with_twinfer(path_to_simulation_file= None,
     #             plot_network(direction_matrix, gene_list, final_directed_edges)
     #         else:
     #             plot_network(direction_matrix, gene_list, final_directed_edges)
+
+    # --- Optional: ranked edge list from every non-zero entry of unfiltered_direction_matrix ---
+    # Reflects whichever candidate set was actually tested this call (single-state,
+    # all-potential-regulation, or all-edges) -- nothing is recomputed here, just
+    # reshaped. Self-pairs (gene_1 == gene_2) are excluded: they're not regulatory
+    # edges. Ranked by p-value ascending (most significant first), with |correlation|
+    # magnitude as the tie-break for pairs sharing the same p-value (a real
+    # occurrence at a fixed number of shuffles, since p-values have a resolution
+    # floor of ~1/n_shuffles).
+    ranked_edge_list = None
+    if ranked_list:
+        rank_rows = []
+        for (gi, gj), p in (directed_p_values or {}).items():
+            if gi == gj:
+                continue
+            if gi not in unfiltered_direction_matrix.index or gj not in unfiltered_direction_matrix.columns:
+                continue
+            score = unfiltered_direction_matrix.loc[gi, gj]
+            if pd.isna(score) or score == 0:
+                continue
+            rank_rows.append({"gene_1": gi, "gene_2": gj, "directional_correlation": score, "p_val": p})
+        ranked_edge_list = pd.DataFrame(rank_rows, columns=["gene_1", "gene_2", "directional_correlation", "p_val"])
+        if not ranked_edge_list.empty:
+            ranked_edge_list["_abs_corr"] = ranked_edge_list["directional_correlation"].abs()
+            ranked_edge_list = (
+                ranked_edge_list.sort_values(["p_val", "_abs_corr"], ascending=[True, False])
+                .drop(columns="_abs_corr")
+                .reset_index(drop=True)
+            )
+
     try:
         result =  {
             "all_gene_pairs": all_gene_pairs,
             "gene_lists": {"no_regulation":no_regulation, "single_state_regulation":single_state_regulation, "multiple_states_no_reg": multiple_states_no_reg, "multiple_states_and_reg": multiple_states_and_reg},
             "potential_regulation": potential_regulation,
             "final_directed_edges": final_directed_edges,
-            "direction_matrix": direction_matrix, 
-            "unfiltered_direction_matrix": unfiltered_direction_matrix, 
+            "directed_p_values": directed_p_values,
+            "direction_matrix": direction_matrix,
+            "unfiltered_direction_matrix": unfiltered_direction_matrix,
             "pairwise_gene_gene_correlation_matrix": pairwise_gene_gene_correlation_matrix,
             "twin_pair_correlation_matrix_t2": twin_pair_correlation_matrix_t2,
             "random_pair_correlation_matrix_t2": random_pair_correlation_matrix_t2,
@@ -518,8 +558,9 @@ def infer_with_twinfer(path_to_simulation_file= None,
             "gene_lists": {"no_regulation":no_regulation, "single_state_regulation":single_state_regulation, "multiple_states_no_reg": multiple_states_no_reg, "multiple_states_and_reg": multiple_states_and_reg},
             "potential_regulation": potential_regulation,
             "final_directed_edges": None,
-            "direction_matrix": None, 
-            "unfiltered_direction_matrix": None, 
+            "directed_p_values": None,
+            "direction_matrix": None,
+            "unfiltered_direction_matrix": None,
             "pairwise_gene_gene_correlation_matrix": pairwise_gene_gene_correlation_matrix,
             "random_pair_correlation_matrix_t2": random_pair_correlation_matrix_t2,
             "twin_pair_correlation_matrix_t2": twin_pair_correlation_matrix_t2,
@@ -529,4 +570,6 @@ def infer_with_twinfer(path_to_simulation_file= None,
     if return_gene_corr_thresholds:
         result['gene_corr_thresholds'] = gene_corr_thresholds
         result['gene_gene_corr_p_values'] = p_values
+    if ranked_list:
+        result['ranked_edge_list'] = ranked_edge_list
     return result
