@@ -579,13 +579,14 @@ def resolve_all_k_add(param_dict, connectivity_matrix, gene_list,
     writing {k_add_...} keys.
 
     Genes with 1 regulator, or 2 same-sign regulators, use a single per-gene
-    value ({k_add_<gene>}), resolved in order: k_add_list -> existing/CSV
+    value ({k_add_<gene>}), resolved in order: k_add_list -> k_add_matrix
+    (all regulators must be specified; averaged if 2) -> existing/CSV direct
     value in param_dict -> average of per-edge CSV values -> sign-based
     default.
 
     Genes with 2 opposite-sign regulators, or >2 regulators, use a per-edge
-    value ({k_add_<src>_to_<tgt>}), resolved in order: existing/CSV value in
-    param_dict -> k_add_matrix -> sign-based default.
+    value ({k_add_<src>_to_<tgt>}), resolved in order: k_add_matrix ->
+    existing/CSV value in param_dict -> sign-based default.
 
     Args:
         param_dict (dict): Parameter dictionary, updated in place.
@@ -631,6 +632,10 @@ def resolve_all_k_add(param_dict, connectivity_matrix, gene_list,
             key = f"{{k_add_{curr_gene}}}"
             if not np.isnan(k_add_list[j]):
                 value, source = float(k_add_list[j]), "k_add_list"
+            elif k_add_matrix is not None and not np.any(np.isnan(k_add_matrix[regulators, j])):
+                matrix_edge_values = k_add_matrix[regulators, j]
+                value = float(np.mean(matrix_edge_values))
+                source = "k_add_matrix avg" if n_regs > 1 else "k_add_matrix"
             elif use_csv_k_add and key in param_dict:
                 value, source = param_dict[key], "CSV (direct)"
             else:
@@ -656,11 +661,11 @@ def resolve_all_k_add(param_dict, connectivity_matrix, gene_list,
             for i in regulators:
                 edge = f"{gene_list[i]}_to_{curr_gene}"
                 key = f"{{k_add_{edge}}}"
-                if use_csv_k_add and key in param_dict:
-                    value, source = param_dict[key], "CSV"
-                elif k_add_matrix is not None and not np.isnan(k_add_matrix[i, j]):
+                if k_add_matrix is not None and not np.isnan(k_add_matrix[i, j]):
                     value = float(k_add_matrix[i, j])
                     source = "k_add_matrix"
+                elif use_csv_k_add and key in param_dict:
+                    value, source = param_dict[key], "CSV"
                 else:
                     sign = int(np.sign(connectivity_matrix[i, j]))
                     value, source = (default_pos if sign > 0 else default_neg), "default"
@@ -1488,6 +1493,7 @@ def process_param_set(rows, label, base_config):
     divide_binomial = base_config.get("divide_binomial", False)
     p_major = base_config.get("p_major", 0.5)
     K_to_use = base_config.get("K_to_use", None)
+
     if use_given_K and K_to_use is not None:
         print("Using given hill Constants.")
     combinatorial_interaction_type = base_config.get("combinatorial_interaction_type", "additive")
