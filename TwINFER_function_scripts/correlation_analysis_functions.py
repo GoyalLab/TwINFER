@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr, linregress, pearsonr
+from scipy.stats import spearmanr, linregress, pearsonr, rank_data
 from .correlation_analysis_helpers import dict_to_matrix
 import matplotlib.pyplot as plt
 from scipy.stats import rankdata
@@ -9,6 +9,8 @@ import os
 from joblib import Parallel, delayed
 from scipy import stats
 import numba
+import numpy as np
+import pandas as pd
 
 def steady_state_calc(param_dict, interaction_matrix, gene_list,
                                    sim_data, scale_k=None):
@@ -140,123 +142,55 @@ def calculate_pairwise_gene_gene_correlation_matrix(simulation_at_t1, gene_list)
     correlation_matrix = dict_to_matrix(correlations, gene_list)
     return correlation_matrix
 
-# def get_scrambled_correlations(df, gene_i, gene_j, n=10_000, p_val=0.05, method="spearman", seed=101010):
-#     """
-#     Returns (null_corrs, abs_threshold) for the unordered pair {gene_i, gene_j}.
-#     abs_threshold is the (1 - p_val) quantile of |null_corrs| (two-sided).
-#     """
-#     # Data prep
-#     x = df[f"{gene_i}_mRNA"].to_numpy()
-#     y = df[f"{gene_j}_mRNA"].to_numpy()
-#     mask = np.isfinite(x) & np.isfinite(y)
-#     x, y = x[mask], y[mask]
-    
-#     # Choose correlation function
-#     if method == "spearman":
-#         corr_func = lambda a, b: spearmanr(a, b)[0]  # returns (correlation, p-value)
-#     elif method == "pearson":
-#         corr_func = lambda a, b: pearsonr(a, b)[0]
-#     else:
-#         raise ValueError("method must be 'spearman' or 'pearson'")
-
-#     rng = np.random.default_rng(seed)
-#     n_obs = x.size
-#     null_corrs = np.empty(n, dtype=float)
-    
-#     for k in range(n):
-#         perm = rng.permutation(n_obs)
-#         null_corrs[k] = corr_func(x, y[perm])
-
-#     # threshold
-#     thr = np.quantile(np.abs(null_corrs), 1.0 - p_val)
-#     return null_corrs, thr
-
 
 def get_correlations(correlation_dict, gene_i, gene_j):
    return correlation_dict[tuple(sorted([gene_i, gene_j]))]
 
-# def generate_random_shuffle(simulation_data, gene_list, n_shuffles=10000, random_state=42):
-#    np.random.seed(random_state)
-   
-#    rep_0 = simulation_data[simulation_data['replicate'] == 1].reset_index(drop=True)
-#    rep_1 = simulation_data[simulation_data['replicate'] == 2].reset_index(drop=True)
-#    gene_cols = [f"{gene}_mRNA" for gene in gene_list]
-#    min_cells = min(len(rep_0), len(rep_1))
-#    expr_0 = rep_0[gene_cols].iloc[:min_cells].values
-#    expr_1 = rep_1[gene_cols].iloc[:min_cells].values
-
-#    n_cells, n_genes = expr_0.shape
-#    triu_indices = np.triu_indices(n_genes, k=1)
-#    gene_pairs = [(gene_list[i], gene_list[j]) for i, j in zip(triu_indices[0], triu_indices[1])]
-   
-#    all_shuffle_indices = np.array([np.random.permutation(n_cells) for _ in range(n_shuffles)])
-#    all_correlations = np.zeros((n_shuffles, len(gene_pairs)))
-   
-#    for batch_start in range(0, n_shuffles, 100):
-#        batch_end = min(batch_start + 100, n_shuffles)
-#        for i, shuffle_idx in enumerate(all_shuffle_indices[batch_start:batch_end]):
-#            expr_1_shuffled = expr_1[shuffle_idx]
-#            deltas = expr_0 - expr_1_shuffled
-#            ranked_deltas = np.apply_along_axis(rankdata, 0, deltas)
-#            corr_matrix = np.corrcoef(ranked_deltas.T)
-#            all_correlations[batch_start + i] = corr_matrix[triu_indices]
-   
-#    # Store with sorted keys to avoid duplicates
-#    correlation_dict = {}
-#    for i, (gene_i, gene_j) in enumerate(gene_pairs):
-#        key = tuple(sorted([gene_i, gene_j]))
-#        correlation_dict[key] = all_correlations[:, i]
-   
-#    return correlation_dict
-
-import numpy as np
-import pandas as pd
-from scipy.stats import rankdata
-
 def generate_random_shuffle(simulation_data, gene_list, n_shuffles=10000, random_state=42):
     """
-    Generate null distributions of difference correlations by random pairing of cells,
-    independent of any 'replicate' column.
+    Random-pair difference-correlation null distribution sized to N (half the cell pool,
+    matching the number of true twin pairs), not the ~2N pairs generate_random_shuffle draws
+    via two independent permutations of the full pool. Every shuffle draws a single
+    permutation of the whole pool, splits it into two equal halves, and pairs them
+    positionally -- so each shuffle yields floor(n_cells/2) random-pair deltas, matching the
+    N true twin-pair deltas that twin_correlation_matrix (the statistic being compared
+    against in differentiate_single_state_reg_and_multiple_states) was computed from. No
+    assumption is made about which column/labels distinguish the two twins -- only that
+    'clone_id' identifies which rows are each other's twin, so a position that would pair a
+    cell with its own twin can be dropped (see _half_split_diff_null_kernel) instead of
+    leaking real twin correlation into the "random" null.
 
     Parameters
     ----------
     simulation_data : pd.DataFrame
-        Simulation dataframe containing at least 'clone_id' and '{gene}_mRNA' columns.
-
+        Must contain 'clone_id' and '{gene}_mRNA' columns for gene_list.
     gene_list : list of str
         Gene base names (without '_mRNA' suffix).
-
     n_shuffles : int, default=10000
         Number of random shuffles to perform.
-
     random_state : int, default=42
         Random seed for reproducibility.
 
     Returns
     -------
     correlation_dict : dict
-        Mapping {(gene_i, gene_j): np.ndarray of shuffled correlations}.
+        Mapping {(gene_i, gene_j): np.ndarray of n_shuffles shuffled correlations}, same
+        shape as generate_random_shuffle's return value.
     """
     gene_cols = [f"{gene}_mRNA" for gene in gene_list]
-    expr = simulation_data[gene_cols].dropna().to_numpy().astype(np.float64)
-    n_cells, n_genes = expr.shape
+    sub = simulation_data[gene_cols + ['clone_id']].dropna(subset=gene_cols)
+    expr = sub[gene_cols].to_numpy(dtype=np.float64)
+    clone_codes = pd.factorize(sub['clone_id'])[0].astype(np.int64)
 
+    n_genes = expr.shape[1]
     triu_i, triu_j = np.triu_indices(n_genes, k=1)
     gene_pairs = [(gene_list[i], gene_list[j]) for i, j in zip(triu_i, triu_j)]
 
-    # SeedSequence.spawn guarantees distinct, well-scattered seeds across shuffles (unlike
-    # drawing n_shuffles plain integers from one generator, which has a small but real
-    # collision chance -- empirically verified ~2% for n_shuffles=10000).
     seeds = _spawn_independent_seeds(random_state, n_shuffles)
-
-    # Same algorithm as before (two independent permutations per shuffle, self-match pairs
-    # filtered via idx_1 != idx_2), just executed inside a numba-parallel kernel instead of a
-    # Python loop with np.apply_along_axis(rankdata, ...).
-    all_correlations = _two_permutation_diff_null_kernel(
-        expr, seeds, triu_i.astype(np.int64), triu_j.astype(np.int64)
+    all_correlations = _half_split_diff_null_kernel(
+        expr, clone_codes, seeds, triu_i.astype(np.int64), triu_j.astype(np.int64)
     )
 
-    # --- Package as dict for downstream comparison
     correlation_dict = {
         tuple(sorted((gi, gj))): all_correlations[:, k]
         for k, (gi, gj) in enumerate(gene_pairs)
@@ -264,79 +198,6 @@ def generate_random_shuffle(simulation_data, gene_list, n_shuffles=10000, random
 
     return correlation_dict
 
-
-# def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
-#                                           pairwise_gene_gene_correlation_matrix, 
-#                                           gene_list, 
-#                                           threshold=0.04,
-#                                           use_scramble = True,
-#                                           p_val_threshold = 0.01,
-#                                           verbose=False):
-#     """
-#     Splits gene-gene pairs based on absolute correlation threshold.
-
-#     Parameters
-#     ----------
-#     all_t1_t2_measurements : pd.DataFrame
-#         The cell-gene dataframe containing sample information.
-#     pairwise_gene_gene_correlation_matrix : pd.DataFrame
-#         A square matrix of gene-gene correlations (gene × gene).
-#     gene_list : list of str
-#         List of gene names, must match the matrix row/column order.
-#     threshold : float, optional
-#         Correlation magnitude threshold to separate regulated vs unregulated.
-#     use_scramble : bool, optional
-#         If True, uses scrambled correlations for comparison.
-#     p_val_threshold : float, optional
-#         P-value threshold for significance testing.
-#     verbose : bool, optional
-#         If True, plots the null distribution and threshold for each gene pair.
-    
-#     Returns
-#     -------
-#     no_regulation : list of tuple
-#         Gene pairs (i, j) where abs(correlation) ≤ threshold.
-
-#     potential_regulation : list of tuple
-#         Gene pairs (i, j) where abs(correlation) > threshold.
-    
-#     Note:
-#     1. If both use_scrambled is True and threshold is provided, a new threshold is calculated 
-#        based on the scrambled distribution and p_val_threshold.
-#     """
-#     no_regulation = []
-#     potential_regulation = []
-#     for i in range(len(gene_list)):
-#         for j in range(len(gene_list)):
-#             if i >= j:
-#                 continue  # Skip diagonal
-#             corr_val = pairwise_gene_gene_correlation_matrix.values[i, j]
-#             pair = (gene_list[i], gene_list[j])
-#             rev_pair = (gene_list[j], gene_list[i])
-#             if use_scramble:
-#                 # gene_i = 
-#                 # gene_j = = 
-#                 null_dist, threshold = get_scrambled_correlations(gene_i, gene_j, n=10_000, p_val=p_val_threshold)
-#                 p_value = np.mean(np.abs(null_dist) >= np.abs(corr_val))
-#                 if verbose:
-#                     plt.figure(figsize=(6, 4))
-#                     plt.hist(null_dist, bins=50, color="skyblue", alpha=0.7, edgecolor="k")
-#                     plt.axvline(threshold, color="red", linestyle="--", label=f"+thr={threshold:.2e}")
-#                     plt.axvline(-threshold, color="red", linestyle="--", label=f"-thr={threshold:.2e}")
-#                     plt.axvline(corr_val, color="black", linestyle="-", label=f"actual={corr_val:.2e}")
-#                     plt.title(f"Scrambled correlations: {gene_list[i]} vs {gene_list[j]}, p-val = {p_value:.2e}")
-#                     plt.xlabel("Correlation")
-#                     plt.ylabel("Count")
-#                     plt.legend()
-#                     plt.tight_layout()
-#                     plt.show()
-#             if abs(corr_val) > threshold:
-#                     potential_regulation.append(pair)
-#                     potential_regulation.append(rev_pair)
-#             else:
-#                 no_regulation.append(pair)
-#                 no_regulation.append(rev_pair)
-#     return no_regulation, potential_regulation, threshold
 
 def compute_correlation_matrix(gene_matrix_1, gene_matrix_2, gene_list, gene_pairs=None):
    """Compute Spearman correlations between gene expression matrices."""
@@ -496,6 +357,73 @@ def _two_permutation_diff_null_kernel(expr, seeds, triu_i, triu_j):
             kk = keep[k]
             a_idx = idx_1[kk]
             b_idx = idx_2[kk]
+            for g in range(n_genes):
+                deltas[k, g] = expr[a_idx, g] - expr[b_idx, g]
+
+        R = np.empty((n_used, n_genes), dtype=np.float64)
+        for g in range(n_genes):
+            R[:, g] = _rankdata_numba(deltas[:, g])
+
+        m = (n_used + 1) / 2.0
+        Rc = R - m
+        s2 = np.empty(n_genes, dtype=np.float64)
+        for g in range(n_genes):
+            acc = 0.0
+            for k in range(n_used):
+                acc += Rc[k, g] * Rc[k, g]
+            s2[g] = acc
+
+        for p_idx in range(n_pairs):
+            i = triu_i[p_idx]
+            j = triu_j[p_idx]
+            num = 0.0
+            for k in range(n_used):
+                num += Rc[k, i] * Rc[k, j]
+            d = np.sqrt(s2[i] * s2[j])
+            if d > 0:
+                out[s, p_idx] = num / d
+    return out
+
+
+@numba.njit(parallel=True, fastmath=True)
+def _half_split_diff_null_kernel(expr, clone_codes, seeds, triu_i, triu_j):
+    """
+    Random-pair difference-correlation null sized to N (half the cell pool), not the ~2N
+    pairs _two_permutation_diff_null_kernel draws via two independent permutations of the
+    full pool. Each shuffle draws a SINGLE permutation and splits it in half, pairing the
+    first half against the second half positionally -- every cell is used exactly once, so
+    there's no near-self-match to filter, and no assumption about which two labels
+    distinguish the twins (unlike splitting by a 'replicate' column). Positions where the
+    split happens to pair a cell with its own twin (same clone_codes value) are dropped
+    instead, since that would leak the real twin correlation into the "random" null.
+    """
+    n_cells, n_genes = expr.shape
+    half = n_cells // 2
+    n_shuffles = seeds.shape[0]
+    n_pairs = triu_i.shape[0]
+    out = np.full((n_shuffles, n_pairs), np.nan, dtype=np.float64)
+
+    for s in numba.prange(n_shuffles):
+        np.random.seed(seeds[s])
+        perm = np.random.permutation(n_cells)
+        idx_a = perm[:half]
+        idx_b = perm[half:2 * half]
+
+        n_used = 0
+        keep = np.empty(half, dtype=np.int64)
+        for k in range(half):
+            if clone_codes[idx_a[k]] != clone_codes[idx_b[k]]:
+                keep[n_used] = k
+                n_used += 1
+
+        if n_used < 3:
+            continue
+
+        deltas = np.empty((n_used, n_genes), dtype=np.float64)
+        for k in range(n_used):
+            kk = keep[k]
+            a_idx = idx_a[kk]
+            b_idx = idx_b[kk]
             for g in range(n_genes):
                 deltas[k, g] = expr[a_idx, g] - expr[b_idx, g]
 
@@ -818,45 +746,6 @@ def calculate_twin_random_pair_correlations(simulation_two_time, simulation_sing
 
     return twin_corr_matrix, random_corr_matrix
 
-# def calculate_twin_random_pair_correlations(simulation_two_time, simulation_single_time, gene_list):
-#     """
-#     Computes twin and random pairwise correlation matrices at a given time point.
-
-#     Parameters
-#     ----------
-#     simulation_single_time : pd.DataFrame
-#         Subset of simulation data at a single time point. Must contain:
-#         - 'replicate' column (1 for twin A, 2 for twin B)
-#         - 'clone_id'
-#         - '{gene}_mRNA' for each gene in gene_list
-
-#     gene_list : list of str
-#         List of gene names (without "_mRNA" suffix) to analyze.
-
-#     Returns
-#     -------
-#     twin_correlation_matrix : pd.DataFrame
-#         Matrix of gene-gene Spearman correlations computed between true twin pairs.
-
-#     random_correlation_matrix : pd.DataFrame
-#         Matrix of gene-gene Spearman correlations between randomly paired clones.
-#     """
-#     # Separate replicate 1 and replicate 2
-#     rep_0 = simulation_single_time[simulation_single_time['replicate'] == 1]
-#     rep_1 = simulation_single_time[simulation_single_time['replicate'] == 2]
-
-#     # Calculate correlations using matched twin pairs
-#     twin_correlation_dict = calculate_pair_correlation(rep_0, rep_1, gene_list, type_comparison="twin")
-#     twin_correlation_matrix = dict_to_matrix(twin_correlation_dict, gene_list)
-
-#     # Calculate correlations using randomly shuffled pairs
-#     random_rep_0 = simulation_two_time[simulation_two_time['replicate'] == 1]
-#     random_rep_1 = simulation_two_time[simulation_two_time['replicate'] == 2]
-#     random_rep_1_shuffled = random_rep_1.sample(frac=1, random_state=10100).reset_index(drop=True)
-#     random_correlation_dict = calculate_pair_correlation(random_rep_0, random_rep_1_shuffled, gene_list, type_comparison="random")
-#     random_correlation_matrix = dict_to_matrix(random_correlation_dict, gene_list)
-#     return twin_correlation_matrix, random_correlation_matrix
-
 def differentiate_single_state_reg_and_multiple_states(all_t1_t2_measurements, potential_regulation, twin_correlation_matrix, random_correlation_matrix, gene_list, z_score_threshold=10, verbose = True):
     """
     Separates potential regulatory gene pairs into multiple-state vs single-state regulation.
@@ -908,7 +797,7 @@ def differentiate_single_state_reg_and_multiple_states(all_t1_t2_measurements, p
                     \n Z-score = {z_score}")
                 plt.legend()
                 plt.show()
-                
+
             if abs(z_score) > abs(z_score_threshold):
                 multiple_states_gene_pairs.append((gene_i, gene_j))
                 print(f"gene 1: {gene_i}, gene 2: {gene_j}, z_score: {z_score} with threshold {z_score_threshold}")
