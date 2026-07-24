@@ -22,7 +22,8 @@ from TwINFER_function_scripts.correlation_analysis_functions import (
     differentiate_single_state_reg_and_multiple_states,
     identify_reg_if_multiple_states,
     get_cross_correlations,
-    identify_actual_directed_edges
+    identify_actual_directed_edges,
+    separate_fan_outs_from_mutual_regulation
 )
 
 # Helper functions
@@ -50,6 +51,8 @@ def infer_with_twinfer(path_to_simulation_file= None,
                         have_any_output=True,
                         seed = 101010,
                         infer_direction_for_which_edges = "single-state",
+                        separate_fan_outs_from_mutual_regulation_flag = False,
+                        fan_out_z_score_threshold = 8,
                         remove_twin_structure = False,
                         return_gene_corr_thresholds = False,
                         match_sim_details = True,
@@ -124,6 +127,19 @@ def infer_with_twinfer(path_to_simulation_file= None,
 
     have_any_output : bool, default=True
         If True, prints a summary of inferred regulations and shows network plots.
+
+    separate_fan_outs_from_mutual_regulation_flag : bool, default=False
+        If True, after final_directed_edges is computed, checks every gene pair (A, B) that
+        shares a common regulator C (C->A and C->B both in final_directed_edges) for whether
+        A<->B (both A->B and B->A present) is true mutual regulation or a fan-out artifact of
+        being co-driven by C. Uses the undirected twin-vs-random z-score for the (A, B) pair
+        (same statistic as the Step 3 single/multiple-state classification): |z| above
+        fan_out_z_score_threshold removes both A->B and B->A as a fan-out; otherwise both
+        edges are kept as mutual regulation. Pairs with no common regulator, no cross-edges,
+        or only one direction (feed-forward loop) are left untouched.
+
+    fan_out_z_score_threshold : float, default=8
+        |z|-score threshold used by separate_fan_outs_from_mutual_regulation_flag above.
 
     remove_twin_structure : bool, default=False
         If True, scrambles twin structure and random pairs of cells are labelled as twins instead.
@@ -450,6 +466,18 @@ def infer_with_twinfer(path_to_simulation_file= None,
             if i != j and (i, j) not in final_directed_edges:
                     direction_matrix.loc[i,j] = 0
     print(direction_matrix)
+
+    # --- Optional: separate fan-outs (C->A, C->B) from true mutual regulation (A<->B) ---
+    fan_out_log = None
+    final_directed_edges = set(final_directed_edges)
+    if separate_fan_outs_from_mutual_regulation_flag:
+        twin_matrix_for_fan_out = twin_pair_correlation_matrix_t1
+        measurements_for_fan_out = all_t1_t2_measurements if merge_time_points else all_t1_measurements
+        final_directed_edges, directed_p_values, direction_matrix, fan_out_log = separate_fan_outs_from_mutual_regulation(
+            measurements_for_fan_out, twin_matrix_for_fan_out, gene_list,
+            final_directed_edges, directed_p_values, direction_matrix,
+            z_score_threshold=fan_out_z_score_threshold
+        )
     if plot_correlation_matrices_as_heatmap and not direction_matrix.empty:
         all_gene_pairs = list(product(gene_list, repeat=2))
         no_reg_pairs = [pair for pair in all_gene_pairs if pair not in final_directed_edges]
@@ -550,7 +578,8 @@ def infer_with_twinfer(path_to_simulation_file= None,
             "twin_pair_correlation_matrix_t2": twin_pair_correlation_matrix_t2,
             "random_pair_correlation_matrix_t2": random_pair_correlation_matrix_t2,
             "twin_pair_correlation_matrix_t1": twin_pair_correlation_matrix_t1,
-            "random_pair_correlation_matrix_t1": random_pair_correlation_matrix_t2
+            "random_pair_correlation_matrix_t1": random_pair_correlation_matrix_t2,
+            "fan_out_log": fan_out_log
         }
     except:
         result = {

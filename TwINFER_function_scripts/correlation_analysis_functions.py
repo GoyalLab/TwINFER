@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr, linregress, pearsonr, rank_data
+from scipy.stats import spearmanr, linregress, pearsonr
 from .correlation_analysis_helpers import dict_to_matrix
 import matplotlib.pyplot as plt
 from scipy.stats import rankdata
@@ -1061,3 +1061,109 @@ def identify_actual_directed_edges(rep_0_t1, rep_1_t2, direction_raw_matrix, gen
     if return_p_values:
         return significant_edges, p_value_calc
     return significant_edges
+
+
+def separate_fan_outs_from_mutual_regulation(all_t1_measurements, twin_correlation_matrix_t1, gene_list,
+                                              final_directed_edges, directed_p_values, direction_matrix,
+                                              z_score_threshold=8):
+    """
+    Distinguishes true mutual regulation (A<->B) from a fan-out artifact, for gene pairs
+    that share a common upstream regulator C (C->A and C->B both present in
+    final_directed_edges). Both A->B and B->A being directed edges could either reflect real
+    reciprocal regulation, or simply be an artifact of A and B being co-driven by C with no
+    direct A-B interaction. The two are told apart with the same twin-vs-random z-score
+    already used in differentiate_single_state_reg_and_multiple_states (Step 3): a pair whose
+    undirected correlation is far outside the random-pair null (|z| large) is behaving like it
+    is driven by a shared hidden driver (i.e. C) rather than a direct link between A and B.
+
+    Four cases per (A, B) pair with >=1 common regulator:
+      1. Neither A->B nor B->A present: no cross-correlation, left untouched.
+      2. Exactly one of A->B / B->A present: feed-forward loop, left untouched.
+      3/4. Both present: |z| > z_score_threshold -> fan-out, both edges removed;
+           |z| <= z_score_threshold -> mutual regulation, both edges kept.
+
+    Parameters
+    ----------
+    all_t1_measurements : pd.DataFrame
+        Single-timepoint (t1) cell-gene dataframe, same data used to build
+        twin_correlation_matrix_t1, passed to generate_random_shuffle for the null.
+    twin_correlation_matrix_t1 : pd.DataFrame
+        Twin pair correlation matrix at t1 (same one used in Step 3).
+    gene_list : list of str
+        Gene names in matrix order.
+    final_directed_edges : set of tuple
+        Directed edges (gene_src, gene_tgt) inferred so far.
+    directed_p_values : dict
+        Mapping {(gene_src, gene_tgt): p_value} for directed edges.
+    direction_matrix : pd.DataFrame
+        Directional correlation matrix, thresholded to final_directed_edges.
+    z_score_threshold : float, default=8
+        |z| above this value on the undirected (A,B) pair marks it a fan-out.
+
+    Returns
+    -------
+    final_directed_edges : set of tuple
+        Updated in place: fan-out (A,B)/(B,A) edges removed.
+    directed_p_values : dict
+        Updated in place: fan-out (A,B)/(B,A) entries removed.
+    direction_matrix : pd.DataFrame
+        Updated in place: fan-out (A,B)/(B,A) cells zeroed.
+    fan_out_log : list of dict
+        One entry per (A, B) pair that had a common regulator, recording the shared
+        regulator(s), the z-score, and the decision made.
+    """
+    regulators_of = {gene: set() for gene in gene_list}
+    for src, tgt in final_directed_edges:
+        if src != tgt:
+            regulators_of.setdefault(tgt, set()).add(src)
+
+    random_pair_correlation_distribution = generate_random_shuffle(all_t1_measurements, gene_list=gene_list)
+
+    fan_out_log = []
+    for idx_a, gene_a in enumerate(gene_list):
+        for gene_b in gene_list[idx_a + 1:]:
+            common_regulators = (regulators_of.get(gene_a, set()) & regulators_of.get(gene_b, set())) - {gene_a, gene_b}
+            if not common_regulators:
+                continue
+
+            a_to_b = (gene_a, gene_b) in final_directed_edges
+            b_to_a = (gene_b, gene_a) in final_directed_edges
+
+            if not a_to_b and not b_to_a:
+                continue  # Case 1: no cross-correlation between A and B
+            if a_to_b != b_to_a:
+                continue  # Case 2: feed-forward loop, leave as is
+
+            # Case 3 / 4: A->B and B->A both present -- check the undirected (A,B) z-score
+            t_corr = twin_correlation_matrix_t1.loc[gene_a, gene_b]
+            r_corr = get_correlations(random_pair_correlation_distribution, gene_a, gene_b)
+            r_corr_std = np.std(r_corr)
+            z_score = np.inf if r_corr_std == 0 else (t_corr - np.mean(r_corr)) / r_corr_std
+
+            regulators_str = ", ".join(sorted(common_regulators))
+            if abs(z_score) > z_score_threshold:
+                print(f"Inference: fan-out detected -- {regulators_str} regulate(s) both {gene_a} and {gene_b} "
+                      f"(|z|={abs(z_score):.2f} > {z_score_threshold}); removing direct edge between {gene_a} and {gene_b}.")
+                final_directed_edges.discard((gene_a, gene_b))
+                final_directed_edges.discard((gene_b, gene_a))
+                directed_p_values.pop((gene_a, gene_b), None)
+                directed_p_values.pop((gene_b, gene_a), None)
+                if gene_a in direction_matrix.index and gene_b in direction_matrix.columns:
+                    direction_matrix.loc[gene_a, gene_b] = 0
+                    direction_matrix.loc[gene_b, gene_a] = 0
+                decision = "fan_out"
+            else:
+                print(f"Inference: mutual regulation confirmed -- {gene_a} and {gene_b} share regulator(s) "
+                      f"{regulators_str} but their direct correlation is not explained by it "
+                      f"(|z|={abs(z_score):.2f} <= {z_score_threshold}); keeping both edges.")
+                decision = "mutual_regulation"
+
+            fan_out_log.append({
+                "gene_a": gene_a,
+                "gene_b": gene_b,
+                "common_regulators": sorted(common_regulators),
+                "z_score": z_score,
+                "decision": decision,
+            })
+
+    return final_directed_edges, directed_p_values, direction_matrix, fan_out_log
