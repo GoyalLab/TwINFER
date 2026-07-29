@@ -13,7 +13,7 @@ import argparse
 from numba import set_num_threads, get_num_threads
 
 path_to_code_repo = "/home/gzu5140/Keerthana_b1042/TwINFER/code/TwINFER"
-path_to_output_folder = "/home/gzu5140/Keerthana_b1042/TwINFER/simulation_data/real_data/"
+path_to_output_folder = "/home/gzu5140/Keerthana_b1042/TwINFER/simulation_data/cycle_data/"
 
 # ==========================================================
 # Parse SLURM array index (0–4)
@@ -79,22 +79,21 @@ base_configs = [
         'simulation_time_before_division': 6000,
         'twin_simulation_time_after_division': 48,
         'twin_measurement_resolution': 1,
-        "path_to_connectivity_matrix": "/home/gzu5140/Keerthana_b1042/TwINFER/input_data/real_world_networks/GSD.txt", #path to the connectivity matrix specifying the GRN to simulate
+        "path_to_connectivity_matrix": "/home/gzu5140/Keerthana_b1042/TwINFER/input_data/cycle_6_node.txt", #path to the connectivity matrix specifying the GRN to simulate
         "param_csv": f"/home/gzu5140/Keerthana_b1042/TwINFER/input_data/network_sweep/parameters.csv", #Path to the parameters for all genes and interaction terms
-        "rows_to_use": [[0]*19],
+        "rows_to_use": [[0]*6],
         "output_folder": f"{path_to_output_folder}",
-        "log_file": f"{path_to_output_folder}/logs/GSD.jsonl",
-        "type": "GSD",
+        "log_file": f"{path_to_output_folder}/logs/cycle.jsonl",
+        "type": "cycle_6_node",
         "combinatorial_interaction_type": "additive",
         "number_of_parallel_parameters": 1,
-        "number_of_cores_per_parameter": 56,
+        "number_of_cores_per_parameter": 52,
         "log_pi_on": False,
     },
     ]
 # ==========================================================
 # Select config by array index (with sanity check)
 # ==========================================================
-
 config_index = config_index%len(base_configs)
 if not (0 <= config_index < len(base_configs)):
     raise ValueError(

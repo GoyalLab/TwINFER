@@ -405,14 +405,23 @@ def _half_split_diff_null_kernel(expr, clone_codes, seeds, triu_i, triu_j):
 
     for s in numba.prange(n_shuffles):
         np.random.seed(seeds[s])
-        perm = np.random.permutation(n_cells)
-        idx_a = perm[:half]
-        idx_b = perm[half:2 * half]
+        # Draw two independent random parts from the full cell pool.
+        # Each part contains unique cells internally, but the two parts may overlap.
+        # perm = np.random.permutation(n_cells)
+        # idx_a = perm[:half]
+        # idx_b = perm[half:2 * half]
+        perm_a = np.random.permutation(n_cells)
+        perm_b = np.random.permutation(n_cells)
+        idx_a = perm_a[:half]
+        idx_b = perm_b[:half]
 
         n_used = 0
         keep = np.empty(half, dtype=np.int64)
         for k in range(half):
-            if clone_codes[idx_a[k]] != clone_codes[idx_b[k]]:
+            a_idx = idx_a[k]
+            b_idx = idx_b[k]
+            #if clone_codes[idx_a[k]] != clone_codes[idx_b[k]]:
+            if a_idx != b_idx and clone_codes[a_idx] != clone_codes[b_idx]:
                 keep[n_used] = k
                 n_used += 1
 

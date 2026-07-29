@@ -17,42 +17,42 @@ from numba import set_num_threads, get_num_threads
 #Paths used in the file
 
 #Path to code repo
-path_to_code_repo = "/home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER"
+path_to_code_repo = "/home/gzu5140/Keerthana_b1042/TwINFER/code/TwINFER/"
 
 # Make sure this path is on sys.path so Python can find the package
 if path_to_code_repo not in sys.path:
     sys.path.insert(0, path_to_code_repo)
 
 #Path to output files
-path_to_output = "/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/figure_3_simulations/"
-num_cores_available = 20
+path_to_output = "/home/gzu5140/Keerthana_b1042/TwINFER/simulation_data/test/"
+num_cores_available = 18
  #%%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_index", type=int, default=0)
     args, _ = parser.parse_known_args()
-    config_index = 4 #args.config_index
+    config_index = args.config_index
     print(f"🔧 Running base_config #{config_index}")
 
     # ==========================================================
     # Define base configurations (5 configs: indices 0..4)
     # ==========================================================
     base_configs = [
-        {
-            'n_cells': 6000, #Number of cells before division (number of twin pairs)
-            'simulation_time_before_division': 1500, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
-            'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
-            'twin_measurement_resolution': 1, #The time between each measurement of twin cells [hours]. For example, if twin_sampling_duration is 12 and twin_measurement_resolution is 1, the final dataframe will contain hourly measurements for 12 hours (0 is birth).
-            "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_and_B.txt", #path to the connectivity matrix specifying the GRN to simulate
-            "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
-            "rows_to_use": [[0]*2], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
-            "output_folder": f"{path_to_output}/A_and_B/", #Path to the output folder
-            "log_file": f"{path_to_output}/logs/Figure3.log",  # Path to the log file for this simulation
-            "type": "A_and_B",  # Name of the network used -- will be in the filename
-            "multiple_interaction_type": "additive",
-            "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
-            "number_of_cores_per_parameter": num_cores_available, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
-        },
+        # {
+        #     'n_cells': 6000, #Number of cells before division (number of twin pairs)
+        #     'simulation_time_before_division': 1500, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
+        #     'twin_simulation_time_after_division': 48, #The time twin cells are simulated after division and measurements are stored in the output[hours]
+        #     'twin_measurement_resolution': 1, #The time between each measurement of twin cells [hours]. For example, if twin_sampling_duration is 12 and twin_measurement_resolution is 1, the final dataframe will contain hourly measurements for 12 hours (0 is birth).
+        #     "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_A_and_B.txt", #path to the connectivity matrix specifying the GRN to simulate
+        #     "param_csv": f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv", #Path to the parameters for all genes and interaction terms
+        #     "rows_to_use": [[0]*2], #Rows in the parameter's csv file for each gene. Example - [0,0] will mean use row 0 parameters for both gene 1 and 2. The length should be equal to number of genes in the system. Ensure that each row in the parameter.csv has unique index.
+        #     "output_folder": f"{path_to_output}/A_and_B/", #Path to the output folder
+        #     "log_file": f"{path_to_output}/logs/Figure3.log",  # Path to the log file for this simulation
+        #     "type": "A_and_B",  # Name of the network used -- will be in the filename
+        #     "multiple_interaction_type": "additive",
+        #     "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
+        #     "number_of_cores_per_parameter": num_cores_available, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
+        # },
         {
             'n_cells': 6000, #Number of cells before division (number of twin pairs)
             'simulation_time_before_division': 1500, #The time used to run the initial cells before division. User must set this time to ensure the population reaches steady state [hours]
@@ -98,29 +98,30 @@ if __name__ == "__main__":
             "number_of_parallel_parameters": 1, #Number of parameters to be run in parallel
             "number_of_cores_per_parameter": num_cores_available, #Number of cores to be used per parameter (number_of_parallel_parameters * number_of_cores_per_parameter = number of cores in your computer)
         },
-        {
-        'n_cells': 6000,
-        'simulation_time_before_division': 1500,
-        'twin_simulation_time_after_division': 48,
-        'twin_measurement_resolution': 1,
-        "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_5_gene_linear_cascade.txt",  # Will be updated per network type
-        "param_csv":f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv",  
-        "rows_to_use": [[0,0,0,0,0]],
-        "output_folder": f"{path_to_output}/five_gene_cascade/", #Path to the output folder
-        "log_file": f"{path_to_output}/logs/Figure3.log", 
-        "type": "five_gene_cascade", 
-        "number_of_parallel_parameters": 1,
-        "number_of_cores_per_parameter": num_cores_available,
-    }
+    #     {
+    #     'n_cells': 6000,
+    #     'simulation_time_before_division': 1500,
+    #     'twin_simulation_time_after_division': 48,
+    #     'twin_measurement_resolution': 1,
+    #     "path_to_connectivity_matrix": f"{path_to_code_repo}/simulation_example_input_data/connectivity_matrix_5_gene_linear_cascade.txt",  # Will be updated per network type
+    #     "param_csv":f"{path_to_code_repo}/simulation_example_input_data/median_parameter.csv",  
+    #     "rows_to_use": [[0,0,0,0,0]],
+    #     "output_folder": f"{path_to_output}/five_gene_cascade/", #Path to the output folder
+    #     "log_file": f"{path_to_output}/logs/Figure3.log", 
+    #     "type": "five_gene_cascade", 
+    #     "number_of_parallel_parameters": 1,
+    #     "number_of_cores_per_parameter": num_cores_available,
+    # }
     ]
     # ==========================================================
     # Select config by array index (with sanity check)
     # ==========================================================
     if not (0 <= config_index < len(base_configs)):
-        raise ValueError(
-            f"config_index={config_index} is out of range for {len(base_configs)} configs. "
-            f"Set your SLURM array to 0–{len(base_configs) - 1}."
-        )
+        config_index = config_index%len(base_configs)
+        # raise ValueError(
+        #     f"config_index={config_index} is out of range for {len(base_configs)} configs. "
+        #     f"Set your SLURM array to 0–{len(base_configs) - 1}."
+        # )
 
     base_config = base_configs[config_index]
 
@@ -155,7 +156,7 @@ if __name__ == "__main__":
     # ==========================================================
     # Run 10 replicates of this config
     # ==========================================================
-    for i in range(10):
+    for i in range(5):
         # shallow copy so we don't mutate base_config
         cfg = dict(base_config)
         cfg["type"] = f"{original_type}_rep_{i}"

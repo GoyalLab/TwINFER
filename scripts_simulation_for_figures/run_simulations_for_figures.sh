@@ -2,12 +2,12 @@
 #SBATCH -A b1042
 #SBATCH -p genomics
 #SBATCH -N 1
-#SBATCH --cpus-per-task=60
-#SBATCH --mem 10GB
-#SBATCH -t 8:00:00
-#SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/figure_3/logs/%A_%a.out
-#SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/figure_1_work/logs/%A_%a.err
-#SBATCH --array=0-5
+#SBATCH --cpus-per-task=55
+#SBATCH --mem 25GB
+#SBATCH -t 5:00:00
+#SBATCH --output=/home/gzu5140/Keerthana_b1042/TwINFER/simulation_data/logs/network_sweep_e17_test_%A_%a.out
+#SBATCH --error=/home/gzu5140/Keerthana_b1042/TwINFER/simulation_data/logs/network_sweep_e17_test_%A_%a.err
+#SBATCH --array=0-9
 set -eo pipefail
 
 
@@ -32,10 +32,10 @@ python -V
 echo
 
 # ---- Run simulation directly from /home
-cd "/home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/scripts_simulation_for_figures"
+cd "/home/gzu5140/Keerthana_b1042/TwINFER/code/TwINFER/scripts_simulation_for_figures/"
 
 echo "[$(date)] Starting simulation ..."
-~/.conda/envs/twinfer-code/bin/python -u hsc_network.py --config_index $((${SLURM_ARRAY_TASK_ID:-0}))
+~/.conda/envs/twinfer-code/bin/python -u synthetic_network_high_density.py --config_index $((${SLURM_ARRAY_TASK_ID:-0}))
 status=$?
 echo "[$(date)] Simulation finished with exit code $status"
 

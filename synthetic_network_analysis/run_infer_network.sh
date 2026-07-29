@@ -34,6 +34,6 @@ echo
 cd "/home/gzu5140/Keerthana_b1042/TwINFER/code/TwINFER/synthetic_network_analysis/"
 
 echo "[$(date)] Starting analysis ..."
-~/.conda/envs/twinfer-code/bin/python -u infer_network_simulation_cyclic.py
+~/.conda/envs/twinfer-code/bin/python -u network_sweep_twinfer_new.py
 status=$?
 echo "[$(date)] Simulation finished with exit code $status"
