@@ -1,5 +1,5 @@
-  __pycache__/
-  *.pyc
-  *.nbc
-  *.nbi
-  .ipynb_checkpoints/
+__pycache__/
+*.pyc
+*.nbc
+*.nbi
+.ipynb_checkpoints/

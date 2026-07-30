@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr, linregress, pearsonr
-from .correlation_analysis_helpers import dict_to_matrix
 from scipy.stats import rankdata
 from itertools import combinations, permutations
 import os

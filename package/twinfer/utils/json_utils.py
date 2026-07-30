@@ -2,8 +2,6 @@ import os
 import json
 import numpy as np
 
-from twinfer import infer_with_twinfer
-
 class NumpyEncoder(json.JSONEncoder):
     """
     JSON encoder that handles numpy scalar and array types, which the

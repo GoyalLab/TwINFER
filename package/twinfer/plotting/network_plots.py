@@ -2,7 +2,7 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 
-from matplotlib.colors import Normalize, LinearSegmentedColormap
+from matplotlib.colors import Normalize, LinearSegmentedColormap, ListedColormap
 from adjustText import adjust_text
 
 __version__ = "2026-07-16-one-reciprocal-edge-curved-v6"
@@ -11,6 +11,7 @@ __version__ = "2026-07-16-one-reciprocal-edge-curved-v6"
 # ============================================================
 # 1. Colormap
 # ============================================================
+
 
 def make_reds_blues_colormap(vmin=-0.05, vmax=0.18):
     """
@@ -62,7 +63,8 @@ def make_reds_blues_colormap(vmin=-0.05, vmax=0.18):
             )
         )
         color_parts.append(reds)
-
+    whites = np.ones((1, 4))  # pure white at 0
+    color_parts.append(whites)
     if n_blues > 0:
         blues = plt.cm.Blues(
             np.linspace(
@@ -76,10 +78,13 @@ def make_reds_blues_colormap(vmin=-0.05, vmax=0.18):
 
     colors = np.vstack(color_parts)
 
-    return LinearSegmentedColormap.from_list(
-        "RedsBlues",
-        colors,
-    )
+    # ListedColormap uses `colors` directly as the lookup table (no
+    # resampling), so the single pure-white row placed at index n_reds
+    # stays exactly white. LinearSegmentedColormap.from_list would instead
+    # resample this list down to its own N-entry LUT, and since the white
+    # row is a single entry out of ~257, it almost always got interpolated
+    # away -- 0 rendered as a red/blue blend, never pure white.
+    return ListedColormap(colors, name="RedsBlues")
 
 
 # ============================================================

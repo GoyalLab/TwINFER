@@ -149,8 +149,8 @@ Convert `TwINFER_function_scripts/` into a bare-minimum installable package `pac
  target a reader who wants to call the function without reading its body, not a line-by-line narration
 
 ### 1.9 Phase 1 checkpoint
-- [ ] Run a tiny simulate+infer using `simulation_example_input_data/` connectivity matrix; compare output to `simulation_example_output_data/` to confirm the shared.py extraction didn't change behavior
-- [ ] Ping Claude to review the `package/` layout and confirm the two double-definition resolutions before moving on
+- [x] Run a tiny simulate+infer using `simulation_example_input_data/` connectivity matrix; compare output to `simulation_example_output_data/` to confirm the shared.py extraction didn't change behavior
+- [x] Ping Claude to review the `package/` layout and confirm the two double-definition resolutions before moving on
 
 ---
 

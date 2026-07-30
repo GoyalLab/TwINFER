@@ -13,7 +13,7 @@ import joblib
 from itertools import product
 import importlib
 
-from correlation_functions import (
+from twinfer.inference.correlation_functions import (
     calculate_pairwise_gene_gene_correlation_matrix,
     check_system_in_steady_state,
     check_gene_gene_correlation_threshold,
