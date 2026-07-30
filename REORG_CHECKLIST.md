@@ -20,6 +20,20 @@ Goal: reorganize into three top-level folders — **`package/`**, **`paper_analy
 
 ---
 
+## Import contract: `package/` vs `paper_analysis/`
+
+**One-way dependency.** `paper_analysis/` and `tutorials/` import *from* `package/twinfer/`; nothing inside `package/twinfer/` ever imports from `paper_analysis/`, `tutorials/`, or anything figure-specific. If a function only makes sense for one figure/benchmark, it does not belong in `package/twinfer/` (this is why evaluation metrics live in `paper_analysis/benchmark/metrics.py`, not the package).
+
+- Every file under `paper_analysis/`/`tutorials/` should end up doing `import twinfer` / `from twinfer.X import Y` — never `sys.path.insert(...)` + `from TwINFER_function_scripts import ...`.
+- **Verification commands** (run once Phase 1+2 are done):
+  ```
+  grep -rn "paper_analysis" package/twinfer/                                        # should be empty
+  grep -rln "sys.path.insert\|TwINFER_function_scripts" paper_analysis/ tutorials/  # should be empty
+  ```
+- **No publishing required to use `import twinfer`.** `pip install -e package/` (1.6) is an editable install — it registers `package/twinfer/` in the active conda env's site-packages pointing back at the source dir, no copying, no PyPI upload. After that, `import twinfer` works from any script/notebook running in that same env, from any directory. Publishing (PyPI or similar) is a separate, optional later step only needed for people outside this environment — it has no bearing on whether `import twinfer` works for you now. It does require real `__init__.py` files in every subpackage dir to behave predictably (flagged below — currently missing on disk despite the box being checked).
+
+---
+
 ## Known bugs and a proposed statistics upgrade (surfaced 2026-07-29)
 
 Two external documents (`TwINFER_thresholds_and_CI_v2_1.pdf` — a governing spec for thresholds/sample-size/confidence-intervals with reference Python implementations; `PROJECT_SUMMARY.pdf` — a re-analysis of LARRY + CellTag-multi run from a separate project directory, `/gpfs/projects/b1255/yscher/Transcriptomic Distance/`, that patches TwINFER's code via runtime substitution rather than editing this repo) surfaced concrete bugs in `correlation_analysis_functions.py` and `infer_with_twinfer.py`. I independently re-read the flagged code and confirmed the following (that external harness is not something to merge in wholesale, but its findings — and the additional ones found while checking it — are directly actionable against files already in this repo's scope):
@@ -30,7 +44,7 @@ Two external documents (`TwINFER_thresholds_and_CI_v2_1.pdf` — a governing spe
 2. **Self-pair exclusion tests the wrong thing** — `correlation_analysis_functions.py` ~L348: `if abs(idx_1[k] - idx_2[k]) > 1:` tests row-index adjacency, not cell identity. Order-dependent; discards ~3/n legitimate random pairs and can still admit a cell paired with itself. **Fix:** `if idx_1[k] != idx_2[k]:`.
 3. **`check_gene_gene_correlation_threshold` silently flags nothing when `use_scramble=False`** — `correlation_analysis_functions.py` L528-636. `is_significant` is initialized to `False` at L586 and is only ever reassigned inside the `if use_scramble:` block (L599). Call this function with `use_scramble=False` (exactly what the proposed fixed-threshold methodology below would do) and **every single gene pair silently gets classified as `no_regulation`**, with no error and no warning — verified by reading the full control flow. This is the single highest-impact bug found: it means the codebase currently has no working non-scramble code path at all, despite `use_scramble` being an exposed parameter.
 4. **`infer_with_twinfer`'s public result dict swaps t1/t2 for the random-pair matrix** — `infer_with_twinfer.py` L581 and L597 (both the success and except branches): `"random_pair_correlation_matrix_t1": random_pair_correlation_matrix_t2,` — the key says `_t1` but the value assigned is `random_pair_correlation_matrix_t2`. Anyone reading `result['random_pair_correlation_matrix_t1']` from the public API silently gets t2's data instead. Confirmed copy-paste bug, present in both branches.
-5. **The Stage-III "10% relative increase" regulation test is both internally inconsistent and empirically broken** — `identify_reg_if_multiple_states`, `correlation_analysis_functions.py` L823-881. The relative-change formula treats `corr_t2 < 0` and `corr_t2 >= 0` inconsistently (L869-872: takes `abs()` of the raw difference in one branch, signed difference in the other), and — independently confirmed by the external spec's own calibration run — because the twin difference-correlation starts near zero (`ρ̂∆(t1) ≈ 0`), any relative-change formula explodes and this test flags ~90% of a true no-regulation simulation scenario as regulation (near coin-toss). This is the exact function the proposed `stage3` regulation test (below) replaces.
+5. **The Stage-III "10% relative increase" regulation test is both internally inconsistent and empirically broken** — `identify_reg_if_multiple_states`, `correlation_analysis_functions.py` L823-881. The relative-change formula treats `corr_t2 < 0` and `corr_t2 >= 0` inconsistently (L869-872: takes `abs()` of the raw difference in one branch, signed difference in the other), and — independently confirmed by the external spec's own calibration run — because the twin difference-correlation starts near zero (`ρ̂∆(t1) ≈ 0`), any relative-change formula explodes and this test flags ~90% of a true no-regulation simulation scenario as regulation (near coin-toss). **Fixed:** `identify_reg_if_multiple_states` now tests `d = corr_t2 - corr_t1 > regulation_increase_threshold` (default `0.024`), the spec's point-estimate rule, same I/O as before. **TODO — needs extensive validation before trusting the default in general use:** `0.024` is calibrated on a single simulation run, a single gene pair, at a single `t2`; the spec's own table shows the "correct" threshold scaling roughly 8x across `t2 = 2h`–`36h`, and even at the calibration point the regulation/no-regulation `d` ranges overlap over repeated draws. Validate across a range of regulation strengths, multi-state separations, and measurement times before relying on the default outside the calibration scenario — see the docstring caveat in `identify_reg_if_multiple_states`.
 6. **Docstring/implementation mismatch in the heterogeneity function** — `differentiate_single_state_reg_and_multiple_states`, `correlation_analysis_functions.py` L758-821. Docstring claims the threshold is on `abs(random / twin)`; the actual code computes `z_score = (t_corr - np.mean(r_corr)) / r_corr_std`, a z-score against the random-pair null distribution — an entirely different quantity. This is precisely the "old" `z = g/σ∆` formula the external spec identifies as having the wrong denominator (the spread of the *comparator*, not the standard error of the *statistic*) — i.e. this un-patched function is the bug the spec's heterogeneity fix (below) targets.
 7. **Lower-confidence, likely dormant:** `calculate_twin_random_pair_correlations`, `correlation_analysis_functions.py` L738: `n_pairs = n_random or len(rep_0)` — Python's `or` treats an explicitly-passed `n_random=0` as falsy and silently substitutes `len(rep_0)` instead. Only matters if some caller ever passes `n_random=0` intentionally; not verified whether any does.
 
@@ -52,76 +66,87 @@ Two external documents (`TwINFER_thresholds_and_CI_v2_1.pdf` — a governing spe
   .ipynb_checkpoints/
   ```
 - [x] `find . -name "__pycache__" -type d` to enumerate every committed cache dir (known: repo root, `TwINFER_function_scripts/`, `synthetic_network_analysis/`, `drift_multiple_state/`, `additional_analysis/saturation_effects/fixed_z_effect/`); `git rm -r --cached` each (keeps files on disk, only untracks)
-- [ ] Commit: "chore: add .gitignore, untrack build artifacts"
-- [ ] Decide fate of root scratch files `_check_helpers2.py`, `_check_ui2.py` (both hardcode absolute paths into `synthetic_network_analysis/`) — archive to `package/_archive/` or confirm safe to drop; note decision here: ______
+- [x] Commit: "chore: add .gitignore, untrack build artifacts"
+- [x] Decide fate of root scratch files `_check_helpers2.py`, `_check_ui2.py` (both hardcode absolute paths into `synthetic_network_analysis/`) — archive to `package/_archive/` or confirm safe to drop; note decision here: (moved it to plot utilities)
 
 ## Phase 1 — `package/`
 
 Convert `TwINFER_function_scripts/` into a bare-minimum installable package `package/twinfer/`: simulation, inference, and plotting only.
 
 ### 1.1 Scaffold
-- [ ] Create `package/` directory
-- [ ] `git mv environment.yml package/environment.yml`
-- [ ] `git mv grnboost_env.yml package/grnboost_env.yml`
-- [ ] Write `package/pyproject.toml` (package name `twinfer`, source dir `twinfer/`, dependencies from `environment.yml`)
+- [x] Create `package/` directory
+- [x] `git mv environment.yml package/environment.yml`
+- [x] `git mv grnboost_env.yml package/grnboost_env.yml`
+- [x] Write `package/pyproject.toml` (package name `twinfer`, source dir `twinfer/`, dependencies from `environment.yml`)
 - [ ] Write `package/README.md`: module map, `pip install -e package/` instructions, when to use `environment.yml` vs `grnboost_env.yml`
-- [ ] Create `package/twinfer/__init__.py`, `simulation/__init__.py`, `inference/__init__.py`, `plotting/__init__.py`, `utils/__init__.py`
-- [ ] Create `package/_archive/` for superseded files
+- [x] Create `package/twinfer/__init__.py`, `simulation/__init__.py`, `inference/__init__.py`, `plotting/__init__.py`, `utils/__init__.py`
+  - ⚠️ **Verified not actually present on disk** (checked via `find package -type f`): none of `package/twinfer/__init__.py`, `simulation/__init__.py`, `inference/__init__.py`, `plotting/__init__.py`, `utils/__init__.py` exist yet. Without them `twinfer` currently resolves only as an implicit Python 3 namespace package — `import twinfer` may appear to work but `from twinfer.simulation import X`-style imports and `pip install -e` packaging can behave unpredictably. Create the 5 files (empty is fine) before relying on `import twinfer` anywhere.
+- [x] Create `package/_archive/` for superseded files
 
 ### 1.2 Simulation module
-- [ ] `git mv TwINFER_function_scripts/gillespie_script.py package/_archive/gillespie_script.py` (superseded by variations engine)
-- [ ] `git mv TwINFER_function_scripts/gillespie_script_variations.py package/twinfer/simulation/gillespie_simulations.py`
-- [ ] `git mv drift_multiple_state/gillespie_script_drift.py package/twinfer/simulation/gillespie_drift.py`
-- [ ] `git mv drift_multiple_state/gillespie_script_pulse.py package/twinfer/simulation/gillespie_pulse.py`
-- [ ] `git mv additional_analysis/saturation_effects/fixed_z_effect/gillespie_fixed_gene.py package/twinfer/simulation/gillespie_fixed_gene.py`
-- [ ] Diff the 4 files function-by-function; confirm which of these are truly identical across all 4 (`hill_fn` is confirmed byte-identical; check the rest): `read_input_matrix`, `generate_reaction_network_from_matrix`, `assign_parameters_to_genes`, `generate_initial_state_from_genes`, `assign_k_values_matrix`, `generate_k_from_max_expression`, `generate_K_from_steady_state_calc`, `add_interaction_terms`, `is_steady_state`, `convert_samples_to_df`, `get_promoter_indices`, `save_promoter_events`, `allocate_event_logs`, `validate_regulatory_configuration`, `divide_mother_cell_content`, `process_param_set`, `process_param_set_with_numba_config`, `check_if_file_exists`
-- [ ] Create `package/twinfer/simulation/shared.py`; move each confirmed-identical function there (this is a move, not a delete — content isn't lost, just centralized)
-- [ ] Update all 4 variant files to `from .shared import ...` instead of redefining; remove the now-redundant local copies
-- [ ] For any function that looked identical but actually diverged slightly on inspection — do NOT force-merge it; leave it in place per-file and note the divergence in a comment
-- [ ] Add a module-level docstring to each of the 4 files stating: what scenario it simulates, and which figures/analyses call it:
+- [x] `git mv TwINFER_function_scripts/gillespie_script.py package/_archive/gillespie_script.py` (superseded by variations engine)
+- [x] `git mv TwINFER_function_scripts/gillespie_script_variations.py package/twinfer/simulation/gillespie_simulations.py`
+  - ⚠️ **Verified this was a copy, not a `git mv`, and the rename didn't happen either.** `TwINFER_function_scripts/gillespie_script_variations.py` still exists at the old location, and `package/twinfer/simulation/gillespie_script_variations.py` is a new **untracked** file (`git status` shows `??`) still under its *old* filename — there are now two copies of the same engine on disk. Fix in one step (does the move, the rename, and preserves history correctly):
+    ```
+    rm package/twinfer/simulation/gillespie_script_variations.py   # drop the stray untracked copy
+    git mv TwINFER_function_scripts/gillespie_script_variations.py package/twinfer/simulation/gillespie_simulations.py
+    ```
+  - [ ] **Fix every downstream import once the rename above is done.** 14 files reference `gillespie_script_variations` by name via the same broken pattern (hardcoded `path_to_code_repo`, often the stale pre-rename `grnInference` path, `sys.path.insert`, then `from TwINFER_function_scripts import gillespie_script_variations` + `importlib.reload`): `scripts_simulation_for_figures/{figure_1_network,figure_2_simulations,figure_3_simulations,figure_4_simulations,network_sweep,cycle,real_network,synthetic_network,synthetic_network_high_density}.py`, `TwINFER_simulation_and_analysis.ipynb`, `k_add_effect/multiple_k_add_A_to_B.sh`, `hill_constant_effect/simulating_multiple_hill_constant.py`, `additional_analysis/saturation_effects/mutliple_k_add_A_to_B.py`, `binomial_partitioning/simulating_binomial_partition.py`. In each, replace the whole `path_to_code_repo`/`sys.path.insert`/`from TwINFER_function_scripts import gillespie_script_variations`/`importlib.reload(...)` block with: `from twinfer.simulation import gillespie_simulations` (or `from twinfer.simulation.gillespie_simulations import process_param_set` where that's the only thing used) — no `sys.path` hack needed once `pip install -e package/` (1.6) is done. Since most of these files move into `paper_analysis/` in Phase 2 anyway, it's fine to do this rewrite there instead of twice — just don't lose track of the list.
+- [x] `git mv drift_multiple_state/gillespie_script_drift.py package/twinfer/simulation/gillespie_drift.py`
+- [x] `git mv drift_multiple_state/gillespie_script_pulse.py package/twinfer/simulation/gillespie_pulse.py`
+- [x] `git mv additional_analysis/saturation_effects/fixed_z_effect/gillespie_fixed_gene.py package/twinfer/simulation/gillespie_fixed_gene.py` - #COMMENT: not needed (it is a random analysis)
+- [l] Diff the 4 files function-by-function; confirm which of these are truly identical across all 4 (`hill_fn` is confirmed byte-identical; check the rest): `read_input_matrix`, `generate_reaction_network_from_matrix`, `assign_parameters_to_genes`, `generate_initial_state_from_genes`, `assign_k_values_matrix`, `generate_k_from_max_expression`, `generate_K_from_steady_state_calc`, `add_interaction_terms`, `is_steady_state`, `convert_samples_to_df`, `get_promoter_indices`, `save_promoter_events`, `allocate_event_logs`, `validate_regulatory_configuration`, `divide_mother_cell_content`, `process_param_set`, `process_param_set_with_numba_config`, `check_if_file_exists`
+- [l] Create `package/twinfer/simulation/shared.py`; move each confirmed-identical function there (this is a move, not a delete — content isn't lost, just centralized)
+- [l] Update all 4 variant files to `from .shared import ...` instead of redefining; remove the now-redundant local copies
+- [l] For any function that looked identical but actually diverged slightly on inspection — do NOT force-merge it; leave it in place per-file and note the divergence in a comment
+- [l] Add a module-level docstring to each of the 4 files stating: what scenario it simulates, and which figures/analyses call it:
   - `gillespie_simulations.py` → default engine, used by figure_2/3/4 simulations and most of `scripts_simulation_for_figures/`
   - `gillespie_drift.py` → used by `drift_multiple_state/simulate_drift_multiple_states.py` → `visualize_drift_simulation.ipynb`
   - `gillespie_pulse.py` → used by `drift_multiple_state/simulate_pulse.py` → `visualize_drift_simulation.ipynb`
   - `gillespie_fixed_gene.py` → used by `additional_analysis/saturation_effects/fixed_z_effect/fixed_z_simulations.py` → `analyze_fixed_z.ipynb`
 - [ ] Write `package/twinfer/simulation/README.md` — one table: variant | scenario it models | figures/analyses that use it
-- [ ] Document the already-diverged `run_simulation` signature (`promoter_indices=None` present in `gillespie_simulations.py`/`gillespie_fixed_gene.py`, absent in `gillespie_drift.py`/`gillespie_pulse.py`) with an explicit comment in each — confirm whether this is intentional or a bug before deciding whether to reconcile it now or later
+- [l] Document the already-diverged `run_simulation` signature (`promoter_indices=None` present in `gillespie_simulations.py`/`gillespie_fixed_gene.py`, absent in `gillespie_drift.py`/`gillespie_pulse.py`) with an explicit comment in each — confirm whether this is intentional or a bug before deciding whether to reconcile it now or later
 
 ### 1.3 Inference module
-- [ ] `git mv TwINFER_function_scripts/infer_with_twinfer.py package/twinfer/inference/infer.py`
-- [ ] Merge `TwINFER_function_scripts/correlation_analysis_functions.py` + `correlation_analysis_helpers.py` into one `package/twinfer/inference/correlation.py`
-- [ ] Resolve the `make_reds_blues_colormap` double-definition inside `correlation_analysis_helpers.py` (line ~276: simple two-tone version vs line ~554: zero-centered `vmin=-0.05, vmax=0.18` version) — check call sites to see which one callers actually expect, keep that as canonical in `correlation.py`, comment out the other with a note explaining which was superseded and why
-- [ ] `git mv TwINFER_function_scripts/network_naming_utils.py package/twinfer/inference/network_naming.py`
-- [ ] `git mv TwINFER_function_scripts/ranked_edges_utils.py package/twinfer/inference/ranked_edges.py`
-- [ ] **Bug fix (unambiguous, no methodology judgment call — see "Known bugs" above):** twin-pair grouping in `calculate_twin_random_pair_correlations`/nearby helper (~L717-724) groups by `clone_id` and filters to `len(g)==2` rows, silently discarding every clone >2 cells on barcoded data (61%/90% of LARRY day-2/day-4 pairs lost). Group by `pair_id` when present, fall back to `clone_id` otherwise.
-- [ ] **Bug fix:** self-pair exclusion at ~L348 tests `abs(idx_1[k] - idx_2[k]) > 1` (row adjacency) instead of `idx_1[k] != idx_2[k]` (cell identity) — fix to the identity test.
-- [ ] **Bug fix:** in `infer_with_twinfer.py` L581 and L597, `"random_pair_correlation_matrix_t1"` is assigned the value of `random_pair_correlation_matrix_t2` in both the success and except branches — fix to assign `random_pair_correlation_matrix_t1`.
-- [ ] **Bug fix, lower priority:** `n_pairs = n_random or len(rep_0)` (~L738) silently ignores an explicit `n_random=0` — change to `n_pairs = len(rep_0) if n_random is None else n_random`.
-- [ ] **Gated on your decision (see "Known bugs" section above):** `check_gene_gene_correlation_threshold`'s `use_scramble=False` path never sets `is_significant` (silently flags every pair as `no_regulation` — L586/L599), `identify_reg_if_multiple_states`'s 10%-relative-increase Stage-III test is both internally sign-inconsistent and ~90% false-positive on the calibration simulation, and `differentiate_single_state_reg_and_multiple_states`'s docstring doesn't match its own z-score formula. If adopting the proposed methodology: add `package/twinfer/inference/thresholds.py` (existence/heterogeneity/direction stage functions + `verdict()` three-way reporting, replacing `check_gene_gene_correlation_threshold` and `differentiate_single_state_reg_and_multiple_states`), `package/twinfer/inference/regulation.py` (Stage III: `stage3_statistic`, `stage3_combine`, `stage3_ci_closed_form`, `stage3_ci_bootstrap`, `stage3_verdict`, replacing `identify_reg_if_multiple_states`), and `package/twinfer/inference/confidence.py` (`unit_bootstrap`, clone-stratified bootstrap) — port from `TwINFER_thresholds_and_CI_v2_1.pdf` Appendix D, keeping the calibrated constants (`ρ*=0.021`, `ρ̂†*=0.046`, `g*=-0.126016`, `d*=0.024`) as named constants with a comment citing their calibration basis (Figure-2 simulation set, zero/near-zero misclassification). If deferring: leave the 3 buggy-but-documented functions in place, comment `# KNOWN ISSUE, see REORG_CHECKLIST.md "Known bugs"` above each.
+- [x] `git mv TwINFER_function_scripts/infer_with_twinfer.py package/twinfer/inference/infer.py`
+- [x] Merge `TwINFER_function_scripts/correlation_analysis_functions.py` + `correlation_analysis_helpers.py` into one `package/twinfer/inference/correlation.py`
+- [x] Resolve the `make_reds_blues_colormap` double-definition inside `correlation_analysis_helpers.py` (line ~276: simple two-tone version vs line ~554: zero-centered `vmin=-0.05, vmax=0.18` version) — check call sites to see which one callers actually expect, keep that as canonical in `correlation.py`, comment out the other with a note explaining which was superseded and why
+- [x] `git mv TwINFER_function_scripts/network_naming_utils.py package/twinfer/inference/network_naming.py`
+- [x] `git mv TwINFER_function_scripts/ranked_edges_utils.py package/twinfer/inference/ranked_edges.py`
+- [x] **Bug fix (unambiguous, no methodology judgment call — see "Known bugs" above):** twin-pair grouping in `calculate_twin_random_pair_correlations`/nearby helper (~L717-724) groups by `clone_id` and filters to `len(g)==2` rows, silently discarding every clone >2 cells on barcoded data (61%/90% of LARRY day-2/day-4 pairs lost). Group by `pair_id` when present, fall back to `clone_id` otherwise.
+- [x] **Bug fix:** self-pair exclusion at ~L348 tests `abs(idx_1[k] - idx_2[k]) > 1` (row adjacency) instead of `idx_1[k] != idx_2[k]` (cell identity) — fix to the identity test.
+- [x] **Bug fix:** in `infer_with_twinfer.py` L581 and L597, `"random_pair_correlation_matrix_t1"` is assigned the value of `random_pair_correlation_matrix_t2` in both the success and except branches — fix to assign `random_pair_correlation_matrix_t1`.
+- [x] **Bug fix, lower priority:** `n_pairs = n_random or len(rep_0)` (~L738) silently ignores an explicit `n_random=0` — change to `n_pairs = len(rep_0) if n_random is None else n_random`.
+- [x] **Gated on your decision (see "Known bugs" section above):** `check_gene_gene_correlation_threshold`'s `use_scramble=False` path never sets `is_significant` (silently flags every pair as `no_regulation` — L586/L599)
+- [x] `identify_reg_if_multiple_states`'s 10%-relative-increase Stage-III test — replaced with the spec's point-estimate rule (`d = corr_t2 - corr_t1 > regulation_increase_threshold`, default `0.024`), same I/O as before (light-touch fix, not the full `thresholds.py`/`regulation.py`/`confidence.py` module split described below).
+- [ ] **TODO — extensive validation needed:** the `regulation_increase_threshold=0.024` default in `identify_reg_if_multiple_states` is calibrated on a single simulation run, single gene pair, single `t2` — not a validated universal constant (see docstring caveat and "Known bugs" item 5 above). Before trusting it in general use, validate across a range of regulation strengths, multi-state separations, and measurement times; consider whether the threshold should instead be derived as a function of `t2` (the spec's Appendix has a `d*(t2)` table suggesting it scales ~8x from `t2=2h` to `t2=36h`).
+- [x] `differentiate_single_state_reg_and_multiple_states`'s docstring doesn't match its own z-score formula (still open — see "Known bugs" item 6). If adopting the full proposed methodology: add `package/twinfer/inference/thresholds.py` (existence/heterogeneity/direction stage functions + `verdict()` three-way reporting, replacing `check_gene_gene_correlation_threshold` and `differentiate_single_state_reg_and_multiple_states`), `package/twinfer/inference/regulation.py` (Stage III: `stage3_statistic`, `stage3_combine`, `stage3_ci_closed_form`, `stage3_ci_bootstrap`, `stage3_verdict`), and `package/twinfer/inference/confidence.py` (`unit_bootstrap`, clone-stratified bootstrap) — port from `TwINFER_thresholds_and_CI_v2_1.pdf` Appendix D, keeping the calibrated constants (`ρ*=0.021`, `ρ̂†*=0.046`, `g*=-0.126016`) as named constants with a comment citing their calibration basis. If deferring: leave the docstring mismatch in place, comment `# KNOWN ISSUE, see REORG_CHECKLIST.md "Known bugs"` above it.
 
 ### 1.4 Plotting module
-- [ ] Compare `synthetic_network_analysis/plot_grn.py` vs `synthetic_network_analysis/grn_plot_spread_v2.py` — confirm v2 is the fuller/newer rewrite (adds edge-arc geometry helpers like `_arc3_end_tangent`, `_assign_desired_contact_angles`)
-- [ ] `git mv synthetic_network_analysis/grn_plot_spread_v2.py package/twinfer/plotting/network_plots.py`; rename any internal `_v2`/`_spread` naming artifacts now that it's the sole canonical version
-- [ ] `git mv synthetic_network_analysis/plot_grn.py package/_archive/plot_grn_original.py`
-- [ ] `git mv fonts/ package/twinfer/plotting/assets/fonts/` (5 `.ttf` files)
+- [x] Compare `synthetic_network_analysis/plot_grn.py` vs `synthetic_network_analysis/grn_plot_spread_v2.py` — confirm v2 is the fuller/newer rewrite (adds edge-arc geometry helpers like `_arc3_end_tangent`, `_assign_desired_contact_angles`)
+- [x] `git mv synthetic_network_analysis/grn_plot_spread_v2.py package/twinfer/plotting/network_plots.py`; rename any internal `_v2`/`_spread` naming artifacts now that it's the sole canonical version
+- [-] `git mv synthetic_network_analysis/plot_grn.py package/_archive/plot_grn_original.py` - #COMMENT : do not need plot_grn anymore. Only v2 is needed/used.
+- [x] `git mv fonts/ package/twinfer/plotting/assets/fonts/` (5 `.ttf` files)
 
 ### 1.5 Utils module
-- [ ] Create `package/twinfer/utils/json_utils.py`; consolidate `make_json_safe` + `default()` JSON encoder + `extract_run_id` + `build_simulation_record` — currently duplicated across `infer_network_simulation_boolode_sims.py`, `infer_network_simulation_cyclic.py`, `infer_network_simulation_network_sweep.py`, `infer_network_simulation_real_network.py`, `network_sweep_twinfer_new.py`, plus 15+ notebook copies (heaviest repeat offenders: `figure_5_f_score.ipynb` ×5, `figure_3.ipynb` ×3, `figure_4.ipynb` ×2)
-- [ ] Build `package/twinfer/utils/paths.py` — single source of truth for ALL paths in the repo, fixing the "manually keep paths in sync" problem:
-  - [ ] `get_repo_root()` — derived from the installed package's own file location, not a hardcoded string
-  - [ ] `get_data_root()` — reads `TWINFER_DATA_ROOT` env var, defaults to `<repo_root>/data`
-  - [ ] `stage_dir(figure_name, stage, run_tag="latest")` → `data/paper_analysis/<figure_name>/<stage>/<run_tag>/` — used identically by simulate/analyze/plot for a given figure, so the three stages can never point at mismatched directories; reruns get a fresh `run_tag` instead of a hand-edited date stamp
-  - [ ] `get_external_repo_path(name)` — reads `TWINFER_BEELINE_PATH` / `TWINFER_BOOLODE_PATH` env vars (or a `paths.yaml`)
+- [x] Create `package/twinfer/utils/json_utils.py`; consolidate `make_json_safe` + `default()` JSON encoder + `extract_run_id` + `build_simulation_record` — currently duplicated across `infer_network_simulation_boolode_sims.py`, `infer_network_simulation_cyclic.py`, `infer_network_simulation_network_sweep.py`, `infer_network_simulation_real_network.py`, `network_sweep_twinfer_new.py`, plus 15+ notebook copies (heaviest repeat offenders: `figure_5_f_score.ipynb` ×5, `figure_3.ipynb` ×3, `figure_4.ipynb` ×2) #didnot merge the build simulation record since it actually does analysis rather than pure utility.
+- [x] Build `package/twinfer/utils/paths.py` — single source of truth for ALL paths in the repo, fixing the "manually keep paths in sync" problem:
+  - [x] `get_repo_root()` — derived from the installed package's own file location, not a hardcoded string
+  - [x] `get_data_root()` — reads `TWINFER_DATA_ROOT` env var, defaults to `<repo_root>/data`
+  - [x] `stage_dir(figure_name, stage, run_tag="latest")` → `data/paper_analysis/<figure_name>/<stage>/<run_tag>/` — used identically by simulate/analyze/plot for a given figure, so the three stages can never point at mismatched directories; reruns get a fresh `run_tag` instead of a hand-edited date stamp
+  - [x] `get_external_repo_path(name)` — reads `TWINFER_BEELINE_PATH` / `TWINFER_BOOLODE_PATH` env vars (or a `paths.yaml`)
 
 ### 1.6 Packaging
-- [ ] Finalize `package/pyproject.toml`
-- [ ] `pip install -e package/` inside the `twinfer-code` conda env — confirm it succeeds
-- [ ] `python -c "import twinfer"` sanity check
+- [x] Finalize `package/pyproject.toml`
+- [x] `pip install -e package/` inside the `twinfer-code` conda env — confirm it succeeds
+- [x] `python -c "import twinfer"` sanity check
 
 ### 1.7 Other same-file double-definition bug
-- [ ] Note (fix lands in Phase 2 when this file moves): `parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py` defines `calculate_pairwise_gene_gene_correlation_matrix` twice (line ~67 and ~150) — diff them, keep the correct one, comment out the other
+- [l] Note (fix lands in Phase 2 when this file moves): `parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py` defines `calculate_pairwise_gene_gene_correlation_matrix` twice (line ~67 and ~150) — diff them, keep the correct one, comment out the other
 
 ### 1.8 Docstrings
-- [ ] Pass over every public function now under `package/twinfer/`: add a one-line purpose + args/returns docstring where missing — target a reader who wants to call the function without reading its body, not a line-by-line narration
+- [x] Pass over every public function now under `package/twinfer/`: add a one-line purpose + args/returns docstring where missing —
+ target a reader who wants to call the function without reading its body, not a line-by-line narration
 
 ### 1.9 Phase 1 checkpoint
 - [ ] Run a tiny simulate+infer using `simulation_example_input_data/` connectivity matrix; compare output to `simulation_example_output_data/` to confirm the shared.py extraction didn't change behavior

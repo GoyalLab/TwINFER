@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize, LinearSegmentedColormap
 from adjustText import adjust_text
 
-
 __version__ = "2026-07-16-one-reciprocal-edge-curved-v6"
 
 

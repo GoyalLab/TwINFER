@@ -13,8 +13,7 @@ import joblib
 from itertools import product
 import importlib
 
-from TwINFER_function_scripts.correlation_analysis_functions import (
-    
+from correlation_functions import (
     calculate_pairwise_gene_gene_correlation_matrix,
     check_system_in_steady_state,
     check_gene_gene_correlation_threshold,
@@ -23,42 +22,39 @@ from TwINFER_function_scripts.correlation_analysis_functions import (
     identify_reg_if_multiple_states,
     get_cross_correlations,
     identify_actual_directed_edges,
-    separate_fan_outs_from_mutual_regulation
-)
-
-# Helper functions
-from TwINFER_function_scripts.correlation_analysis_helpers import (
+    separate_fan_outs_from_mutual_regulation,
     extract_param_index,
     read_input_matrix,
     get_param_data, 
     split_and_merge_simulations,
     plot_matrix_as_heatmap,
-    print_summary,
-    plot_network
+    print_summary
 )
 
-def infer_with_twinfer(path_to_simulation_file= None, 
-                        merge_to_multiple_states = False,
-                        base_config=None, t1 = None, t2 = None, 
-                        check_for_steady_state=True, 
+def infer_with_twinfer(path_to_simulation_file=None,
+                        merge_to_multiple_states=False,
+                        base_config=None,
+                        t1=None, t2=None,
+                        gene_list_given=None,
+                        match_sim_details=True,
+                        check_for_steady_state=True,
+                        remove_twin_structure=False,
+                        seed=101010,
                         merge_time_points=True,
-                        threshold_gene_gene_corr=0.04, use_scramble = True, 
-                        p_val_threshold_scrambled_gene_correlation = 0.01,
-                        show_scrambled_distribution_gene_correlation = True,
-                        z_score_threshold_two_states = 10,
-                        p_value_threshold_cross_correlation = 0.01,
+                        threshold_gene_gene_corr=0.04,
+                        use_scramble=True,
+                        p_val_threshold_scrambled_gene_correlation=0.01,
+                        show_scrambled_distribution_gene_correlation=True,
+                        n_cores=4,
+                        return_gene_corr_thresholds=False,
+                        z_score_threshold_two_states=10,
+                        infer_direction_for_which_edges="single-state",
+                        p_value_threshold_cross_correlation=0.01,
+                        separate_fan_outs_from_mutual_regulation_flag=False,
+                        fan_out_z_score_threshold=8,
                         plot_correlation_matrices_as_heatmap=True,
                         have_any_output=True,
-                        seed = 101010,
-                        infer_direction_for_which_edges = "single-state",
-                        separate_fan_outs_from_mutual_regulation_flag = False,
-                        fan_out_z_score_threshold = 8,
-                        remove_twin_structure = False,
-                        return_gene_corr_thresholds = False,
-                        match_sim_details = True,
-                        gene_list_given = None,
-                        n_cores = 4,
-                        ranked_list = False):
+                        ranked_list=False):
     """
     Infer gene regulatory interactions from simulated or experimental twin-cell data
     using the TwINFER pipeline.
@@ -71,20 +67,32 @@ def infer_with_twinfer(path_to_simulation_file= None,
       4. Infer directionality of single-state interactions from across-time twin pairs.
       5. Optionally visualize intermediate matrices and the inferred network.
 
-    The approach uses twin cell pairs (descended from the same mother cell) and 
-    compares their gene expression correlations at early and late post-division 
-    times, as well as across-time twin measurements, to determine regulation type 
+    The approach uses twin cell pairs (descended from the same mother cell) and
+    compares their gene expression correlations at early and late post-division
+    times, as well as across-time twin measurements, to determine regulation type
     and directionality.
+
+    Parameters are listed below in the order the pipeline uses them: input/config,
+    steady-state and twin-structure setup, Step 1 (gene-gene correlation), Step 3
+    (single- vs multiple-state classification), Step 5 (directionality), the
+    optional fan-out step, and finally display/output options.
 
     Parameters
     ----------
-    path_to_simulation_file : str
-        Path to the CSV file containing simulation or experimental output.
-        The file should have one row per cell per timepoint, with at least:
+    path_to_simulation_file : str or list of str
+        Path to the CSV file containing simulation or experimental output, or a
+        list of such paths when `merge_to_multiple_states=True`. The file should
+        have one row per cell per timepoint, with at least:
         - 'clone_id': integer clone identifier.
         - 'cell_id': unique cell identifier.
         - 'time_step': time (in hours) post-division.
         - gene expression columns for each gene.
+
+    merge_to_multiple_states : bool, default=False
+        If True, `path_to_simulation_file` is treated as multiple underlying
+        states to combine: a list of paths is merged via `split_and_merge_simulations`,
+        while a single string path is used as-is (with a printed note, since there
+        is nothing to merge).
 
     base_config : dict
         Dictionary specifying simulation metadata and parameter sources:
@@ -105,8 +113,34 @@ def infer_with_twinfer(path_to_simulation_file= None,
         Early timepoint (hours) used for initial gene–gene correlation analysis.
 
     t2 : int or float
-        Late timepoint (hours) used for twin vs random correlation comparison and 
+        Late timepoint (hours) used for twin vs random correlation comparison and
         across-time directionality inference.
+
+    gene_list_given : list of str, optional
+        Explicit gene names to use in place of the default `gene_1, gene_2, ...`
+        naming derived from the connectivity matrix's gene count.
+
+    match_sim_details : bool, default=True
+        If True, cross-checks the simulation file's clone count, sampled
+        timepoints, and parameter-row index against `base_config` before
+        proceeding (raises an AssertionError on mismatch); this also gates
+        whether `check_for_steady_state` runs. Set False for data with no
+        matching `base_config` (e.g. real/experimental data).
+
+    check_for_steady_state : bool, default=True
+        If True (and `match_sim_details=True`), verifies that the system is in
+        steady state at t1 using a mean and slope threshold; raises ValueError
+        if not steady.
+
+    remove_twin_structure : bool, default=False
+        If True, scrambles clone identity for every replicate after the first
+        (via a derangement), so unrelated cells are treated as twins instead —
+        used as a negative control for the twin-pair signal.
+
+    seed : int, default=101010
+        Random seed for the clone-id shuffle that splits clones into the
+        t1-only, t2-only, and across-time subsets (and for `remove_twin_structure`
+        when enabled).
 
     merge_time_points : bool, default=True
         Should cells be merged to get gene-gene correlation and random correlation between the two time points. Set it to be True if the population is in steady state.
@@ -115,18 +149,37 @@ def infer_with_twinfer(path_to_simulation_file= None,
         Absolute correlation threshold above which gene–gene pairs are considered
         potential regulations.
 
-    check_for_steady_state : bool, default=True
-        If True, verifies that the system is in steady state at t1 using a mean and 
-        slope threshold; raises ValueError if not steady.
+    use_scramble : bool, default=True
+        Passed to the Step 1 significance test (`check_gene_gene_correlation_threshold`).
 
-    plot_correlation_matrices_as_heatmap : bool, default=True
-        If True, generates heatmaps for:
-            - Gene–gene correlations at t1
-            - Twin and random correlations at t2
-            - Directionality matrix
+    p_val_threshold_scrambled_gene_correlation : float, default=0.01
+        p-value cutoff for the Step 1 scramble-based significance test (used only
+        when `use_scramble=True`).
 
-    have_any_output : bool, default=True
-        If True, prints a summary of inferred regulations and shows network plots.
+    show_scrambled_distribution_gene_correlation : bool, default=True
+        If True, plots the scrambled null distribution for each significant gene
+        pair during Step 1.
+
+    n_cores : int, default=4
+        Number of cores used for the numba-parallelized scramble/permutation
+        steps (gene-gene correlation thresholding and directionality inference).
+
+    return_gene_corr_thresholds : bool, default=False
+        If True, adds "gene_corr_thresholds" and "gene_gene_corr_p_values" to the
+        returned dict (the per-pair thresholds/p-values computed during Step 1).
+
+    z_score_threshold_two_states : float, default=10
+        z-score threshold used in Step 3 to classify a `potential_regulation`
+        pair as multiple-state (heterogeneous) vs single-state, from the
+        difference between twin and random-pair correlations.
+
+    infer_direction_for_which_edges : {"single-state", "all-potential-regulation", "all-edges"}, default="single-state"
+        Which candidate edge set Step 5 tests for directionality: only
+        single-state-regulation pairs, all potential-regulation pairs
+        (single- and multiple-state), or every gene pair.
+
+    p_value_threshold_cross_correlation : float, default=0.01
+        p-value cutoff for the Step 5 across-time directionality test.
 
     separate_fan_outs_from_mutual_regulation_flag : bool, default=False
         If True, after final_directed_edges is computed, checks every gene pair (A, B) that
@@ -141,15 +194,24 @@ def infer_with_twinfer(path_to_simulation_file= None,
     fan_out_z_score_threshold : float, default=8
         |z|-score threshold used by separate_fan_outs_from_mutual_regulation_flag above.
 
-    remove_twin_structure : bool, default=False
-        If True, scrambles twin structure and random pairs of cells are labelled as twins instead.
+    plot_correlation_matrices_as_heatmap : bool, default=True
+        If True, generates heatmaps for:
+            - Gene–gene correlations at t1
+            - Twin and random correlations at t2
+            - Directionality matrix
+
+    have_any_output : bool, default=True
+        If True, prints a summary of inferred regulations and shows network plots.
+
     ranked_list : bool, default=False
         If True, adds "ranked_edge_list" to the returned dict: a DataFrame with columns
         gene_1, gene_2, directional_correlation, p_val, built from every non-zero entry
         of unfiltered_direction_matrix (self-pairs excluded), for whichever candidate set
         infer_direction_for_which_edges actually tested this call (single-state,
         all-potential-regulation, or all-edges -- nothing extra is computed). Ranked by
-        p_val ascending, with |directional_correlation| as the tie-break.
+        |directional_correlation| magnitude descending (strongest first), with p_val
+        ascending as the tie-break.
+
     Returns
     -------
     dict
@@ -168,6 +230,12 @@ def infer_with_twinfer(path_to_simulation_file= None,
                 Twin-cell correlation matrix at t1.
             - "random_pair_correlation_matrix_t1" : pd.DataFrame
                 Random-cell correlation matrix at t1.
+            - "stage3_details" : dict
+                Keyed by (gene_i, gene_j) for every pair in multiple_states_gene_pairs;
+                point estimate, standard error, confidence interval, and
+                conclusive/inconclusive verdict for the Stage III regulation test.
+                See identify_reg_if_multiple_states's Returns for the per-pair schema.
+                Empty dict if no pairs were classified as multiple-state.
 
     Raises
     ------
@@ -182,15 +250,14 @@ def infer_with_twinfer(path_to_simulation_file= None,
     -----
     - Clones are split into three disjoint sets for t1-only, t2-only, and across-time
       measurements in a 1:1:2 ratio.
-    - Gene-gene and random-pair correlations uses all cell measurements at both time t1 and t2.
+    - Gene-gene correlations uses all cell measurements at both time t1 and t2.
     - Across-time twin pairs are sampled by selecting one cell per clone at t1 and 
       one different cell at t2 from the same clone.
     - Single-state vs multiple-state regulation classification is based on the 
-      difference between twin and random correlations at t2.
+      difference between twin and random correlations at t1.
     - Directionality inference uses correlation differences between across-time 
       twin pairs at t1 and t2.
     """
-
     # Load simulation data
     if merge_to_multiple_states:
         if isinstance(path_to_simulation_file, str):
@@ -252,9 +319,10 @@ def infer_with_twinfer(path_to_simulation_file= None,
         
     # --- Check for steady state at t1 (optional) ---
     if check_for_steady_state and match_sim_details:
-        is_system_in_steady_state = check_system_in_steady_state(simulation, gene_params, interaction_matrix, gene_list,
+        is_system_in_steady_state, steady_state_summary = check_system_in_steady_state(simulation, gene_params, interaction_matrix, gene_list,
                                   relative_diff_threshold=0.01, relative_slope_threshold=0.01)
         if not is_system_in_steady_state:
+            print(steady_state_summary)
             raise ValueError(
                 "The system is not in steady state. "
                 "You can override this by setting check_for_steady_state=False."
@@ -269,22 +337,28 @@ def infer_with_twinfer(path_to_simulation_file= None,
         raise ValueError(f"Time point t2={t2} not found in simulation['time_step'].")
 
     # If remove_twin_structure is set to True, random pairs of cells are used as "pairs of twins"
-
     # --- Break twin structure but preserve within-cell continuity ---
+    replicates = simulation["replicate"].drop_duplicates().sort_values().to_numpy()
+
     if remove_twin_structure:
         rng = np.random.default_rng(12345)
-        unique_clones = np.array(simulation["clone_id"].unique())
 
-        # --- Generate a derangement (no clone keeps its original ID) ---
-        shuffled = unique_clones.copy()
-        while np.any(shuffled == unique_clones):
-            rng.shuffle(shuffled)
+        # sort so the RNG draw is reproducible regardless of row order in the frame
+        unique_clones = simulation["clone_id"].drop_duplicates().sort_values().to_numpy()
+        
 
-        shuffle_map = dict(zip(unique_clones, shuffled))
+        if len(unique_clones) < 2:
+            raise ValueError("need at least 2 clones to build a derangement")
 
-        # --- Apply mapping ONLY to replicate 2 ---
-        mask_rep2 = simulation["replicate"] == 2
-        simulation.loc[mask_rep2, "clone_id"] = simulation.loc[mask_rep2, "clone_id"].map(shuffle_map)
+        # first replicate stays as the reference; every other one gets its own derangement
+        for rep in replicates[1:]:
+            shuffled = unique_clones.copy()
+            while np.any(shuffled == unique_clones):
+                rng.shuffle(shuffled)
+
+            shuffle_map = dict(zip(unique_clones, shuffled))
+            mask = simulation["replicate"] == rep
+            simulation.loc[mask, "clone_id"] = simulation.loc[mask, "clone_id"].map(shuffle_map)
 
 
     # Subset the simulation at the desired timepoints
@@ -305,12 +379,13 @@ def infer_with_twinfer(path_to_simulation_file= None,
 
     # Across_t: pick exactly one random twin per clone_id
     # One cell per clone at t1
+    
     across_t_twin1 = (
-        simulation[(simulation['clone_id'].isin(across_t_clones)) & (simulation['time_step'] == t1) & (simulation['replicate'] == 1)]
+        simulation[(simulation['clone_id'].isin(across_t_clones)) & (simulation['time_step'] == t1) & (simulation['replicate'] == replicates[0])]
     )
     
     across_t_twin2 = (
-        simulation[(simulation['clone_id'].isin(across_t_clones)) & (simulation['time_step'] == t2) & (simulation['replicate'] == 2)]
+        simulation[(simulation['clone_id'].isin(across_t_clones)) & (simulation['time_step'] == t2) & (simulation['replicate'] == replicates[1])]
     )
 
     # Reset index for cleanliness
@@ -331,6 +406,8 @@ def infer_with_twinfer(path_to_simulation_file= None,
         [t2_twins, across_t_twin2],
         ignore_index=True
     )
+    #TODO Merge timepoints for correlation - need to be removed 
+    #Step 1: Calculate pairwise gene correlations to check for existence of an edge
     if merge_time_points == True:
         # --- Step 1: Pairwise gene-gene correlations at t1 ---
         pairwise_gene_gene_correlation_matrix = calculate_pairwise_gene_gene_correlation_matrix(
@@ -349,7 +426,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
             all_t2_measurements, pairwise_gene_gene_correlation_matrix, gene_list,  threshold = threshold_gene_gene_corr, use_scramble = True, 
             p_val_threshold = p_val_threshold_scrambled_gene_correlation, verbose = show_scrambled_distribution_gene_correlation, n_cores_to_use = n_cores, return_gene_corr_thresholds = return_gene_corr_thresholds
         )
-    # print(no_regulation)
+
     if plot_correlation_matrices_as_heatmap:
         if merge_time_points == True:
             title = r"Gene correlations $\rho$ with cells from both two points"
@@ -359,18 +436,12 @@ def infer_with_twinfer(path_to_simulation_file= None,
             title=title, add_gene_labels=True, add_time=False, gray_out_no_reg=False, black_out_self = True
         )
 
-    # --- Step 2: Twin/random correlations at t2 ---
-    if merge_time_points:
-        twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1 = calculate_twin_random_pair_correlations(
-            all_t1_t2_measurements, t1_twins, gene_list
-        )
-        title_random_plot = r"Random-pair difference correlation $\rho_{\Delta}$ using cells across both timepoints"
-    else:
-        title_random_plot = rf"Random-pair difference correlation $\rho_{{\Delta}}$ using cells at time {t1}"
-        twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1 = calculate_twin_random_pair_correlations(
+    #Step 2: Calculate z-score by comparing z-score of twin correlation as compared to a distribution of random-pair correlations for every gene pair
+    title_random_plot = rf"Random-pair difference correlation $\rho_{{\Delta}}$ using cells at time {t1}"
+    twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1 = calculate_twin_random_pair_correlations(
             all_t1_measurements, t1_twins, gene_list
         )
-    # print(twin_pair_correlation_matrix_t2)
+
     if plot_correlation_matrices_as_heatmap:
         plot_matrix_as_heatmap( corr_matrix=twin_pair_correlation_matrix_t1, gene_list=gene_list, no_regulation=no_regulation, potential_regulation=potential_regulation,
             title=rf"Twin pair correlations $\hat{{\rho}}_{{\Delta}}(t_1)$ at time {t1}h", add_gene_labels=True, add_time=False, time=[t1], gray_out_no_reg=True, black_out_self = True, symmetric = True
@@ -380,38 +451,32 @@ def infer_with_twinfer(path_to_simulation_file= None,
             title=title_random_plot, add_gene_labels=True, add_time=False, time=[t1], gray_out_no_reg=True, black_out_self = True, symmetric = True
         )
 
-    # --- Step 3: Classify regulation type: single-state vs multiple-states ---
-    if merge_time_points:
-        multiple_states_gene_pairs, single_state_regulation = differentiate_single_state_reg_and_multiple_states(
-            all_t1_t2_measurements, potential_regulation, twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1, gene_list, z_score_threshold=z_score_threshold_two_states
-        )
-        twin_pair_correlation_matrix_t2, random_pair_correlation_matrix_t2 = calculate_twin_random_pair_correlations(
-                    all_t1_t2_measurements, t2_twins, gene_list
-                )
-    else:
-        multiple_states_gene_pairs, single_state_regulation = differentiate_single_state_reg_and_multiple_states(
+    multiple_states_gene_pairs, single_state_regulation = differentiate_single_state_reg_and_multiple_states(
             all_t1_measurements, potential_regulation, twin_pair_correlation_matrix_t1, random_pair_correlation_matrix_t1, gene_list, z_score_threshold=z_score_threshold_two_states
         )
-        twin_pair_correlation_matrix_t2, random_pair_correlation_matrix_t2 = calculate_twin_random_pair_correlations(
+    twin_pair_correlation_matrix_t2, random_pair_correlation_matrix_t2 = calculate_twin_random_pair_correlations(
                     all_t2_measurements, t2_twins, gene_list
-                )
+        )
+    #Step 3: Identify if there is multiple states and regulation by comparing twin-correlation across time
     if len(multiple_states_gene_pairs) > 0:
-
-        multiple_states_no_reg, multiple_states_and_reg = identify_reg_if_multiple_states(
+        multiple_states_no_reg, multiple_states_and_reg, stage3_details = identify_reg_if_multiple_states(
             twin_pair_correlation_matrix_t1,twin_pair_correlation_matrix_t2,random_pair_correlation_matrix_t1,
-            random_pair_correlation_matrix_t2,multiple_states_gene_pairs,gene_list
+            random_pair_correlation_matrix_t2,multiple_states_gene_pairs,gene_list,
+            t1_twins,t2_twins
             )
     else:
-        multiple_states_no_reg, multiple_states_and_reg = [], []
+        multiple_states_no_reg, multiple_states_and_reg, stage3_details = [], [], {}
 
-    # --- Step 4: Print summary of results ---
+    #Print summary of results ---
     all_gene_pairs = list(product(gene_list, repeat=2))
     if have_any_output:
         print_summary(no_regulation, single_state_regulation, multiple_states_no_reg, multiple_states_and_reg)
+    
+    #Step 4: Identify direction of regulation using cross-correlation of expression between twins separated across the two time points
     direction_matrix = pd.DataFrame()
     final_directed_edges = set()
     directed_p_values = {}
-    # --- Step 5: Infer directionality of single-state interactions ---
+
     if infer_direction_for_which_edges == "single-state" :
         if len(single_state_regulation) > 0:
             bidirectional_pairs = {(a, b) for (a, b) in single_state_regulation} | \
@@ -453,8 +518,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
     else:
         direction_matrix = get_cross_correlations(across_t_twin1, across_t_twin2, gene_pairs=all_gene_pairs)
         final_directed_edges, directed_p_values = identify_actual_directed_edges(across_t_twin1, across_t_twin2, direction_matrix, gene_pairs=all_gene_pairs, threshold = p_value_threshold_cross_correlation, n_cores_to_use = n_cores, verbose = True, return_p_values = True)
-    print(final_directed_edges)
-    # print(pre_threshold_direction_matrix)
+
     direction_matrix = direction_matrix.reindex(
     index=gene_list,
     columns=gene_list,
@@ -465,9 +529,8 @@ def infer_with_twinfer(path_to_simulation_file= None,
         for j in direction_matrix.columns:
             if i != j and (i, j) not in final_directed_edges:
                     direction_matrix.loc[i,j] = 0
-    print(direction_matrix)
 
-    # --- Optional: separate fan-outs (C->A, C->B) from true mutual regulation (A<->B) ---
+    #Step 5: Separate fan-outs (C->A, C->B) from true mutual regulation (A<->B) ---
     fan_out_log = None
     final_directed_edges = set(final_directed_edges)
     if separate_fan_outs_from_mutual_regulation_flag:
@@ -478,6 +541,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
             final_directed_edges, directed_p_values, direction_matrix,
             z_score_threshold=fan_out_z_score_threshold
         )
+
     if plot_correlation_matrices_as_heatmap and not direction_matrix.empty:
         all_gene_pairs = list(product(gene_list, repeat=2))
         no_reg_pairs = [pair for pair in all_gene_pairs if pair not in final_directed_edges]
@@ -528,7 +592,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
                 symmetric = False
             )
 
-    # --- Step 6: Visualize the inferred network ---
+    # Step 6: #TODO use the new plot network function to visualize the inferred network
     # if (len(single_state_regulation) >= 0):
     #     if have_any_output:
     #         if (len(final_directed_edges) > 0):
@@ -540,10 +604,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
     # Reflects whichever candidate set was actually tested this call (single-state,
     # all-potential-regulation, or all-edges) -- nothing is recomputed here, just
     # reshaped. Self-pairs (gene_1 == gene_2) are excluded: they're not regulatory
-    # edges. Ranked by p-value ascending (most significant first), with |correlation|
-    # magnitude as the tie-break for pairs sharing the same p-value (a real
-    # occurrence at a fixed number of shuffles, since p-values have a resolution
-    # floor of ~1/n_shuffles).
+    # edges. Ranked by magnitude of cross-correlations (most significant first), with the p-value as a tie-breaker if necessary
     ranked_edge_list = None
     if ranked_list:
         rank_rows = []
@@ -560,7 +621,7 @@ def infer_with_twinfer(path_to_simulation_file= None,
         if not ranked_edge_list.empty:
             ranked_edge_list["_abs_corr"] = ranked_edge_list["directional_correlation"].abs()
             ranked_edge_list = (
-                ranked_edge_list.sort_values(["p_val", "_abs_corr"], ascending=[True, False])
+                ranked_edge_list.sort_values(["_abs_corr", "p_val"], ascending=[False, True])
                 .drop(columns="_abs_corr")
                 .reset_index(drop=True)
             )
@@ -578,8 +639,9 @@ def infer_with_twinfer(path_to_simulation_file= None,
             "twin_pair_correlation_matrix_t2": twin_pair_correlation_matrix_t2,
             "random_pair_correlation_matrix_t2": random_pair_correlation_matrix_t2,
             "twin_pair_correlation_matrix_t1": twin_pair_correlation_matrix_t1,
-            "random_pair_correlation_matrix_t1": random_pair_correlation_matrix_t2,
-            "fan_out_log": fan_out_log
+            "random_pair_correlation_matrix_t1": random_pair_correlation_matrix_t1,
+            "fan_out_log": fan_out_log,
+            "stage3_details": stage3_details
         }
     except:
         result = {
@@ -594,7 +656,8 @@ def infer_with_twinfer(path_to_simulation_file= None,
             "random_pair_correlation_matrix_t2": random_pair_correlation_matrix_t2,
             "twin_pair_correlation_matrix_t2": twin_pair_correlation_matrix_t2,
             "twin_pair_correlation_matrix_t1": twin_pair_correlation_matrix_t1,
-            "random_pair_correlation_matrix_t1": random_pair_correlation_matrix_t2,
+            "random_pair_correlation_matrix_t1": random_pair_correlation_matrix_t1,
+            "stage3_details": stage3_details
         }
     if return_gene_corr_thresholds:
         result['gene_corr_thresholds'] = gene_corr_thresholds

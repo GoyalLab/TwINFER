@@ -2,15 +2,22 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr, linregress, pearsonr
 from .correlation_analysis_helpers import dict_to_matrix
-import matplotlib.pyplot as plt
 from scipy.stats import rankdata
 from itertools import combinations, permutations
 import os
 from joblib import Parallel, delayed
 from scipy import stats
 import numba
-import numpy as np
-import pandas as pd
+import re
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle, FancyArrowPatch
+from matplotlib.colors import Normalize, LinearSegmentedColormap, ListedColormap, TwoSlopeNorm
+from matplotlib.cm import ScalarMappable
+import networkx as nx
+import seaborn as sns
+from itertools import cycle
+from pathlib import Path
+
 
 def steady_state_calc(param_dict, interaction_matrix, gene_list,
                                    sim_data, scale_k=None):
@@ -29,6 +36,7 @@ def steady_state_calc(param_dict, interaction_matrix, gene_list,
         protein_levels_sim_data (np.ndarray): Steady state protein levels estimated using simulation data.
     """
     def hill_fn(x, n, k):
+        """Hill function: x^n / (x^n + k^n), elementwise."""
         x = np.asarray(x)
         return x ** n / (x ** n + k ** n)
 
@@ -55,7 +63,7 @@ def steady_state_calc(param_dict, interaction_matrix, gene_list,
             n_val = param_dict.get(f"n_{edge}", 1.0)
             k_val = param_dict.get(f"k_{edge}", 1.0)
             sign = interaction_matrix[r, i]
-            key = f"gene_{r+1}_protein"
+            key = f"{src_gene}_protein"
             if key not in sim_data:
                 raise ValueError(f"{key} not found in sim_data")
 
@@ -101,7 +109,7 @@ def check_system_in_steady_state(simulation_df, gene_params, interaction_matrix,
 
         for i in range(n_genes):
             gene_means[i].append(steady_state_with_sim_data[i])
-            mean_val[i].append(sim_data_t[f'gene_{i + 1}_protein'].mean())
+            mean_val[i].append(sim_data_t[f'{gene_list[i]}_protein'].mean())
 
     t_array = np.array(t_list)
     relative_diffs = []
@@ -127,6 +135,7 @@ def check_system_in_steady_state(simulation_df, gene_params, interaction_matrix,
 
     summary_df = pd.DataFrame({
         "Gene": [f"Gene {i + 1}" for i in range(n_genes)],
+        "Max Relative Diff": [np.max(rd) for rd in relative_diffs],
         "Relative Slope": relative_slopes,
         "Steady State?": steady_state_flags
     })
@@ -134,6 +143,21 @@ def check_system_in_steady_state(simulation_df, gene_params, interaction_matrix,
     return all(steady_state_flags), summary_df
 
 def calculate_pairwise_gene_gene_correlation_matrix(simulation_at_t1, gene_list):
+    """
+    Gene-gene Spearman correlation matrix across cells at a single timepoint.
+
+    Parameters
+    ----------
+    simulation_at_t1 : pd.DataFrame
+        One row per cell, must contain '{gene}_mRNA' for each gene in gene_list.
+    gene_list : list of str
+        Gene names (without '_mRNA' suffix).
+
+    Returns
+    -------
+    correlation_matrix : pd.DataFrame
+        Gene x gene Spearman correlation matrix.
+    """
     correlations = {}
     for gene_1 in gene_list:
         for gene_2 in gene_list:
@@ -144,21 +168,24 @@ def calculate_pairwise_gene_gene_correlation_matrix(simulation_at_t1, gene_list)
 
 
 def get_correlations(correlation_dict, gene_i, gene_j):
+   """Look up the correlation for (gene_i, gene_j) in a dict keyed by sorted gene-pair tuples."""
    return correlation_dict[tuple(sorted([gene_i, gene_j]))]
 
 def generate_random_shuffle(simulation_data, gene_list, n_shuffles=10000, random_state=42):
     """
-    Random-pair difference-correlation null distribution sized to N (half the cell pool,
-    matching the number of true twin pairs), not the ~2N pairs generate_random_shuffle draws
-    via two independent permutations of the full pool. Every shuffle draws a single
-    permutation of the whole pool, splits it into two equal halves, and pairs them
-    positionally -- so each shuffle yields floor(n_cells/2) random-pair deltas, matching the
-    N true twin-pair deltas that twin_correlation_matrix (the statistic being compared
-    against in differentiate_single_state_reg_and_multiple_states) was computed from. No
-    assumption is made about which column/labels distinguish the two twins -- only that
-    'clone_id' identifies which rows are each other's twin, so a position that would pair a
-    cell with its own twin can be dropped (see _half_split_diff_null_kernel) instead of
-    leaking real twin correlation into the "random" null.
+    Random-pair difference-correlation null distribution sized to the number of true
+    twin pairs in simulation_data (clone_ids with exactly 2 cells), not to
+    floor(n_cells/2) -- those only coincide when every clone_id in the pool has
+    exactly 2 cells. Every shuffle draws a single permutation of the whole cell
+    pool, splits it into two parts of that target size, and pairs them
+    positionally -- so each shuffle yields (up to) that many random-pair deltas,
+    matching the N true twin-pair deltas that twin_correlation_matrix (the
+    statistic being compared against in differentiate_single_state_reg_and_multiple_states)
+    was computed from. No assumption is made about which column/labels distinguish
+    the two twins -- only that 'clone_id' identifies which rows are each other's
+    twin, so a position that would pair a cell with its own twin can be dropped
+    (see _half_split_diff_null_kernel) instead of leaking real twin correlation
+    into the "random" null.
 
     Parameters
     ----------
@@ -182,13 +209,21 @@ def generate_random_shuffle(simulation_data, gene_list, n_shuffles=10000, random
     expr = sub[gene_cols].to_numpy(dtype=np.float64)
     clone_codes = pd.factorize(sub['clone_id'])[0].astype(np.int64)
 
+    # Target sample size = number of clone_ids with exactly 2 cells here, i.e. the
+    # true twin-pair count -- not n_cells // 2, which only matches when every
+    # clone_id in the pool happens to have exactly 2 cells.
+    _, clone_counts = np.unique(clone_codes, return_counts=True)
+    n_twin_pairs = int(np.sum(clone_counts == 2))
+    if n_twin_pairs == 0:
+        raise ValueError("No clone_id with exactly 2 cells found in simulation_data; cannot size the random-pair null.")
+
     n_genes = expr.shape[1]
     triu_i, triu_j = np.triu_indices(n_genes, k=1)
     gene_pairs = [(gene_list[i], gene_list[j]) for i, j in zip(triu_i, triu_j)]
 
     seeds = _spawn_independent_seeds(random_state, n_shuffles)
     all_correlations = _half_split_diff_null_kernel(
-        expr, clone_codes, seeds, triu_i.astype(np.int64), triu_j.astype(np.int64)
+        expr, clone_codes, seeds, triu_i.astype(np.int64), triu_j.astype(np.int64), n_twin_pairs
     )
 
     correlation_dict = {
@@ -223,6 +258,27 @@ def compute_correlation_matrix(gene_matrix_1, gene_matrix_2, gene_list, gene_pai
    return pd.DataFrame(raw_matrix, index=gene_list, columns=gene_list)
 
 def single_cell_shuffle(gene_matrix_1, gene_matrix_2, gene_list, shuffle_pairs, seed=101010):
+            """
+            One shuffle of the correlation-permutation null: randomly permutes the
+            cell order of gene_matrix_2 and recomputes the gene-pair correlation
+            matrix against the unshuffled gene_matrix_1.
+
+            Parameters
+            ----------
+            gene_matrix_1, gene_matrix_2 : np.ndarray
+                Shape (n_genes, n_cells); gene_matrix_2's columns (cells) are shuffled.
+            gene_list : list of str
+                Gene names, in row order matching the matrices.
+            shuffle_pairs : list of tuple
+                Gene-index pairs to compute correlations for.
+            seed : int, default=101010
+                Random seed for the cell permutation.
+
+            Returns
+            -------
+            pd.DataFrame
+                Gene x gene correlation matrix for this one shuffle.
+            """
             rng = np.random.default_rng(seed)
             n_cells = gene_matrix_1.shape[1]
             shuffled_indices = rng.permutation(n_cells)
@@ -345,11 +401,12 @@ def _two_permutation_diff_null_kernel(expr, seeds, triu_i, triu_j):
         n_used = 0
         keep = np.empty(n_cells, dtype=np.int64)
         for k in range(n_cells):
-            if abs(idx_1[k] - idx_2[k]) > 1:
+            if idx_1[k] != idx_2[k]:
                 keep[n_used] = k
                 n_used += 1
 
         if n_used < 3:
+            raise ValueError("Could not create random pairs of cells to generate null distribution.")
             continue
 
         deltas = np.empty((n_used, n_genes), dtype=np.float64)
@@ -386,19 +443,22 @@ def _two_permutation_diff_null_kernel(expr, seeds, triu_i, triu_j):
 
 
 @numba.njit(parallel=True, fastmath=True)
-def _half_split_diff_null_kernel(expr, clone_codes, seeds, triu_i, triu_j):
+def _half_split_diff_null_kernel(expr, clone_codes, seeds, triu_i, triu_j, n_pairs_target):
     """
-    Random-pair difference-correlation null sized to N (half the cell pool), not the ~2N
-    pairs _two_permutation_diff_null_kernel draws via two independent permutations of the
-    full pool. Each shuffle draws a SINGLE permutation and splits it in half, pairing the
-    first half against the second half positionally -- every cell is used exactly once, so
-    there's no near-self-match to filter, and no assumption about which two labels
-    distinguish the twins (unlike splitting by a 'replicate' column). Positions where the
-    split happens to pair a cell with its own twin (same clone_codes value) are dropped
-    instead, since that would leak the real twin correlation into the "random" null.
+    Random-pair difference-correlation null sized to n_pairs_target (the true twin-pair
+    count, passed in by the caller), not the ~2N pairs _two_permutation_diff_null_kernel
+    draws via two independent permutations of the full pool. Each shuffle draws a SINGLE
+    permutation and splits it into two parts of size n_pairs_target, pairing them
+    positionally -- every cell used is used at most once per part, so there's no
+    near-self-match to filter, and no assumption about which two labels distinguish the
+    twins (unlike splitting by a 'replicate' column). Positions where the split happens to
+    pair a cell with its own twin (same clone_codes value) are dropped instead, since that
+    would leak the real twin correlation into the "random" null.
     """
     n_cells, n_genes = expr.shape
-    half = n_cells // 2
+    if n_pairs_target > n_cells:
+        raise ValueError("n_pairs_target cannot exceed the number of cells in expr")
+    half = n_pairs_target
     n_shuffles = seeds.shape[0]
     n_pairs = triu_i.shape[0]
     out = np.full((n_shuffles, n_pairs), np.nan, dtype=np.float64)
@@ -407,9 +467,6 @@ def _half_split_diff_null_kernel(expr, clone_codes, seeds, triu_i, triu_j):
         np.random.seed(seeds[s])
         # Draw two independent random parts from the full cell pool.
         # Each part contains unique cells internally, but the two parts may overlap.
-        # perm = np.random.permutation(n_cells)
-        # idx_a = perm[:half]
-        # idx_b = perm[half:2 * half]
         perm_a = np.random.permutation(n_cells)
         perm_b = np.random.permutation(n_cells)
         idx_a = perm_a[:half]
@@ -462,6 +519,27 @@ def _half_split_diff_null_kernel(expr, clone_codes, seeds, triu_i, triu_j):
 
 
 def plot_qq_distribution(shuffled_full, obs_value, gene_pair_name):
+    """
+    Plots a histogram (with fitted normal curve) and Q-Q plot of a shuffled
+    correlation null distribution against the observed value, and checks
+    whether the null looks normal enough (Q-Q R^2 > 0.90) to trust.
+
+    Parameters
+    ----------
+    shuffled_full : array-like
+        Correlation values from the permutation/scramble null.
+    obs_value : float
+        The observed (unshuffled) correlation, marked on the plot.
+    gene_pair_name : str
+        Label used in plot titles.
+
+    Returns
+    -------
+    bool
+        True if the Q-Q fit R^2 exceeds 0.90. False if the fit is poor, or
+        early (without plotting) if there are too few finite values or the
+        shuffle has zero variance to judge normality at all.
+    """
     shuffled_full = np.asarray(shuffled_full)
     shuffled = shuffled_full[np.isfinite(shuffled_full)]
         
@@ -620,7 +698,9 @@ def check_gene_gene_correlation_threshold(all_t1_t2_measurements,
                 gene_pair_name = f"{gi}-{gj}"
                 is_relatively_normal = plot_qq_distribution(shuffled_vals, corr_val, gene_pair_name)
                 print(f"For gene {gi}, gene {gj}, null distribution is normal: {is_relatively_normal}")
-
+        else:
+            if corr_val > threshold:
+                is_significant = True
         # Classify pairs
         threshold_p[(gi, gj)] = corr_threshold
         if use_scramble:
@@ -679,13 +759,60 @@ def calculate_pair_correlation(rep_0, rep_1, gene_list, type_comparison="twin"):
             correlations[f"{gene_1}-{gene_2}"] = corr
     return correlations
 
-def calculate_twin_random_pair_correlations(simulation_two_time, simulation_single_time, gene_list, n_random=None, seed=10100):
+def split_twin_pairs(simulation_single_time):
+    """
+    Splits a twin-eligible cell table into its two per-pair replicates.
+
+    Parameters
+    ----------
+    simulation_single_time : pd.DataFrame
+        One row per cell, must contain 'clone_id'. Each clone_id must have
+        exactly 2 rows (a twin pair) -- clones with more than 2 rows raise
+        rather than being silently dropped, since clone_id then no longer
+        uniquely identifies a twin pair (e.g. barcoded data where a clone
+        can have more than 2 cells).
+
+    Returns
+    -------
+    rep_0 : pd.DataFrame
+        The first cell of each pair.
+
+    rep_1 : pd.DataFrame
+        The second cell of each pair. Row i of rep_1 is the twin of row i
+        of rep_0.
+
+    Raises
+    ------
+    ValueError
+        If any clone_id has more than 2 rows, or no valid twin pairs exist.
+    """
+    twins = simulation_single_time.groupby("clone_id")
+    oversized_clones = {cid: len(group) for cid, group in twins if len(group) > 2}
+    if oversized_clones:
+        example_cid, example_n = next(iter(oversized_clones.items()))
+        raise ValueError(
+            f"{len(oversized_clones)} clone_id(s) have more than 2 cells at this "
+            f"timepoint (e.g. clone_id={example_cid!r} has {example_n} cells), so "
+            "clone_id does not uniquely identify a twin pair. Pass a table that is "
+            "subset to clones with exactly 2 cells before calling this function."
+        )
+
+    twin_pairs = [group for cid, group in twins if len(group) == 2]
+    if not twin_pairs:
+        raise ValueError("No valid twin pairs (clone_id with exactly 2 cells) found!")
+
+    rep_0 = pd.concat([g.iloc[[0]] for g in twin_pairs], ignore_index=True)
+    rep_1 = pd.concat([g.iloc[[1]] for g in twin_pairs], ignore_index=True)
+    return rep_0, rep_1
+
+
+def calculate_twin_random_pair_correlations(simulation_random_pair, simulation_single_time, gene_list, n_random=None, seed=10100):
     """
     Computes twin and random pairwise gene-gene correlation matrices.
 
     Parameters
     ----------
-    simulation_two_time : pd.DataFrame
+    simulation_random_pair : pd.DataFrame
         Full dataset at the given time point(s), used for random pairing.
         Must contain 'clone_id' and '{gene}_mRNA' for each gene in gene_list.
 
@@ -713,29 +840,15 @@ def calculate_twin_random_pair_correlations(simulation_two_time, simulation_sing
     rng = np.random.default_rng(seed)
 
     # --- Twin pairs: two cells with same clone_id ---
-    twins = (
-        simulation_single_time.groupby("clone_id")
-        .filter(lambda g: len(g) == 2)  # only valid twin clones
-        .groupby("clone_id")
-    )
-
-    twin_pairs = []
-    for cid, group in twins:
-        if len(group) == 2:
-            twin_pairs.append(group)
-    if not twin_pairs:
-        raise ValueError("No valid twin pairs (clone_id with exactly 2 cells) found!")
-
-    rep_0 = pd.concat([g.iloc[[0]] for g in twin_pairs], ignore_index=True)
-    rep_1 = pd.concat([g.iloc[[1]] for g in twin_pairs], ignore_index=True)
+    rep_0, rep_1 = split_twin_pairs(simulation_single_time)
 
     twin_corr_dict = calculate_pair_correlation(rep_0, rep_1, gene_list, type_comparison="twin")
     twin_corr_matrix = dict_to_matrix(twin_corr_dict, gene_list)
 
     # --- Random pairs: random cells from different clones ---
-    all_cells = simulation_two_time.reset_index(drop=True)
+    all_cells = simulation_random_pair.reset_index(drop=True)
     n_cells = len(all_cells)
-    n_pairs = n_random or len(rep_0)
+    n_pairs = len(rep_0) if n_random is None else n_random
 
     # Draw random pairs without replacement in each position, ensuring different clone_ids
     rand_pairs = []
@@ -820,10 +933,70 @@ def differentiate_single_state_reg_and_multiple_states(all_t1_t2_measurements, p
             raise ValueError(f"Missing gene pair ({gene_i}, {gene_j}) in correlation matrices.")
     return multiple_states_gene_pairs, single_state_regulation
 
-def identify_reg_if_multiple_states(twin_correlation_matrix_t1, twin_correlation_matrix_t2, random_correlation_matrix_t1, random_correlation_matrix_t2, multiple_states_gene_pairs, gene_list, threshold_relative_increase=0.1):
+#TODO Change to the new definition soon!
+def identify_reg_if_multiple_states(twin_correlation_matrix_t1, twin_correlation_matrix_t2, random_correlation_matrix_t1, random_correlation_matrix_t2, multiple_states_gene_pairs, gene_list, t1_twins, t2_twins, regulation_increase_threshold=0.024, alpha=0.05):
     """
     Among multiple-state gene pairs, identify which also show regulation
-    (based on increased twin correlation from t1 to t2).
+    (based on an increase in twin difference-correlation from t1 to t2).
+
+    Replaces the old relative-increase test, relative_change = (corr_t2 -
+    corr_t1) / abs(corr_t1): corr_t1 (twin correlation shortly after
+    division) sits close to 0 for every pair regardless of regulation, so
+    that ratio explodes numerically and, per calibration on the Figure-2
+    simulations, flagged ~90% of a true no-regulation scenario as
+    regulation (TwINFER_thresholds_and_CI_v2_1.pdf, Section 6). The
+    replacement tests the absolute increase directly,
+
+        d = corr_t2 - corr_t1,
+
+    against regulation_increase_threshold. The classification (which list a
+    pair goes into) is set by this point estimate alone, per the spec: "The
+    decision is made on the point estimate; the interval annotates it and
+    is not a second filter."
+
+    The interval itself is now computed too, closed-form: t1_twins and
+    t2_twins (the raw per-cell tables the caller already built to compute
+    twin_correlation_matrix_t1/_t2) are split into their twin-pair
+    replicates to recover N1, N2 -- the independent-unit counts (mother
+    cells/clones, never cells or enumerated pairs) -- and
+
+        SE(d) = sqrt(1/(N1-1) + 1/(N2-1))
+
+    which is exact because t1_twins and t2_twins are built from disjoint
+    clone sets (see infer_with_twinfer's t1_clones/t2_clones split), so the
+    two variances add. This is the "pairs as units" closed form from the
+    spec, valid here because split_twin_pairs already reduces each table to
+    one row per independent twin pair; it is not the clone-stratified
+    bootstrap the spec uses for barcoded data where one clone can supply
+    several pairs across the two timepoints, since t1_twins/t2_twins as
+    constructed here always satisfy N = pairs = independent units directly.
+    Every gene pair shares the same N1, N2 and hence the same SE(d) -- only
+    d itself varies pair to pair -- so it is computed once, not per pair.
+
+    Each pair's 95% (by default) interval [d - z*SE, d + z*SE] is then read
+    against regulation_increase_threshold three ways, matching the spec's
+    reporting convention:
+        interval entirely above threshold  -> "conclusive regulation"
+        interval entirely below threshold  -> "conclusive no regulation"
+        interval spans threshold           -> "inconclusive"
+    This verdict is returned per pair (see stage3_details below) but does
+    NOT change which list the pair is appended to -- the point estimate
+    still decides that, so the classification stays exhaustive even when a
+    call is statistically inconclusive.
+
+    CAVEAT: the default 0.024 is calibrated on a single simulation run, a
+    single gene pair, at a single measurement time t2 -- not a validated
+    universal constant. The spec's own calibration table shows the
+    "correct" threshold scaling roughly 8x across t2 = 2h to 36h, and even
+    at the calibration point the regulation/no-regulation d ranges overlap
+    over repeated draws. See REORG_CHECKLIST.md for the tracked TODO to
+    validate this threshold across regulation strengths, multi-state
+    separations, and measurement times before trusting it outside the
+    calibration scenario. Relatedly, the spec finds a single experiment is
+    structurally underpowered for a conclusive Stage III call at the
+    calibration effect size (roughly 15 replicates needed) -- expect
+    "inconclusive" often on a single run, and treat it as the honest
+    answer, not a bug.
 
     Parameters
     ----------
@@ -845,8 +1018,22 @@ def identify_reg_if_multiple_states(twin_correlation_matrix_t1, twin_correlation
     gene_list : list of str
         List of gene names (e.g., 'gene_1').
 
-    threshold_relative_increase : float, optional
-        Minimum relative increase in twin correlation from t1 to t2 to call it regulation.
+    t1_twins : pd.DataFrame
+        The same per-cell table passed to calculate_twin_random_pair_correlations
+        to build twin_correlation_matrix_t1 -- one row per cell, 'clone_id'
+        shared by each twin pair. Used only to recover N1 (the twin-pair
+        count at t1) for the standard error; not re-correlated.
+
+    t2_twins : pd.DataFrame
+        Same as t1_twins, for t2 (recovers N2).
+
+    regulation_increase_threshold : float, optional
+        Minimum increase d = corr_t2 - corr_t1 in twin correlation to call it
+        regulation. Default 0.024, calibrated on the Figure-2 simulation set
+        (see CAVEAT above -- not yet validated more broadly).
+
+    alpha : float, optional
+        Interval significance level; default 0.05 gives a 95% interval.
 
     Returns
     -------
@@ -855,30 +1042,65 @@ def identify_reg_if_multiple_states(twin_correlation_matrix_t1, twin_correlation
 
     multiple_states_and_reg : list of tuple
         Gene pairs with multiple states and increased correlation (suggesting regulation).
+
+    stage3_details : dict
+        Keyed by (gene_i, gene_j), one entry per pair in multiple_states_gene_pairs:
+            - "d" : float -- corr_t2 - corr_t1, the point estimate.
+            - "standard_err" : float -- sqrt(1/(N1-1) + 1/(N2-1)), shared across all pairs.
+            - "n1", "n2" : int -- twin-pair counts at t1, t2.
+            - "interval" : (float, float) -- the (1 - alpha) confidence interval on d.
+            - "verdict" : str -- "conclusive regulation", "conclusive no regulation",
+              or "inconclusive".
+            - "call" : str -- "regulation" or "no regulation", the point-estimate
+              classification (matches which of the two lists above the pair is in).
     """
     multiple_states_no_reg = []
     multiple_states_and_reg = []
+    stage3_details = {}
+
+    rep_0_t1, rep_1_t1 = split_twin_pairs(t1_twins)
+    rep_0_t2, rep_1_t2 = split_twin_pairs(t2_twins)
+    n1 = len(rep_0_t1)
+    n2 = len(rep_0_t2)
+    standard_err = float(np.sqrt(1.0 / (n1 - 1) + 1.0 / (n2 - 1)))
+    z_crit = float(stats.norm.ppf(1 - alpha / 2))
 
     for gene_i, gene_j in multiple_states_gene_pairs:
         try:
             corr_t1 = twin_correlation_matrix_t1.loc[gene_i, gene_j]
             corr_t2 = twin_correlation_matrix_t2.loc[gene_i, gene_j]
             print(f"Testing for multiple states. Correlation at time t1 = {corr_t1} and at time t2 = {corr_t2}")
-            if corr_t1 == 0:
-                relative_change = np.inf if corr_t2 != 0 else 0
-            elif corr_t2 < 0:
-                relative_change = abs(corr_t2 - corr_t1) / abs(corr_t1)
+
+            d = corr_t2 - corr_t1
+            lo, hi = d - z_crit * standard_err, d + z_crit * standard_err
+
+            if lo > regulation_increase_threshold:
+                verdict = "conclusive regulation"
+            elif hi < regulation_increase_threshold:
+                verdict = "conclusive no regulation"
             else:
-                relative_change = (corr_t2 - corr_t1) / abs(corr_t1)
-            
-            if relative_change > threshold_relative_increase:
+                verdict = "inconclusive"
+
+            call = "regulation" if d > regulation_increase_threshold else "no regulation"
+            print(
+                f"gene 1: {gene_i}, gene 2: {gene_j}, d: {d:.4f}, "
+                f"{100 * (1 - alpha):.0f}% CI: [{lo:.4f}, {hi:.4f}], "
+                f"call: {call}, verdict: {verdict}"
+            )
+
+            stage3_details[(gene_i, gene_j)] = {
+                "d": d, "standard_err": standard_err, "n1": n1, "n2": n2,
+                "interval": (lo, hi), "verdict": verdict, "call": call,
+            }
+
+            if call == "regulation":
                 multiple_states_and_reg.append((gene_i, gene_j))
             else:
                 multiple_states_no_reg.append((gene_i, gene_j))
         except KeyError:
             raise ValueError(f"Missing gene pair ({gene_i}, {gene_j}) in correlation matrices.")
 
-    return multiple_states_no_reg, multiple_states_and_reg
+    return multiple_states_no_reg, multiple_states_and_reg, stage3_details
 
 def get_cross_correlations(rep_0_t1,
                                    rep_1_t2,
@@ -1176,3 +1398,573 @@ def separate_fan_outs_from_mutual_regulation(all_t1_measurements, twin_correlati
             })
 
     return final_directed_edges, directed_p_values, direction_matrix, fan_out_log
+
+"""
+correlation_analysis_helper_functions.py
+
+Helper functions for analyzing directional gene-gene correlations and regulatory relationships
+in simulated gene regulatory networks (GRNs), particularly based on twin-based inference.
+
+This module includes utilities for:
+- Extracting metadata from filenames
+- Loading gene interaction matrices and simulation parameters
+- Constructing correlation matrices from gene expression simulations
+- Visualizing gene-gene correlations as heatmaps or directional network graphs
+- Annotating relationships as regulatory or non-regulatory
+- Printing categorized summaries for interpretability
+
+Functions
+---------
+extract_param_index(filename: str) -> str
+    Extracts the parameter index string (e.g., '0_1') from a simulation file path.
+
+split_and_merge_simulations(simulation_paths: List[str]) -> pd.DataFrame
+    Splits clone IDs as evenly as possible across multiple simulation CSV files,
+    then extracts the assigned clones from each file and merges them into a single
+    combined DataFrame.
+    
+read_input_matrix(path_to_matrix: str) -> Tuple[int, np.ndarray]
+    Loads a gene interaction matrix from a file and returns its shape and contents.
+
+get_param_data(param_df: pd.DataFrame, param_index: str) -> Dict[str, float]
+    Retrieves a flat dictionary of kinetic and interaction parameters for a given simulation.
+
+dict_to_matrix(correlation_dict: Dict[str, float], gene_list: List[str]) -> pd.DataFrame
+    Converts a flat dictionary of gene-gene correlations to a square matrix DataFrame.
+
+plot_matrix_as_heatmap(corr_matrix: pd.DataFrame, gene_list: List[str], ...)
+    Plots a correlation matrix as a heatmap, highlighting regulated and unregulated gene pairs.
+
+print_summary(no_regulation: List[Tuple[str, str]], 
+              single_state_regulation: List[Tuple[str, str]], 
+              multiple_states_no_reg: List[Tuple[str, str]], 
+              multiple_states_and_reg: List[Tuple[str, str]])
+    Prints a categorized summary of gene pair relationships.
+
+plot_network(correlation_matrix: pd.DataFrame, gene_list: List[str], edges, title: Optional[str] = None)
+    Visualizes gene-gene correlations as a directional network graph, using arrows or flat-headed lines
+    to indicate inferred directionality or undetermined regulation.
+
+
+Helper Functions
+----------------
+make_reds_blues_colormap() -> matplotlib.colors.Colormap
+    Creates a custom red-blue colormap for correlation values.
+
+shrink_arrow_endpoints(...) -> Tuple[Tuple[float, float], Tuple[float, float]]
+    Computes arrow start and end coordinates that are offset from node centers.
+
+flat_t_head_arrow(...) -> None
+    Draws a repression-like arrow with a flat T-head.
+
+polygon_layout(gene_list: List[str], radius: float = 1.0) -> Dict[str, Tuple[float, float]]
+    Assigns circular coordinates to genes for network layout.
+"""
+
+#Import packages
+def extract_param_index(filename: str) -> str:
+    """
+    Extracts the parameter row index (e.g., '0_1') from a simulation filename.
+
+    Handles both 'df_row_' and 'df_rows_' prefixes. The extraction stops before
+    an 8-digit date stamp (ddmmyyyy) if present.
+
+    Args:
+        filename (str): The simulation filename.
+
+    Returns:
+        str: The row identifier (e.g., '0_1'), or 'unknown' if the pattern is not found.
+    """
+    try:
+        # Match df_row_ or df_rows_
+        match = re.search(r"df_rows?_(\d+(?:_\d+)*)", filename)
+        if not match:
+            return "unknown"
+
+        core = match.group(1)
+        # Remove trailing date if mistakenly included
+        parts = core.split("_")
+        cleaned = []
+        for part in parts:
+            if part.isdigit() and len(part) == 8:  # ddmmyyyy date
+                break
+            cleaned.append(part)
+
+        return "_".join(cleaned) if cleaned else "unknown"
+    except Exception:
+        return "unknown"
+
+def get_param_data(param_df, param_index, n_genes):
+    """
+    Extracts and flattens parameters for a given simulation from a parameter DataFrame.
+
+    This function:
+      1. Selects specific rows from `param_df` based on `param_index`.
+      2. Flattens gene-specific parameters so keys are labeled as `<term>_gene_<id>`.
+      3. Calculates degradation rates (`k_deg_mRNA_gene_X`, `k_deg_protein_gene_X`)
+         from the corresponding half-life values.
+      4. Adds interaction parameters (non-gene-specific) from the first selected row.
+
+    Args:
+        param_df (pd.DataFrame):
+            Parameter DataFrame containing both gene-level and interaction-level parameters.
+            Must contain columns for each gene term in `gene_terms` and optionally extra metadata.
+        param_index (str):
+            Underscore-separated string of row indices in `param_df` to use.
+            Example: "12_13" will select rows 12 and 13.
+        n_genes (int):
+            Number of genes expected in the simulation; must match the number of selected rows.
+
+    Returns:
+        dict:
+            A flat dictionary mapping parameter names to values, e.g.:
+            {
+                "k_on_gene_1": ...,
+                "k_off_gene_1": ...,
+                "mrna_half_life_gene_1": ...,
+                "k_deg_mRNA_gene_1": ...,
+                ...
+                "<interaction_param>": ...
+            }
+
+    Raises:
+        AssertionError:
+            If the number of selected rows does not match `n_genes`.
+    """
+    gene_terms = ["k_on", "k_off", "mrna_half_life", "protein_half_life", 
+                  "k_prod_protein", "k_prod_mRNA"]
+    extra_terms = ["pair_id", "gene_id"]
+
+    rows = [int(i) for i in param_index.split("_")]
+    assert len(rows) == n_genes, f"Mismatch in number of input genes and parameter rows. \n Rows = {rows} and n_genes = {n_genes}"
+
+    selected_rows = param_df.iloc[rows]
+    param_dict = {}
+
+    # Gene-specific parameters
+    for gene_id, row in enumerate(selected_rows.itertuples(index=False), start=1):
+        for term in gene_terms:
+            key = f"{term}_gene_{gene_id}"
+            param_dict[key] = getattr(row, term)
+
+        # Add degradation terms from half_life
+        param_dict[f"k_deg_mRNA_gene_{gene_id}"] = np.log(2) / param_dict[f"mrna_half_life_gene_{gene_id}"]
+        param_dict[f"k_deg_protein_gene_{gene_id}"] = np.log(2) / param_dict[f"protein_half_life_gene_{gene_id}"]
+
+    # Interaction parameters (from first row)
+    interaction_cols = [col for col in param_df.columns if col not in gene_terms + extra_terms]
+    interaction_values = param_df.loc[rows[0], interaction_cols]
+    for col in interaction_cols:
+        param_dict[col] = interaction_values[col]
+
+    return param_dict
+
+
+def split_and_merge_simulations(simulation_paths):
+    """
+    Split clone IDs evenly across multiple simulations and merge selected clones.
+    
+    This function loads N simulation CSV files, determines the complete set of
+    unique clone IDs in the *first* simulation, splits those clone IDs as evenly
+    as possible across all N simulations, and merges together the corresponding
+    subsets taken from each simulation file.
+
+    Parameters
+    ----------
+    simulation_paths : list of str
+        List of file paths to simulation CSV files.
+        - All files must contain a "clone_id" column.
+        - Assumes the same clone IDs appear in each simulation, but possibly 
+          assigned to different states or having different observations.
+
+    Returns
+    -------
+    pd.DataFrame
+        A concatenated DataFrame containing:
+        - The first 1/N of clone IDs from simulation 1,
+        - The second 1/N of clone IDs from simulation 2,
+        - ...
+        - The last 1/N of clone IDs from simulation N.
+        The order is determined by sorted clone IDs.
+
+    Notes
+    -----
+    - Clone IDs are split *evenly* using integer division. 
+      If the total number of clones is not exactly divisible by N, 
+      the final chunk will contain the remainder.
+    - The function returns a simulation file wherein each part of it contains data from a single simulation (not evenly mixed)
+    """
+    
+    # Load all simulations
+    sims = [pd.read_csv(path) for path in simulation_paths]
+    num_sims = len(sims)
+
+    # Extract clone IDs from first simulation (assumed consistent)
+    clone_ids = sorted(sims[0]["clone_id"].unique())
+    total_clones = len(clone_ids)
+    
+    # Compute chunk size
+    chunk_size = total_clones // num_sims
+    remainder = total_clones % num_sims
+
+    # Determine clone ID chunks for each simulation
+    clone_chunks = []
+    start = 0
+    for i in range(num_sims):
+        # distribute the remainder one-by-one to early chunks
+        extra = 1 if i < remainder else 0
+        end = start + chunk_size + extra
+        clone_chunks.append(clone_ids[start:end])
+        start = end
+
+    # Merge the subsets
+    merged_df = pd.concat(
+        [
+            sims[i][sims[i]["clone_id"].isin(clone_chunks[i])]
+            for i in range(num_sims)
+        ],
+        ignore_index=True
+    )
+
+    return merged_df
+
+
+def read_input_matrix(path_to_matrix: str) -> tuple[int, np.ndarray]:
+    """
+    Reads an input matrix from a specified file path and returns its dimensions and content.
+
+    Args:
+        path_to_matrix (str): The file path to the matrix file. The file should contain
+                              a comma-separated matrix of integers.
+
+    Returns:
+        tuple: A tuple containing:
+            - int: The number of rows in the matrix.
+            - np.ndarray: The matrix as a NumPy array. If the matrix is a single value,
+                          it is reshaped into a 1x1 array.
+
+    Raises:
+        ValueError: If the file cannot be loaded.
+    """
+    try:
+        matrix = np.loadtxt(path_to_matrix, dtype=int, delimiter=',')
+        if matrix.ndim == 0:
+            matrix = matrix.reshape((1,1))
+        return matrix.shape[0], matrix
+    except Exception as e:
+        raise ValueError(f"Error loading matrix from {path_to_matrix}: {e}")
+
+def dict_to_matrix(correlation_dict, gene_list):
+    """
+    Reshapes a "gene1-gene2" -> value dict into a gene x gene DataFrame.
+
+    Parameters
+    ----------
+    correlation_dict : dict
+        Keys formatted as "{gene_1}-{gene_2}" (e.g. from calculate_pairwise_gene_gene_correlation_matrix).
+    gene_list : list of str
+        Gene names; used as both the row and column index.
+
+    Returns
+    -------
+    pd.DataFrame
+        Gene x gene matrix; entries not present in correlation_dict are NaN.
+    """
+    matrix = pd.DataFrame(index=gene_list, columns=gene_list, dtype=float)
+    for key, value in correlation_dict.items():
+        g1, g2 = key.split("-")
+        matrix.loc[g1, g2] = value
+    return matrix
+
+
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from matplotlib.colors import TwoSlopeNorm
+
+import re
+
+def sort_genes_numerically(gene_list):
+    """
+    Sort gene_# numerically if present.
+    Otherwise, sort lexicographically.
+    Returns (sorted_genes, sorted_indices).
+    """
+    gene_pattern = re.compile(r"gene_(\d+)$")
+
+    has_numeric = any(gene_pattern.match(g) for g in gene_list)
+
+    def extract_key(g):
+        """Sort key for one gene name: numeric suffix if it matches 'gene_<N>', else the name itself."""
+        m = gene_pattern.match(g)
+        if m:
+            return (0, int(m.group(1)))
+        if has_numeric:
+            return (1, g)      # non-numeric go after numeric genes
+        return (0, g)          # pure lexicographic mode
+
+    indexed = list(enumerate(gene_list))
+    indexed_sorted = sorted(indexed, key=lambda x: extract_key(x[1]))
+
+    sorted_indices = [i for i, _ in indexed_sorted]
+    sorted_genes   = [g for _, g in indexed_sorted]
+
+    return sorted_genes, sorted_indices
+
+def plot_matrix_as_heatmap(corr_matrix, gene_list, no_regulation=None, potential_regulation=None, title=None, add_gene_labels=True,
+                            add_time=False, time=None, gray_out_no_reg=False, vmin=None, vmax=None, cmap=None, 
+                            return_plot=False, black_out_self=False,figsize_input= (8, 6), symmetric = True, draw_diagonal_multi_state_reg = False, multi_state_reg_edges = None):
+    """
+    Plot a gene-gene correlation matrix as a heatmap with regulatory overlays and dynamic formatting.
+    """
+
+    if add_time:
+        if time is None or not isinstance(time, (list, tuple)) or len(time) == 0:
+            raise ValueError("If add_time=True, you must provide a non-empty list of 1 or 2 time values in `time`.")
+        if len(time) > 2:
+            raise ValueError("Time can have at most two entries.")
+
+    # Format gene names: gene_1 → g1
+    # ---- Sort genes AND matrix together (single source of truth) ----
+    sorted_genes, _ = sort_genes_numerically(gene_list)
+
+    gene_list  = list(sorted_genes)
+    base_names = gene_list
+
+    # IMPORTANT: align by *names*, not by iloc positions
+    plot_matrix = corr_matrix.reindex(index=gene_list, columns=gene_list)
+
+
+
+    # Format axis labels
+    if add_gene_labels:
+        base_names = [i.replace("_", "-") for i in base_names]
+        if add_time:
+            if len(time) == 1:
+                row_labels = [rf"$\text{{{i}}}_{{t{time[0]}}}$" for i in base_names]
+                col_labels = row_labels
+            else:
+                row_labels = [rf"$\text{{{i}}}_{{t{time[0]}}}$" for i in base_names]
+                col_labels = [rf"$\text{{{i}}}_{{t{time[1]}}}$" for i in base_names]
+        else:
+            row_labels = base_names
+            col_labels = base_names
+    else:
+        row_labels = [""] * len(gene_list)
+        col_labels = [""] * len(gene_list)
+
+    # Prepare plot matrix
+    # plot_matrix = corr_matrix.copy()
+    if symmetric:
+        # --- Symmetrize matrix by taking whichever side is non-zero ---
+        A = plot_matrix.values
+        sym_A = np.where(~np.isnan(A), A, A.T)
+        plot_matrix = pd.DataFrame(sym_A, index=plot_matrix.index, columns=plot_matrix.columns)
+    # --- Handle masking ---
+    mask = np.zeros_like(plot_matrix.values, dtype=bool)
+    if gray_out_no_reg and no_regulation:
+        for g1, g2 in no_regulation:
+            if g1 in gene_list and g2 in gene_list:
+                i = gene_list.index(g1)
+                j = gene_list.index(g2)
+                plot_matrix.iloc[i, j] = 0
+                mask[i, j] = True
+                if symmetric:
+                    plot_matrix.iloc[j, i] = 0
+                    mask[j, i] = True   
+
+    # --- Handle vmin/vmax auto-scaling ---
+    temp_values = plot_matrix.values.copy()
+
+    # Exclude diagonal values only for vmin/vmax estimation since self_values are being blacked out anyway
+    if black_out_self:
+        np.fill_diagonal(temp_values, np.nan)
+
+    data_values = temp_values[~np.isnan(temp_values)]
+
+    if len(data_values) == 0:
+        vmin, vmax = -1.0, 1.0
+    else:
+        if vmin is None:
+            vmin = np.nanmin(data_values)
+        if vmax is None:
+            vmax = np.nanmax(data_values)
+        if vmin == vmax:
+            vmin -= 1e-4
+            vmax += 1e-4
+
+
+    # --- Choose colormap adaptively ---
+    if cmap is None and vmin < 0 and vmax > 0:
+        cmap = make_reds_blues_colormap(vmin=vmin, vmax=vmax)
+        center_span = max(abs(vmin), abs(vmax))
+        norm = TwoSlopeNorm(vmin=-center_span, vcenter=0.0, vmax=center_span)
+    else:
+        norm = None
+        if cmap is None:
+            cmap = "Blues" if vmin >= 0 else "Reds_r"
+
+    # --- Plot heatmap ---
+    fig, ax = plt.subplots(figsize=figsize_input)
+    if title:
+      cbar_label = title 
+    else:
+      cbar_label = "Correlation"
+    heatmap = sns.heatmap(
+        plot_matrix,
+        ax=ax,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        # center = 0,
+        # norm=norm,
+        xticklabels=col_labels,
+        yticklabels=row_labels,
+        square=True,
+        cbar_kws={'label': cbar_label},
+        linewidths=0.5,
+        linecolor='lightgray',
+        mask=mask
+    )
+    cbar = ax.collections[0].colorbar
+    cbar.set_label(cbar_label, fontsize=10)
+    # --- Add regulation boxes ---
+    # --- Add regulation boxes (symmetric outlines) ---
+    # --- Black out diagonal if requested ---
+    if black_out_self:
+        for k in range(len(gene_list)):
+            rect = Rectangle((k, k), 1, 1, facecolor='#D9D9D9', edgecolor='none')
+            ax.add_patch(rect)
+    if potential_regulation:
+        for g1, g2 in potential_regulation:
+            if g1 in gene_list and g2 in gene_list:
+                i = gene_list.index(g1)
+                j = gene_list.index(g2)
+                if symmetric:
+                    # Outline (j, i)
+                    rect1 = Rectangle((j, i), 1, 1, fill=False, edgecolor='black', linewidth=1)
+                    ax.add_patch(rect1)
+
+                    # Outline symmetric (i, j)
+                    if i != j:  # avoid drawing twice on diagonal
+                        rect2 = Rectangle((i, j), 1, 1, fill=False, edgecolor='black', linewidth=1)
+                        ax.add_patch(rect2)
+    #Adding diagonal lines for multi-state regulation
+    if draw_diagonal_multi_state_reg and len(multi_state_reg_edges) > 0:
+        for g1, g2 in multi_state_reg_edges:
+            if g1 in gene_list and g2 in gene_list:
+                i = gene_list.index(g1)
+                j = gene_list.index(g2)
+
+                # Draw a dashed black diagonal inside that cell
+                ax.plot(
+                    [j+1, j],      # x: left → right of the cell
+                    [i+1, i],      # y: top → bottom of the cell
+                    linestyle="--",
+                    color="black",
+                    linewidth=1.5,
+                    clip_on=False
+                )
+                # Draw a dashed black diagonal inside that cell
+                ax.plot(
+                    [i+1, i],      # x: left → right of the cell
+                    [j+1, j],      # y: top → bottom of the cell
+                    linestyle="--",
+                    color="black",
+                    linewidth=1.5,
+                    clip_on=False
+                )
+
+    # --- Title ---
+    if title:
+        if add_time:
+            if len(time) == 1:
+                title += f" @ time {time[0]}h"
+            elif len(time) == 2:
+                title += f" (rows: t{time[0]}, cols: t{time[1]})"
+        ax.set_title(title, fontsize=12)
+
+    plt.tight_layout()
+    ax.set_clip_on(False)
+    for artist in ax.get_children():
+        try:
+            artist.set_clip_on(False)
+        except Exception:
+            pass
+
+    if return_plot:
+        return fig, ax
+    else:
+        plt.show()
+
+def print_summary(no_regulation, 
+                  single_state_regulation, 
+                  multiple_states_no_reg, 
+                  multiple_states_and_reg):
+    """
+    Prints a structured summary of gene pair classifications.
+
+    Parameters
+    ----------
+    no_regulation : list of tuple
+        Gene pairs with no inferred regulation.
+
+    single_state_regulation : list of tuple
+        Gene pairs with single-state regulation.
+
+    multiple_states_no_reg : list of tuple
+        Gene pairs with multiple states but no additional regulation evidence.
+
+    multiple_states_and_reg : list of tuple
+        Gene pairs with multiple states and additional evidence of regulation.
+
+    Returns
+    -------
+    None
+    """
+    def print_section(title, pairs):
+        """Prints one titled, de-duplicated (unordered-pair) section of gene pairs, or '(none)'."""
+        print(f"\n{'=' * len(title)}\n{title}\n{'=' * len(title)}")
+        if not pairs:
+            print("  (none)")
+            return
+
+        # Use a set to keep track of already-seen symmetric pairs
+        seen = set()
+        for g1, g2 in pairs:
+            key = tuple(sorted((g1, g2)))  # unordered representation
+            if key not in seen:
+                print(f"  {g1} - {g2}")
+                seen.add(key)
+
+
+    print_section("1. No Regulation", no_regulation)
+    print_section("2. Single-State Regulation", single_state_regulation)
+    print_section("3. Multiple States (No Regulation)", multiple_states_no_reg)
+    print_section("4. Multiple States with Regulation", multiple_states_and_reg)
+
+# --- Helpers ---
+def make_reds_blues_colormap(vmin=-0.05, vmax=0.18):
+    """Custom red–white–blue colormap with pure white at 0, asymmetric."""
+    # Calculate where 0 falls in the range [vmin, vmax]
+    zero_position = (0 - vmin) / (vmax - vmin)
+    
+    # Number of colors for each segment (proportional to range)
+    n_total = 256
+    n_reds = int(zero_position * n_total)  # colors from vmin to 0
+    n_blues = n_total - n_reds  # colors from 0 to vmax
+    
+    # Calculate intensity based on actual distance from zero
+    # For reds: map from vmin to 0, so max intensity at vmin
+    red_intensity = abs(vmin) / max(abs(vmin), abs(vmax))  # 0.05/0.18 ≈ 0.28
+    # For blues: map from 0 to vmax, so max intensity at vmax  
+    blue_intensity = abs(vmax) / max(abs(vmin), abs(vmax))  # 0.18/0.18 = 1.0
+    
+    # Create color arrays with scaled intensities
+    reds = plt.cm.Reds(np.linspace(0.8 * red_intensity, 0, n_reds))  # scaled dark to light red
+    whites = np.ones((1, 4))  # pure white at 0
+    blues = plt.cm.Blues(np.linspace(0, 0.8 * blue_intensity, n_blues))  # light to scaled dark blue
+    
+    colors = np.vstack((reds, whites, blues))
+    return LinearSegmentedColormap.from_list('RedsBlues', colors)
