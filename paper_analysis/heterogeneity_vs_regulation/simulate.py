@@ -1,5 +1,3 @@
-# All packages needed to run TwINFER simulation and inference are listed here.
-# If any of them are not installed, please install them using pip or conda env.
 # %%
 import numpy as np
 import pandas as pd
@@ -13,18 +11,24 @@ import os
 import sys
 import argparse
 from numba import set_num_threads, get_num_threads
+import importlib
+import sys
+import os
 #%%
-#Paths used in the file
+#Set output path
+
 
 #Path to code repo
-path_to_code_repo = "/home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER"
+import twinfer
+from twinfer.utils.paths import get_repo_root
+from twinfer.simulation.gillespie_simulations import process_param_set
+from twinfer.utils.paths import stage_dir
 
-# Make sure this path is on sys.path so Python can find the package
-if path_to_code_repo not in sys.path:
-    sys.path.insert(0, path_to_code_repo)
+
+path_to_code_repo = get_repo_root()
+path_to_output = stage_dir("heterogeneity_vs_regulation", "simulate")
 
 #Path to output files
-path_to_output = "/home/gzu5140/Keerthana_b1042/grnInference/simulation_data/test/figure_2_simulations/"
 num_cores_available = 4
  #%%
 if __name__ == "__main__":
@@ -148,17 +152,6 @@ if __name__ == "__main__":
    # ==========================================================
     # Import TwINFER gillespie script from local repo
     # ==========================================================
-    import importlib
-    import sys
-    import os
-
-    # Now imports will be resolved relative to that repo
-    from TwINFER_function_scripts import gillespie_script_variations
-    importlib.reload(gillespie_script_variations)
-    from TwINFER_function_scripts.gillespie_script_variations import process_param_set
-    # from TwINFER_function_scripts import pause_run_sim
-    # importlib.reload(pause_run_sim)
-    # from TwINFER_function_scripts.pause_run_sim import process_param_set
     # Ensure output directory exists
     os.makedirs(base_config['output_folder'], exist_ok=True)
 

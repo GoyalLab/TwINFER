@@ -1,0 +1,61 @@
+# figures_manifest.yaml
+# Maps paper figures to code folders.
+
+paper_title: "Leveraging Twin Information for Inference of Gene Regulatory Networks"
+paper_ref: "bioRxiv 2026.02.22.707230"
+
+figures:
+  - title: "Inferring gene regulatory networks from twin information"
+    current_number: 1
+    folder: null
+    note: "Illustrative schematic panels only; not code-generated."
+
+  - title: "Twin difference correlations account for cell-state heterogeneity"
+    current_number: 2
+    folder: heterogeneity_vs_regulation
+
+  - title: "Twin cross-correlations allow inference of causal relations"
+    current_number: 3
+    folder: causal_direction_inference
+    used_by: []
+
+  - title: "Twin cross-correlations distinguish between triplet motifs"
+    current_number: 4
+    folder: triplet_motif_discrimination
+
+  - title: "TwINFER captures regulatory interactions and confounding heterogeneity in experimental data"
+    current_number: 5
+    folder: larry_hematopoiesis_validation
+
+shared_scripts:
+  # Used by more than one folder above. Lives at paper_analysis/ top level;
+  # consuming folders reference its output rather than copying it.
+  - title: "Scanning the parameter space to define inference capabilities and limitations"
+    folder: paper_analysis/parameter_space_scan
+    used_by: [heterogeneity_vs_regulation, causal_direction_inference]
+
+  - title: "Thresholding the GRNBoost2 ranked list using a Gaussian Mixture Model"
+    folder: paper_analysis/grnboost2_comparison
+    used_by: [causal_direction_inference, triplet_motif_discrimination]
+
+not_yet_placed:
+  - folder: extended_figures/interaction_parameter_choice
+    title: "Choice of the interaction model parameters"
+    built_from: "hill_constant_effect/, k_add_effect/"
+    note: "Per-panel script mapping not yet confirmed."
+
+  - folder: extended_figures/linear_toy_model_supplement
+    title: "Linear toy model (Supplemental Material)"
+    built_from: "linear_simulation/"
+
+  - folder: paper_analysis/benchmark
+    built_from: "synthetic_network_analysis/ (BEELINE/BoolODE)"
+    note: "Not referenced anywhere in the manuscript text. Purpose unconfirmed."
+
+  - folder: work_in_progress/saturation_and_noise_robustness
+    built_from: "additional_analysis/saturation_effects/"
+    note: "No matching figure found in the manuscript text."
+
+  - folder: work_in_progress/pulsed_regulation
+    built_from: "drift_multiple_state/simulate_pulse.py"
+    note: "No matching figure found in the manuscript text."
