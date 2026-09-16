@@ -1,8 +1,10 @@
 import numpy as np
 import networkx as nx
+import pandas as pd
 import matplotlib.pyplot as plt
 
 from matplotlib.colors import Normalize, LinearSegmentedColormap, ListedColormap
+from matplotlib.patches import FancyArrowPatch
 from adjustText import adjust_text
 
 __version__ = "2026-07-16-one-reciprocal-edge-curved-v6"
@@ -1689,3 +1691,172 @@ def plot_grn(
         fig.tight_layout()
 
     return fig, ax
+
+
+# ============================================================
+# Ported from TwINFER_function_scripts/correlation_analysis_helpers.py
+# (unchanged) — plot_grn above is not a drop-in replacement (different
+# signature: adjacency matrix + labels vs. correlation matrix + gene
+# list + edges); disposition vs. plot_grn is an open REORG_CHECKLIST item.
+# ============================================================
+
+
+def shrink_arrow_endpoints(x1, y1, x2, y2, shrink_source=0.2, shrink_target=0.2, lateral_offset=0.0, scaled_shrink_val = 0.25):
+    dx, dy = x2 - x1, y2 - y1
+    dist = np.hypot(dx, dy)
+
+    if dist == 0:
+        return (x1, y1), (x2, y2)
+
+    scaled_shrink = scaled_shrink_val * dist  # 25% of distance, adjust as needed
+    shrink_source = scaled_shrink
+    shrink_target = scaled_shrink*0.8
+
+    ux, uy = dx / dist, dy / dist
+    orth_x, orth_y = -uy, ux
+    x1_off = x1 + shrink_source * ux + lateral_offset * orth_x
+    y1_off = y1 + shrink_source * uy + lateral_offset * orth_y
+    x2_off = x2 - shrink_target * ux + lateral_offset * orth_x
+    y2_off = y2 - shrink_target * uy + lateral_offset * orth_y
+    return (x1_off, y1_off), (x2_off, y2_off)
+
+def flat_t_head_arrow(start, end, color='red', linewidth=2, rad=0.2, abs_weight=0.5, ax=None):
+    """Draw repression arrow with T-head scaled by abs_weight."""
+    arrow = FancyArrowPatch(
+        start, end,
+        connectionstyle=f"arc3,rad={rad}",
+        arrowstyle='-',
+        color=color,
+        linewidth=linewidth,
+        zorder=1
+    )
+    ax.add_patch(arrow)
+
+    x1, y1 = start
+    x2, y2 = end
+    dx, dy = x2 - x1, y2 - y1
+    dist = np.hypot(dx, dy)
+    if dist == 0:
+        return
+
+    ux, uy = dx / dist, dy / dist
+    tx, ty = x2, y2
+    px, py = -uy, ux
+
+    # Scale T-head size with abs_weight (capped)
+    t_len = 0.03 + 0.07 * min(abs_weight, 1.0)
+    t_xs = [tx - px * t_len, tx + px * t_len]
+    t_ys = [ty - py * t_len, ty + py * t_len]
+    ax.plot(t_xs, t_ys, color=color, linewidth=linewidth, solid_capstyle='round', zorder=2)
+
+def polygon_layout(gene_list, radius=1.0):
+    n = len(gene_list)
+    angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    return {
+        gene_list[i]: (radius * np.cos(angle), radius * np.sin(angle))
+        for i, angle in enumerate(angles)
+    }
+
+def plot_network(correlation_matrix, gene_list, edges, title=None):
+    DG = nx.DiGraph()
+    for gene in gene_list:
+        DG.add_node(gene)
+
+    # Add all gene-gene interactions (even if directionless)
+    # Add all gene-gene interactions (only if both exist in correlation_matrix)
+    for g1 in gene_list:
+        for g2 in gene_list:
+            if g1 == g2:
+                continue
+            if g1 in correlation_matrix.index and g2 in correlation_matrix.columns:
+                if (g1, g2) in edges:
+                    val = correlation_matrix.loc[g1, g2]
+                    if pd.notna(val):
+                        DG.add_edge(g1, g2, weight=val)
+
+
+    # Define node positions and colors
+    pos = polygon_layout(gene_list, radius=max(2, len(gene_list) / 2)) if len(gene_list) > 2 else {
+        gene_list[0]: (0, 0),
+        gene_list[1]: (1, 0)
+    }
+
+    fig, ax = plt.subplots(figsize=(9, 9))
+    node_colors = np.array([
+    correlation_matrix.loc[g, g] if g in correlation_matrix.index and g in correlation_matrix.columns else 0
+    for g in gene_list
+    ])
+
+    v = 1
+    norm = Normalize(vmin=-v, vmax=v)
+    cmap = make_reds_blues_colormap()
+    node_rgba = cmap(norm(node_colors))
+    node_rgba[:, -1] = 0.8
+
+    nx.draw_networkx_nodes(DG, pos, ax=ax, node_color=node_rgba, node_size=6000, edgecolors='black', linewidths=1.5)
+
+    labels = {node: f"$g{int(node.split('_')[-1])}$" for node in DG.nodes()}
+    nx.draw_networkx_labels(DG, pos, labels=labels, font_size=16, ax=ax)
+
+    # Draw edges
+    for u, v in DG.edges():
+        raw_weight = correlation_matrix.loc[u, v]
+        if pd.isnull(raw_weight) or raw_weight == 0:
+            continue
+
+        x1, y1 = pos[u]
+        x2, y2 = pos[v]
+        offset = -0.15 if DG.has_edge(v, u) else 0.0
+        rad = 0.2 if DG.has_edge(v, u) else 0.0
+        start, end = shrink_arrow_endpoints(x1, y1, x2, y2, lateral_offset=offset)
+        color = cmap(norm(raw_weight))
+        abs_weight = abs(raw_weight)
+
+        if raw_weight > 0:
+            head_length = min(10 + abs_weight * 10, 20)
+            head_width = min(10 + abs_weight * 10, 20)
+            arrow_style = f'->,head_length={head_length},head_width={head_width}'
+
+            # Positive correlation → activation (arrow)
+            arrow = FancyArrowPatch(
+                start, end,
+                connectionstyle=f'arc3,rad={rad}',
+                arrowstyle=arrow_style,
+                mutation_scale=1,
+                color=color,
+                linewidth=min(abs_weight * 10, 5.0),
+                zorder=1
+            )
+            ax.add_patch(arrow)
+        elif raw_weight < 0:
+            # Negative correlation → repression (flat T-bar)
+            flat_t_head_arrow(
+                start, end,
+                color=color,
+                linewidth=min(abs_weight * 10, 5.0),
+                rad=rad,
+                abs_weight=abs_weight,
+                ax=ax
+            )
+
+
+    ax.set_title(title or "Inferred GRN", fontsize=16, fontweight='bold')
+    ax.axis('off')
+
+    if len(pos) > 0:
+        x_vals, y_vals = zip(*pos.values())
+        x_range = max(x_vals) - min(x_vals)
+        y_range = max(y_vals) - min(y_vals)
+        ax.set_xlim(min(x_vals) - 0.3 * x_range, max(x_vals) + 0.3 * x_range)
+        ax.set_ylim(min(y_vals) - 0.3 * y_range, max(y_vals) + 0.3 * y_range)
+
+    if len(gene_list) == 2:
+        ax.set_xlim(-0.5, len(gene_list) - 0.5)
+        ax.set_ylim(-0.5, 0.5)
+        ax.set_aspect('equal')
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.9, bottom=0.1)
+    else:
+        plt.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.05)
+
+    plt.tight_layout()
+    plt.show()
