@@ -20,6 +20,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 import glob
 import ast
+from scipy.optimize import curve_fit
 # %% Input utilities
 
 def read_input_matrix(path_to_matrix: str) -> (int, np.ndarray):
@@ -1045,11 +1046,131 @@ def hill_fn(x, n, k):
         x = np.asarray(x)
         return x ** n / (x ** n + k ** n)
 
+
+def _relaxation_steady_state_fit(y, time_points, steady_tol=0.01, flat_tol=0.01, min_r2=0.80):
+    """
+    Per-gene relaxation-curve steady-state check, ported verbatim (same
+    algorithm, same defaults) from check_system_in_steady_state in
+    twinfer/inference/correlation_functions.py, so the simulation's own
+    burn-in check and the downstream inference-side check agree.
+
+    1. If the observed trajectory is already flat,
+           (max(y) - min(y)) / mean(y) <= flat_tol
+       classify it as steady directly.
+    2. Otherwise fit y(t) = P_inf + (P0 - P_inf) * exp(-(t/tau)**beta) and
+       find the time at which the fit is within steady_tol of P_inf.
+    3. Classify as steady if R2 >= min_r2 and that arrival time is no later
+       than the final observed time point.
+
+    Args:
+        y (np.ndarray): 1-D trajectory (e.g. population-mean protein level
+            over time) for one gene, shape (n_time,).
+        time_points (np.ndarray): Time values matching y, shape (n_time,).
+        steady_tol (float): Relative distance from the fitted asymptotic
+            level used to define steady state.
+        flat_tol (float): Maximum relative range for the trajectory to be
+            classified directly as flat.
+        min_r2 (float): Minimum R2 required when extrapolation is needed.
+
+    Returns:
+        dict: Method, P_inf, Tau, Beta, R2, t_steady, Relative Range,
+            Final Distance, Steady State? (bool).
+    """
+    y = np.asarray(y, dtype=float)
+    time_points = np.asarray(time_points, dtype=float)
+
+    mean_level = float(np.mean(y))
+    min_level = float(np.min(y))
+    max_level = float(np.max(y))
+    relative_range = (max_level - min_level) / max(abs(mean_level), 1e-12)
+
+    # --- Case 1: observed trajectory is already flat ---
+    if relative_range <= flat_tol:
+        return {
+            "Method": "flat window", "P_inf": np.nan, "Tau": np.nan, "Beta": np.nan,
+            "R2": np.nan, "t_steady": time_points[0], "Relative Range": relative_range,
+            "Final Distance": np.nan, "Steady State?": True,
+        }
+
+    # --- Case 2: fit and extrapolate ---
+    t = time_points - time_points[0]
+    P0 = float(y[0])
+
+    def relaxation_model(t_fit, P_inf, tau, beta):
+        return P_inf + (P0 - P_inf) * np.exp(-np.power(np.maximum(t_fit, 0.0) / tau, beta))
+
+    tail_n = max(3, len(y) // 5)
+    tail_mean = float(np.mean(y[-tail_n:]))
+    median_dt = float(np.median(np.diff(t)))
+    tau_guess = max(float(t[-1]) / 4.0, median_dt)
+    observed_scale = max(abs(min_level), abs(max_level), abs(mean_level), 1.0)
+
+    try:
+        popt, _ = curve_fit(
+            relaxation_model, t, y,
+            p0=[max(tail_mean, 0.0), tau_guess, 1.0],
+            bounds=([0.0, 1e-8, 0.2], [10.0 * observed_scale, 100.0 * max(float(t[-1]), median_dt), 5.0]),
+            maxfev=50000,
+        )
+        P_inf, tau, beta = map(float, popt)
+        fitted = relaxation_model(t, P_inf, tau, beta)
+
+        ss_res = float(np.sum((y - fitted) ** 2))
+        ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 1.0
+
+        initial_distance = abs(P0 - P_inf)
+        allowed_distance = steady_tol * max(abs(P_inf), 1e-12)
+        if initial_distance <= allowed_distance:
+            t_steady_relative = 0.0
+        else:
+            ratio = initial_distance / allowed_distance
+            t_steady_relative = tau * np.power(np.log(ratio), 1.0 / beta)
+        t_steady = time_points[0] + t_steady_relative
+
+        final_distance = abs(fitted[-1] - P_inf) / max(abs(P_inf), 1e-12)
+        gene_steady = bool(
+            np.isfinite(t_steady) and np.isfinite(r2)
+            and r2 >= min_r2 and t_steady <= time_points[-1]
+        )
+        return {
+            "Method": "fit", "P_inf": P_inf, "Tau": tau, "Beta": beta, "R2": r2,
+            "t_steady": t_steady, "Relative Range": relative_range,
+            "Final Distance": final_distance, "Steady State?": gene_steady,
+        }
+    except (RuntimeError, ValueError, FloatingPointError):
+        return {
+            "Method": "fit failed", "P_inf": np.nan, "Tau": np.nan, "Beta": np.nan,
+            "R2": np.nan, "t_steady": np.nan, "Relative Range": relative_range,
+            "Final Distance": np.nan, "Steady State?": False,
+        }
+
+
 def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
                     window_frac=0.1, param_dict=None, interaction_matrix=None,
-                    gene_list=None, verbose=True, combinatorial_interaction_type="additive"):
+                    gene_list=None, verbose=True, combinatorial_interaction_type="additive",
+                    flat_tol=0.01, steady_tol=0.01, min_r2=0.80):
     """
     Check if simulation has reached steady state and matches expected protein levels.
+
+    Two independent per-gene criteria, combined with OR: a gene counts as
+    steady if it satisfies either one.
+      1. Param-based match: the observed mean protein level over the last
+         `last_n` time points is within 1% of the theoretical steady-state
+         level predicted from the kinetic rate constants, for >=80% of
+         those time points (unchanged from before).
+      2. Relaxation-curve check (_relaxation_steady_state_fit, ported
+         verbatim from check_system_in_steady_state in
+         correlation_functions.py): flat-trajectory short-circuit, else fit
+         P(t) = P_inf + (P0-P_inf)*exp(-(t/tau)**beta) to the gene's full
+         mean-protein trajectory and check the fit reaches steady_tol of
+         P_inf, with R2 >= min_r2, by the last time point. This catches
+         genes that have genuinely relaxed to a stable level but don't
+         closely match the mean-field theoretical approximation (e.g. due
+         to bursting noise or higher-order regulatory effects the
+         analytical formula doesn't fully capture), and keeps the
+         simulation's own burn-in check consistent with the
+         downstream inference-side steady-state check.
 
     Args:
         samples (np.ndarray): Shape (n_cells, n_time, n_species)
@@ -1062,7 +1183,13 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
         gene_list (list): Ordered list of gene names
         verbose (bool): Whether to print diagnostics
         combinatorial_interaction_type (str): One of 'additive', 'AND', 'OR'
-    
+        flat_tol (float): Relative-range tolerance for the relaxation
+            check's flat-trajectory short-circuit.
+        steady_tol (float): Relative distance from the fitted asymptotic
+            level used to define steady state in the relaxation check.
+        min_r2 (float): Minimum R2 required when extrapolation is needed in
+            the relaxation check.
+
     Returns:
         bool: True if steady state is reached
     """
@@ -1082,6 +1209,11 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
     rel_mean_change = np.abs(mean_traj[-1] - mean_traj[0]) / (mean_traj[0] + 1e-6)
     rel_std_change  = np.abs(std_traj[-1] - std_traj[0])  / (std_traj[0]  + 1e-6)
     steady_mean_std = (rel_mean_change.max() < mean_tol) and (rel_std_change.max() < std_tol)
+
+    # Full-trajectory population-mean protein level per gene, for the
+    # relaxation-curve check below (needs to see the actual relaxation from
+    # P0, not just the tail window used by the param-based check).
+    full_mean_protein_traj = samples[:, :, protein_species_idx].mean(axis=0)  # (n_time, n_genes)
 
     # --- Step 2: compare expected vs simulated proteins ---
     last_n = min(100, n_time)
@@ -1196,9 +1328,23 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
 
     rel_error_tp = np.vstack(rel_error_tp)  # (last_n, n_genes)
 
-    # --- Step 3: per-gene success fraction ---
-    frac_within_tol       = np.mean(rel_error_tp < 0.01, axis=0)
-    steady_match_per_gene = frac_within_tol >= 0.8
+    # --- Step 3: per-gene success fraction (param-based match) ---
+    frac_within_tol   = np.mean(rel_error_tp < 0.01, axis=0)
+    match_per_gene    = frac_within_tol >= 0.8
+
+    # --- Step 4: per-gene relaxation-curve check on the full trajectory
+    # (ported from check_system_in_steady_state; see _relaxation_steady_state_fit) ---
+    relaxation_results = [
+        _relaxation_steady_state_fit(
+            full_mean_protein_traj[:, i], time_points,
+            steady_tol=steady_tol, flat_tol=flat_tol, min_r2=min_r2,
+        )
+        for i in range(n_genes)
+    ]
+    relaxation_per_gene = np.array([r["Steady State?"] for r in relaxation_results])
+
+    # A gene counts as steady if it matches theory OR the relaxation check passes.
+    steady_match_per_gene = match_per_gene | relaxation_per_gene
     steady_match          = bool(np.all(steady_match_per_gene))
 
     # --- Verbose output ---
@@ -1207,16 +1353,29 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
         print(f"  Max rel mean change over last {window} steps: {rel_mean_change.max():.4e}")
         print(f"  Max rel std  change over last {window} steps: {rel_std_change.max():.4e}")
         print(f"  Steady by mean/std stability:                 {steady_mean_std}")
-        print(f"  Steady by param-based protein match:          {steady_match}")
-        print(f"  Per-gene fraction of time points within 1% of expected protein:")
-        for gene, frac, passed in zip(gene_list, frac_within_tol, steady_match_per_gene):
-            status = "pass" if passed else "fail"
-            print(f"     {gene:>15}: {frac*100:6.2f}%  {status}")
+        print(f"  Steady by param-based match OR relaxation fit: {steady_match}")
+        print(f"  Per-gene fraction of time points within 1% of expected protein,"
+              f" plus relaxation-curve fit over the full trajectory:")
+        for gene, frac, matched, rel_res in zip(
+            gene_list, frac_within_tol, match_per_gene, relaxation_results
+        ):
+            if matched:
+                status = "pass (theory match)"
+            elif rel_res["Steady State?"]:
+                status = f"pass ({rel_res['Method']})"
+            else:
+                status = f"fail ({rel_res['Method']})"
+            r2_str = f"{rel_res['R2']:.3f}" if np.isfinite(rel_res["R2"]) else "n/a"
+            print(
+                f"     {gene:>15}: {frac*100:6.2f}%  "
+                f"rel_range={rel_res['Relative Range']:.4e}  R2={r2_str}  "
+                f"t_steady={rel_res['t_steady']:.1f}  {status}"
+            )
 
     return steady_match
 
 # %% Wrapping functions 
-def run_simulation(update_propensities, update_matrix, pop0, time_points, n_cells=1000, promoter_indices = None):
+def run_simulation(update_propensities, update_matrix, pop0, time_points, n_cells=1000, promoter_indices = None, pop0_mat = None):
     """
     Simulates the dynamics of a population of cells using the Gillespie algorithm.
 
@@ -1238,8 +1397,18 @@ def run_simulation(update_propensities, update_matrix, pop0, time_points, n_cell
             - Cell stuck due to zero propensities for too long.
     """
     n_species = pop0.shape[0]
-    pop0_mat = np.tile(pop0[:, None], (1, n_cells))
-    pop0_mat = pop0_mat.copy()
+    # pop0_mat = np.tile(pop0[:, None], (1, n_cells))   # single shared IC for every cell
+    # Allow a caller-supplied per-cell initial population (n_species, n_cells) to
+    # seed sub-populations across different basins; fall back to the tiled single IC.
+    if pop0_mat is None:
+        pop0_mat = np.tile(pop0[:, None], (1, n_cells))
+    else:
+        pop0_mat = np.asarray(pop0_mat)
+        if pop0_mat.shape != (n_species, n_cells):
+            raise ValueError(
+                f"pop0_mat must have shape ({n_species}, {n_cells}), got {pop0_mat.shape}"
+            )
+    pop0_mat = np.ascontiguousarray(pop0_mat, dtype=np.int64)
     verbose_flags = np.zeros(n_cells, dtype=np.int64)
 
     samples = gillespie_simulation_all_cells(update_propensities, update_matrix,
@@ -1518,7 +1687,11 @@ def process_param_set(rows, label, base_config):
         regulators = np.where(connectivity_matrix[:, j] != 0)[0]
         for i in regulators:
             edge = f"{gene_list[i]}_to_{gene_list[j]}"
-            n_matrix[i, j] = param_dict.get(f"{{n_{edge}}}", 2.0)
+            # n_matrix[i, j] = param_dict.get(f"{{n_{edge}}}", 2.0)   # always clobbered a caller-supplied n_matrix
+            # Respect a Hill exponent handed in via the n_matrix arg (non-zero entry);
+            # otherwise take the CSV value, otherwise the default of 2.0.
+            if n_matrix[i, j] == 0:
+                n_matrix[i, j] = param_dict.get(f"{{n_{edge}}}", 2.0)
 
     param_dict = resolve_all_k_add(
         param_dict=param_dict, connectivity_matrix=connectivity_matrix, gene_list=gene_list,
@@ -1541,7 +1714,15 @@ def process_param_set(rows, label, base_config):
                                
     print("Starting base simulation")
     # 1) Run base simulation
-    base_samples = run_simulation(update_prop, update_matrix, pop0, time_points, n_cells, promoter_indices= promoter_indices)
+    # base_samples = run_simulation(update_prop, update_matrix, pop0, time_points, n_cells, promoter_indices= promoter_indices)
+    # Optional per-cell seeded initial population, e.g. sub-populations placed in
+    # different basins to get balanced multi-state occupancy. When a callable is
+    # given it is called as f(species_index, gene_list, n_cells) -> (n_species, n_cells).
+    pop0_mat_override = base_config.get("pop0_mat", None)
+    if callable(pop0_mat_override):
+        pop0_mat_override = pop0_mat_override(species_index, gene_list, n_cells)
+    base_samples = run_simulation(update_prop, update_matrix, pop0, time_points, n_cells,
+                                  promoter_indices=promoter_indices, pop0_mat=pop0_mat_override)
     flag = 0
     if not is_steady_state(samples = base_samples, time_points =  time_points, param_dict = full_param_dict, interaction_matrix = connectivity_matrix, gene_list = gene_list):
         print(f"⚠️ Base simulation (basal) for {label} may not be steady. Please manually verify and increase pre-division time if it has not reached steady state.")
