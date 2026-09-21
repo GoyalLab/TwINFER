@@ -2,11 +2,11 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 
-from matplotlib.colors import Normalize, LinearSegmentedColormap
+from matplotlib.colors import Normalize, LinearSegmentedColormap, to_rgba
 from adjustText import adjust_text
 
 
-__version__ = "2026-07-16-one-reciprocal-edge-curved-v6"
+__version__ = "2026-09-18-edge-alpha-v7"
 
 
 # ============================================================
@@ -875,6 +875,7 @@ def plot_grn(
     show_colorbar=True,
     vmin=None,
     vmax=None,
+    edge_alpha=None,
     *,
     terminal_spread=0.38,
     terminal_angle_tolerance=1.10,
@@ -928,6 +929,13 @@ def plot_grn(
     terminal_depth_step
         Radial staggering of crowded target symbols, in node-radius
         units.
+
+    edge_alpha
+        Optional {(source, target): alpha in [0, 1]} dict. Fades an
+        edge's colored line/arrow/bar AND its white halo together by
+        the same factor, so a faded edge disappears cleanly rather
+        than leaving a ghost-grey halo outline. Edges missing from
+        the dict draw at full opacity (alpha=1.0).
     """
     matrix = np.asarray(
         matrix,
@@ -1242,8 +1250,20 @@ def plot_grn(
             weight < 0
         )
 
-        color = colormap(
-            color_norm(weight)
+        alpha = float(
+            edge_alpha.get(edge, 1.0)
+            if edge_alpha is not None
+            else 1.0
+        )
+
+        color = to_rgba(
+            colormap(color_norm(weight)),
+            alpha=alpha,
+        )
+
+        halo_color = to_rgba(
+            "white",
+            alpha=alpha,
         )
 
         shift_fraction = (
@@ -1339,7 +1359,7 @@ def plot_grn(
                         xytext=start,
                         arrowprops=dict(
                             arrowstyle="-",
-                            color="white",
+                            color=halo_color,
                             lw=line_width + 2.4,
                             connectionstyle=(
                                 connection_style
@@ -1393,7 +1413,7 @@ def plot_grn(
                             start[1],
                             bar_end[1],
                         ],
-                        color="white",
+                        color=halo_color,
                         lw=line_width + 2.4,
                         solid_capstyle="round",
                         zorder=1.3,
@@ -1447,7 +1467,7 @@ def plot_grn(
                         point_1[1],
                         point_2[1],
                     ],
-                    color="white",
+                    color=halo_color,
                     lw=(
                         line_width * 1.50
                         + 2.4
@@ -1515,7 +1535,7 @@ def plot_grn(
                     xytext=arrow_start,
                     arrowprops=dict(
                         arrowstyle=arrow_style,
-                        color="white",
+                        color=halo_color,
                         lw=line_width + 2.4,
                         connectionstyle=(
                             connection_style
