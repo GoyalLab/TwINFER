@@ -1,6 +1,7 @@
 #Updates
 # # Optimized Gillespie-SSA Simulation Pipeline
 # %% Input utilities
+import ast  # [2026-09-30 added: name was used without being imported (found by _tools_check_bugs.py)]
 import os
 import uuid
 import json
@@ -489,6 +490,99 @@ def convert_samples_to_df(samples: np.ndarray, species_index: dict,
     return df
 
 @numba.njit(parallel=True, fastmath=True)
+def gillespie_meanfield_K_all_cells(base_update, update_matrix, pop0_mat, time_points, verbose_flags,
+                                    k_on_idx, reg_idx, g1_prot_idx, g2_I_idx,
+                                    k_add, sign, hill_n, kon_factor_final,
+                                    t_start, tau, t_offset, dt_K):
+    """
+    Like gillespie_simulation_all_cells, but every dt_K hours all cells are
+    synchronised, the gene_1->gene_2 Hill K is set to the CURRENT population-mean
+    gene_1 protein, and the k_on ramp factor is updated -- i.e. a live mean-field
+    feedback.  Exact SSA within each dt_K window (constant K, k_on); the residual
+    waiting time is discarded at the window edge (memoryless -> unbiased).
+    """
+    n_species, n_cells = pop0_mat.shape
+    n_time = time_points.shape[0]
+    n_rxns = update_matrix.shape[0]
+    samples = np.empty((n_cells, n_time, n_species), dtype=np.int64)
+
+    pop = np.empty((n_cells, n_species), dtype=np.int64)
+    for c in range(n_cells):
+        for s in range(n_species):
+            pop[c, s] = pop0_mat[s, c]
+
+    t0 = time_points[0]
+    t_final = time_points[n_time - 1]
+    i_time = 0
+    while i_time < n_time and time_points[i_time] <= t0 + 1e-12:
+        for c in range(n_cells):
+            for s in range(n_species):
+                samples[c, i_time, s] = pop[c, s]
+        i_time += 1
+
+    t = t0
+    while t < t_final - 1e-12:
+        t_next = t + dt_K
+        if t_next > t_final:
+            t_next = t_final
+
+        acc = 0.0
+        for c in range(n_cells):
+            acc += pop[c, g1_prot_idx]
+        Kn = (acc / n_cells) ** hill_n
+
+        tg = t + t_offset
+        if tg < t_start:
+            frac = 0.0
+        elif tg < t_start + tau:
+            frac = (tg - t_start) / tau
+        else:
+            frac = 1.0
+        kf = 1.0 + (kon_factor_final - 1.0) * frac
+
+        for c in prange(n_cells):
+            prop = np.zeros(n_rxns, dtype=np.float64)
+            tc = t
+            stuck = 0
+            while tc < t_next:
+                base_update(prop, pop[c], tc)
+                for j in range(k_on_idx.shape[0]):
+                    prop[k_on_idx[j]] *= kf
+                if reg_idx >= 0:
+                    x = float(pop[c, g1_prot_idx])
+                    xn = x ** hill_n
+                    prop[reg_idx] = (sign * k_add) * xn / (Kn + xn) * float(pop[c, g2_I_idx])
+                total = prop.sum()
+                if total <= 0.0:
+                    stuck += 1
+                    if stuck > 10000:
+                        verbose_flags[c] = 1
+                    break
+                dt_evt = np.random.exponential(1.0 / total)
+                if tc + dt_evt >= t_next:
+                    break
+                tc += dt_evt
+                cum = np.cumsum(prop)
+                r = np.searchsorted(cum, np.random.rand() * total)
+                for s in range(n_species):
+                    pop[c, s] += update_matrix[r, s]
+
+        t = t_next
+        while i_time < n_time and time_points[i_time] <= t + 1e-9:
+            for c in range(n_cells):
+                for s in range(n_species):
+                    samples[c, i_time, s] = pop[c, s]
+            i_time += 1
+
+    while i_time < n_time:
+        for c in range(n_cells):
+            for s in range(n_species):
+                samples[c, i_time, s] = pop[c, s]
+        i_time += 1
+    return samples
+
+
+@numba.njit(parallel=True, fastmath=True)
 def gillespie_simulation_all_cells(update_propensities, update_matrix, pop0_mat, time_points, verbose_flags):
     n_species, n_cells = pop0_mat.shape
     n_time = time_points.shape[0] #Number of time points to sample
@@ -752,11 +846,17 @@ def time_dependent_kon(k_on_base, t, t_switch=950, tau=100, scale=3.0):
     return k_on_base * (1 + (scale - 1) * 0.5 * (1 + np.tanh((t - t_switch) / tau)))
 
 
-def make_time_scaled_update(update_func, k_on_genes, final_value=2.0, t_start=950, tau=100, t_offset=0.0):
+def make_time_scaled_update(update_func, k_on_genes, final_value=2.0, t_start=950, tau=100,
+                            t_offset=0.0, start_value=1.0):
     """
-    Linearly increases k_on for specified genes from 1.0 → final_value 
-    between t_start and t_start + tau (using global time t + t_offset).
-    After the ramp, k_on stays constant at final_value.
+    Linearly ramps the k_on multiplier for the specified genes from
+    ``start_value`` → ``final_value`` between t_start and t_start + tau
+    (using global time t + t_offset).  Before the ramp the multiplier is held
+    at ``start_value``; after it, at ``final_value``.
+
+    ``start_value`` defaults to 1.0 so the historical behaviour (ramp from the
+    unmodified k_on) is unchanged.  Set start_value < 1 to begin from a
+    suppressed k_on (e.g. a "down" state recovering toward baseline).
     """
     @numba.njit(fastmath=True)
     def wrapped(prop, pop, t):
@@ -765,16 +865,45 @@ def make_time_scaled_update(update_func, k_on_genes, final_value=2.0, t_start=95
 
         # Linear ramp between t_start and t_start + tau
         if t_global < t_start:
-            factor = 1.0
+            factor = start_value
         elif t_global < t_start + tau:
-            # interpolate linearly from 1.0 → final_value
             frac = (t_global - t_start) / tau
-            factor = 1.0 + (final_value - 1.0) * frac
+            factor = start_value + (final_value - start_value) * frac
         else:
             factor = final_value
 
         for g_idx in k_on_genes:
             prop[g_idx] *= factor
+
+    return wrapped
+
+
+def make_lowmid_mid_update(base_update, k_on_genes, reg_idx, g1_prot_idx, g2_I_idx,
+                           k_add, sign, hill_n, kon_factor_final, t_start, tau, t_offset):
+    """
+    Twin-continuation propensity with a k_on ramp (K left at the base system's
+    baked-in value -- "K frozen").  Ramps the k_on multiplier
+    1.0 -> kon_factor_final linearly over [t_start, t_start+tau] (global time
+    t + t_offset).  The K_ramp case uses gillespie_meanfield_K_all_cells instead
+    (live mean-field K), so this helper only covers the low half and K_frozen.
+    (g1_prot_idx, g2_I_idx, reg_idx, k_add, sign, hill_n kept for signature
+    symmetry; unused here.)
+    """
+    k_on_genes = np.asarray(k_on_genes, dtype=np.int64)
+
+    @numba.njit(fastmath=True)
+    def wrapped(prop, pop, t):
+        base_update(prop, pop, t)
+        tg = t + t_offset
+        if tg < t_start:
+            frac = 0.0
+        elif tg < t_start + tau:
+            frac = (tg - t_start) / tau
+        else:
+            frac = 1.0
+        kf = 1.0 + (kon_factor_final - 1.0) * frac
+        for i in range(k_on_genes.shape[0]):
+            prop[k_on_genes[i]] *= kf
 
     return wrapped
 
@@ -829,24 +958,58 @@ def process_param_set(rows, label, base_config):
     pop0, update_matrix, update_prop, species_index = setup_gillespie_params_from_reactions(
         init_states, reactions_df, full_param_dict)
     # --- Identify k_on-containing reactions ---
+    # NOTE: the original line below is buggy -- str.contains("gene_1", "gene_2")
+    # passes "gene_2" as the `case=` argument, not a second pattern, so only
+    # gene_1's k_on reaction was drifted and gene_2 never split into states.
+    # Both genes' hidden state must drift so gene_2 also forms up/down
+    # subpopulations.
+    # k_on_reaction_indices = np.where(
+    #     reactions_df['propensity'].str.contains("k_on") &
+    #     reactions_df['species1'].str.contains("gene_1", "gene_2")
+    # )[0]
     k_on_reaction_indices = np.where(
-        reactions_df['propensity'].str.contains("k_on") & 
-        reactions_df['species1'].str.contains("gene_1", "gene_2")
-    )[0]    # --- Create two drifted variants: one up (scale>1), one down (scale<1) ---
-    update_prop_up = make_time_scaled_update(
-    update_prop, k_on_reaction_indices, final_value=1.66, t_start=1500, tau=15, t_offset=0
-    )
-    update_prop_down = make_time_scaled_update(
-        update_prop, k_on_reaction_indices, final_value=0.12, t_start=1500, tau=15, t_offset=0
-    )
-    
+        reactions_df['propensity'].str.contains("k_on") &
+        reactions_df['species1'].str.contains("gene_1|gene_2", regex=True)
+    )[0]
+    # --- Drift ramp parameters (overridable via base_config; defaults reproduce
+    #     the original symmetric baseline->{up 1.66x, down 0.12x} drift over 15h) ---
+    d_up_final   = base_config.get("drift_final_up", 1.66)
+    d_down_final = base_config.get("drift_final_down", 0.12)
+    d_up_start   = base_config.get("drift_start_up", 1.0)
+    d_down_start = base_config.get("drift_start_down", 1.0)
+    d_t_start    = base_config.get("drift_t_start", 1500)
+    d_tau        = base_config.get("drift_tau", 15)
+
     t_parent_end = base_config['simulation_time_before_division']
 
+    # --- Create two drifted variants: one up (scale>1), one down (scale<1) ---
+    # update_prop_up = make_time_scaled_update(
+    # update_prop, k_on_reaction_indices, final_value=1.66, t_start=1500, tau=15, t_offset=0
+    # )
+    # update_prop_down = make_time_scaled_update(
+    #     update_prop, k_on_reaction_indices, final_value=0.12, t_start=1500, tau=15, t_offset=0
+    # )
+    # update_prop_up_twins = make_time_scaled_update(
+    #     update_prop, k_on_reaction_indices, final_value=1.66, t_start=1500, tau=15, t_offset=t_parent_end
+    # )
+    # update_prop_down_twins = make_time_scaled_update(
+    #     update_prop, k_on_reaction_indices, final_value=0.12, t_start=1500, tau=15, t_offset=t_parent_end
+    # )
+    update_prop_up = make_time_scaled_update(
+        update_prop, k_on_reaction_indices, final_value=d_up_final, t_start=d_t_start,
+        tau=d_tau, t_offset=0, start_value=d_up_start
+    )
+    update_prop_down = make_time_scaled_update(
+        update_prop, k_on_reaction_indices, final_value=d_down_final, t_start=d_t_start,
+        tau=d_tau, t_offset=0, start_value=d_down_start
+    )
     update_prop_up_twins = make_time_scaled_update(
-        update_prop, k_on_reaction_indices, final_value=1.66, t_start=1500, tau=15, t_offset=t_parent_end
+        update_prop, k_on_reaction_indices, final_value=d_up_final, t_start=d_t_start,
+        tau=d_tau, t_offset=t_parent_end, start_value=d_up_start
     )
     update_prop_down_twins = make_time_scaled_update(
-        update_prop, k_on_reaction_indices, final_value=0.12, t_start=1500, tau=15, t_offset=t_parent_end
+        update_prop, k_on_reaction_indices, final_value=d_down_final, t_start=d_t_start,
+        tau=d_tau, t_offset=t_parent_end, start_value=d_down_start
     )
     # Quick verification
     print("\n=== CHECKING TIME-SCALED UPDATES ===")
@@ -857,16 +1020,18 @@ def process_param_set(rows, label, base_config):
         print(f"  [{idx}] {reactions_df.iloc[idx]['propensity']}")
 
     # Test at key time points
-    test_times = [0, 1500, 1507.5, 1515, 2000]
-    print("\nScaling factors at key times:")
+    test_times = [0, d_t_start, d_t_start + d_tau / 2.0, d_t_start + d_tau, d_t_start + max(d_tau, 500)]
+    print(f"\nDrift ramp: up {d_up_start}->{d_up_final}x, down {d_down_start}->{d_down_final}x, "
+          f"t_start={d_t_start}, tau={d_tau}")
+    print("Scaling factors (up / down) at key times:")
     for t in test_times:
-        if t < 1500:
-            factor = 1.0
-        elif t < 1515:
-            factor = 1.0 + (1.66 - 1.0) * (t - 1500) / 15
-        else:
-            factor = 1.66
-        print(f"  t={t}: factor={factor:.4f}")
+        def _f(s, e):
+            if t < d_t_start:
+                return s
+            if t < d_t_start + d_tau:
+                return s + (e - s) * (t - d_t_start) / d_tau
+            return e
+        print(f"  t={t}: up={_f(d_up_start, d_up_final):.4f}  down={_f(d_down_start, d_down_final):.4f}")
     print("=" * 50 + "\n")
     print("Starting base simulation")
     # 1) Run base simulation
@@ -1014,6 +1179,284 @@ def process_param_set(rows, label, base_config):
         f.write(json.dumps(record) + "\n")
     return f"{base_config['output_folder']}/df_{prefix}.csv"
 
+
+#%%
+def process_param_set_lowmid(rows, label, base_config):
+    """
+    Clean rebuild of the low->mid 2-state drift.
+
+    Absolute k_on levels (base_config, NOT multipliers):
+        drift_k_on_burnin     -- k_on during the whole burn-in; K is calibrated here
+        drift_k_on_low_final  -- the "low" half holds this after division
+        drift_k_on_mid_final  -- the "mid" half reaches this after division
+
+    Two kinds (base_config["drift_kind"]):
+        "K_frozen" -- K stays at its burn-in value forever; the "mid" half's k_on
+                      RAMPS burnin->mid over drift_tau hours (true drift, fixed wiring)
+        "K_ramp"   -- the "mid" half's k_on ramps burnin->mid AND its gene_1->
+                      gene_2 Hill K ramps K(burnin)->K(mid) over the SAME window
+                      (K tracks k_on).  Only the mid half changes.
+
+    Twin structure: one homogeneous burn-in population, split 50/50 at division;
+    both siblings of a clone share the same fate. state column = "low" / "mid".
+    """
+    path_to_connectivity_matrix = base_config['path_to_connectivity_matrix']
+    param_csv = base_config['param_csv']
+    scale_k = base_config.get("scale_k", None)
+    n_cells = base_config['n_cells']
+    kind = base_config["drift_kind"]
+    assert kind in ("K_frozen", "K_ramp"), kind
+
+    k_on_burnin = float(base_config["drift_k_on_burnin"])
+    k_on_low = float(base_config["drift_k_on_low_final"])
+    k_on_mid = float(base_config["drift_k_on_mid_final"])
+    t_start = int(base_config.get("drift_t_start", 1500))
+    tau = float(base_config.get("drift_tau", 15))
+
+    time_points = np.arange(0, base_config['simulation_time_before_division'], 1)
+    rep_time = np.arange(0, base_config['twin_simulation_time_after_division']
+                         + base_config['twin_measurement_resolution'],
+                         base_config['twin_measurement_resolution'])
+    t_parent_end = base_config['simulation_time_before_division']
+
+    n_genes, connectivity_matrix = read_input_matrix(path_to_connectivity_matrix)
+    reactions_df, gene_list = generate_reaction_network_from_matrix(connectivity_matrix)
+    init_states = generate_initial_state_from_genes(gene_list)
+    param_dict = assign_parameters_to_genes(param_csv, gene_list, rows)
+
+    # burn-in k_on == K-calibration k_on
+    for g in gene_list:
+        param_dict[f"{{k_on_{g}}}"] = k_on_burnin
+
+    n_matrix = np.zeros((n_genes, n_genes)); k_add_matrix = np.zeros((n_genes, n_genes))
+    for i in range(n_genes):
+        for j in range(n_genes):
+            if connectivity_matrix[i, j] != 0:
+                edge = f"{gene_list[i]}_to_{gene_list[j]}"
+                n_matrix[i, j] = param_dict.get(f"{{n_{edge}}}", 2.0)
+                k_add_matrix[i, j] = param_dict.get(f"{{k_add_{edge}}}", 6.0)
+
+    ss_burnin, fpd_burnin = add_interaction_terms(
+        param_dict, connectivity_matrix, gene_list,
+        n_matrix=n_matrix, k_add_matrix=k_add_matrix, scale_k=scale_k)
+    pop0, update_matrix, update_prop, species_index = setup_gillespie_params_from_reactions(
+        init_states, reactions_df, fpd_burnin)
+
+    k_on_idx = np.where(
+        reactions_df['propensity'].str.contains("k_on")
+        & reactions_df['species1'].str.contains("gene_1|gene_2", regex=True))[0]
+
+    # gene_1 -> gene_2 regulation reaction (Hill term with {k_gene_1_to_gene_2}); -1 if none
+    _reg = np.where(reactions_df['propensity'].str.contains(r"\{k_gene_1_to_gene_2\}", regex=True))[0]
+    reg_idx = int(_reg[0]) if len(_reg) else -1
+    k_add_e = float(param_dict.get("{k_add_gene_1_to_gene_2}", 6.0))
+    hill_n_e = float(param_dict.get("{n_gene_1_to_gene_2}", 2.0))
+    K_burnin = float(fpd_burnin.get("{k_gene_1_to_gene_2}", 1.0))
+    g1p_idx = species_index["gene_1_protein"]
+    g2i_idx = species_index["gene_2_I"]
+
+    # K at k_on = mid (reference only)
+    pd_mid = dict(param_dict)
+    for g in gene_list:
+        pd_mid[f"{{k_on_{g}}}"] = k_on_mid
+    ss_mid, fpd_mid = add_interaction_terms(
+        pd_mid, connectivity_matrix, gene_list,
+        n_matrix=n_matrix, k_add_matrix=k_add_matrix, scale_k=scale_k)
+    K_mid = float(fpd_mid.get("{k_gene_1_to_gene_2}", 1.0))
+    dt_K = float(base_config.get("K_meanfield_dt", 0.05))   # ~3 min: << mRNA (4 h) & protein (45 h) timescales
+    use_meanfield = (kind == "K_ramp" and reg_idx >= 0)
+
+    print(f"[lowmid {kind}] burn-in k_on={k_on_burnin} K_burnin={K_burnin:.1f}  "
+          f"mid k_on={k_on_mid} K_mid(ref)={K_mid:.1f}  reg_idx={reg_idx} t_start={t_start} tau={tau}"
+          f"{'  live mean-field K, dt_K=%.2fh' % dt_K if use_meanfield else ''}")
+
+    # k_on ramp only (low half always; mid half when K is NOT live)
+    low_twins = make_lowmid_mid_update(
+        update_prop, k_on_idx, reg_idx, g1p_idx, g2i_idx, k_add_e, 1.0, hill_n_e,
+        kon_factor_final=k_on_low / k_on_burnin,
+        t_start=t_start, tau=tau, t_offset=t_parent_end)
+    mid_twins = make_lowmid_mid_update(
+        update_prop, k_on_idx, reg_idx, g1p_idx, g2i_idx, k_add_e, 1.0, hill_n_e,
+        kon_factor_final=k_on_mid / k_on_burnin,
+        t_start=t_start, tau=tau, t_offset=t_parent_end)
+    mid_update_matrix = update_matrix
+
+    # ---- 1) burn-in: one homogeneous population (or reuse a saved one) ----
+    n_half = n_cells // 2
+    burnin_csv = base_config.get("burnin_csv", None)
+    if burnin_csv:
+        import glob as _glob
+        bpath = burnin_csv if os.path.isfile(burnin_csv) else sorted(_glob.glob(burnin_csv))[0]
+        print(f"[lowmid] reusing burn-in end state from {os.path.basename(bpath)}", flush=True)
+        bdf = pd.read_csv(bpath)
+        bdf = bdf[bdf["time_step"] == bdf["time_step"].max()].sort_values("cell_id")
+        assert len(bdf) == n_cells, f"burn-in file has {len(bdf)} cells, need {n_cells}"
+        n_species = len(species_index)
+        final_all = np.zeros((n_cells, n_species), dtype=np.int64)
+        for g in gene_list:                       # promoter A/I relaxes in <1 h; seed inactive
+            final_all[:, species_index[f"{g}_I"]] = 1
+            for sp in ("mRNA", "protein"):
+                final_all[:, species_index[f"{g}_{sp}"]] = bdf[f"{g}_{sp}"].to_numpy()
+        final_low, final_mid = final_all[:n_half], final_all[n_half:]
+        df_base = None
+    else:
+        print("[lowmid] burn-in ...", flush=True)
+        base_samples = run_simulation(update_prop, update_matrix, pop0, time_points, n_cells)
+        if not is_steady_state(samples=base_samples, time_points=time_points,
+                               param_dict=fpd_burnin, interaction_matrix=connectivity_matrix,
+                               gene_list=gene_list):
+            print(f"⚠️ burn-in for {label} may not be steady (expected for a deeply suppressed state).")
+        final_low = base_samples[:n_half, -1, :]        # parents -> "low"
+        final_mid = base_samples[n_half:, -1, :]        # parents -> "mid"
+        df_base = convert_samples_to_df(base_samples, species_index)
+        df_base['state'] = np.where(df_base['cell_id'] < n_half, "low", "mid")
+
+    # ---- 2) twins ----
+    print("[lowmid] twins (low half) ...", flush=True)
+    pop0_low = np.concatenate([final_low.T, final_low.T], axis=1)
+    pop0_mid = np.concatenate([final_mid.T, final_mid.T], axis=1)
+    rep_low = gillespie_simulation_all_cells(low_twins, update_matrix, pop0_low, rep_time,
+                                             np.zeros(2 * n_half, dtype=np.int64))
+    print(f"[lowmid] twins (mid half{', live mean-field K' if use_meanfield else ''}) ...", flush=True)
+    if use_meanfield:
+        rep_mid = gillespie_meanfield_K_all_cells(
+            update_prop, update_matrix, pop0_mid, rep_time,
+            np.zeros(2 * (n_cells - n_half), dtype=np.int64),
+            np.asarray(k_on_idx, dtype=np.int64), int(reg_idx), int(g1p_idx), int(g2i_idx),
+            float(k_add_e), 1.0, float(hill_n_e), float(k_on_mid / k_on_burnin),
+            float(t_start), float(tau), float(t_parent_end), dt_K)
+    else:
+        rep_mid = gillespie_simulation_all_cells(mid_twins, mid_update_matrix, pop0_mid, rep_time,
+                                                 np.zeros(2 * (n_cells - n_half), dtype=np.int64))
+    rep_samples = np.concatenate([rep_low, rep_mid], axis=0)
+    df_rep = convert_samples_to_df(rep_samples, species_index)
+
+    # ---- metadata ----
+    n_low_p, n_mid_p = n_half, n_cells - n_half
+    clone_ids = np.concatenate([np.tile(np.arange(n_low_p), 2),
+                                np.tile(np.arange(n_low_p, n_cells), 2)])
+    replicate_ids = np.concatenate([np.ones(n_low_p, int), np.full(n_low_p, 2, int),
+                                    np.ones(n_mid_p, int), np.full(n_mid_p, 2, int)])
+    cell_states = np.array(["low"] * (2 * n_low_p) + ["mid"] * (2 * n_mid_p))
+    df_rep['clone_id'] = clone_ids[df_rep['cell_id']]
+    df_rep['replicate'] = replicate_ids[df_rep['cell_id']]
+    df_rep['state'] = cell_states[df_rep['cell_id']]
+    assert df_rep.groupby('cell_id')[['replicate', 'clone_id', 'state']].nunique().eq(1).all().all()
+    print(f"✓ {len(df_rep)} rows, {n_cells} clones, 2 reps/clone, states={sorted(df_rep.state.unique())}", flush=True)
+
+    # ---- save ----
+    ts = datetime.now().strftime("%d%m%Y_%H%M%S")
+    uid = uuid.uuid4().hex[:8]
+    prefix = f"{label}_{ts}_ncells_{n_cells}_{base_config['type']}_{uid}"
+    out = f"{base_config['output_folder']}/df_{prefix}.csv"
+    df_rep.to_csv(out, index=False)
+    if df_base is not None:
+        df_base.to_csv(f"{base_config['output_folder']}/simulation_before_division_df_{prefix}.csv", index=False)
+    os.makedirs(os.path.dirname(base_config['log_file']), exist_ok=True)
+    with open(base_config['log_file'], "a") as f:
+        f.write(json.dumps({
+            "id": uid, "rows": rows, "n_cells": n_cells, "type": base_config['type'],
+            "timestamp": ts, "drift_kind": kind, "burnin_reused": bool(burnin_csv),
+            "k_on_burnin": k_on_burnin, "k_on_low_final": k_on_low, "k_on_mid_final": k_on_mid,
+            "K_burnin": K_burnin, "K_mid": K_mid,
+            "K_steady_state_burnin": ss_burnin.tolist(),
+            "K_steady_state_mid": (ss_mid.tolist() if ss_mid is not None else None),
+        }) + "\n")
+    return out
+
+
+#%%
+def process_param_set_single(rows, label, base_config):
+    """
+    Single-state population (no drift, no split).  Cells run at
+    base_config['single_k_on'].  The gene_1->gene_2 Hill K is calibrated at
+    base_config['single_K_calib_k_on'] -- if that differs from single_k_on the
+    regulation is deliberately mis-tuned (e.g. cells at the median k_on but K
+    set for a low-k_on steady state).  Twins are simulated for the analysis;
+    state column = "single".
+    """
+    param_csv = base_config['param_csv']
+    scale_k = base_config.get("scale_k", None)
+    n_cells = base_config['n_cells']
+    k_on_run = float(base_config['single_k_on'])
+    k_on_K = float(base_config['single_K_calib_k_on'])
+
+    time_points = np.arange(0, base_config['simulation_time_before_division'], 1)
+    rep_time = np.arange(0, base_config['twin_simulation_time_after_division']
+                         + base_config['twin_measurement_resolution'],
+                         base_config['twin_measurement_resolution'])
+
+    n_genes, connectivity_matrix = read_input_matrix(base_config['path_to_connectivity_matrix'])
+    reactions_df, gene_list = generate_reaction_network_from_matrix(connectivity_matrix)
+    init_states = generate_initial_state_from_genes(gene_list)
+    param_dict = assign_parameters_to_genes(param_csv, gene_list, rows)
+    for g in gene_list:
+        param_dict[f"{{k_on_{g}}}"] = k_on_run
+
+    n_matrix = np.zeros((n_genes, n_genes)); k_add_matrix = np.zeros((n_genes, n_genes))
+    for i in range(n_genes):
+        for j in range(n_genes):
+            if connectivity_matrix[i, j] != 0:
+                edge = f"{gene_list[i]}_to_{gene_list[j]}"
+                n_matrix[i, j] = param_dict.get(f"{{n_{edge}}}", 2.0)
+                k_add_matrix[i, j] = param_dict.get(f"{{k_add_{edge}}}", 6.0)
+
+    ss, fpd = add_interaction_terms(param_dict, connectivity_matrix, gene_list,
+                                    n_matrix=n_matrix, k_add_matrix=k_add_matrix, scale_k=scale_k)
+    K_native = float(fpd.get("{k_gene_1_to_gene_2}", np.nan))
+    K_used = K_native
+    if abs(k_on_K - k_on_run) > 1e-12 and "{k_gene_1_to_gene_2}" in fpd:
+        pd_k = dict(param_dict)
+        for g in gene_list:
+            pd_k[f"{{k_on_{g}}}"] = k_on_K
+        _, fpd_k = add_interaction_terms(pd_k, connectivity_matrix, gene_list,
+                                        n_matrix=n_matrix, k_add_matrix=k_add_matrix, scale_k=scale_k)
+        K_used = float(fpd_k["{k_gene_1_to_gene_2}"])
+        fpd["{k_gene_1_to_gene_2}"] = K_used
+
+    pop0, update_matrix, update_prop, species_index = setup_gillespie_params_from_reactions(
+        init_states, reactions_df, fpd)
+    print(f"[single] k_on={k_on_run}  K calibrated @ k_on={k_on_K}  "
+          f"(native K={K_native:.1f}, used K={K_used:.1f})  steady_state={np.round(ss, 1).tolist()}")
+
+    print("[single] burn-in ...", flush=True)
+    base_samples = run_simulation(update_prop, update_matrix, pop0, time_points, n_cells)
+    if not is_steady_state(samples=base_samples, time_points=time_points, param_dict=fpd,
+                           interaction_matrix=connectivity_matrix, gene_list=gene_list):
+        print(f"⚠️ burn-in for {label} may not be steady (mean-field tolerance is tight).")
+    df_base = convert_samples_to_df(base_samples, species_index)
+    df_base['state'] = "single"
+
+    print("[single] twins ...", flush=True)
+    final = base_samples[:, -1, :]
+    pop0_tw = np.concatenate([final.T, final.T], axis=1)
+    rep_samples = gillespie_simulation_all_cells(update_prop, update_matrix, pop0_tw, rep_time,
+                                                 np.zeros(2 * n_cells, dtype=np.int64))
+    df_rep = convert_samples_to_df(rep_samples, species_index)
+    clone_ids = np.tile(np.arange(n_cells), 2)
+    replicate_ids = np.concatenate([np.ones(n_cells, int), np.full(n_cells, 2, int)])
+    df_rep['clone_id'] = clone_ids[df_rep['cell_id']]
+    df_rep['replicate'] = replicate_ids[df_rep['cell_id']]
+    df_rep['state'] = "single"
+    assert df_rep.groupby('cell_id')[['replicate', 'clone_id']].nunique().eq(1).all().all()
+    print(f"✓ {len(df_rep)} rows, {n_cells} clones, 2 reps/clone", flush=True)
+
+    ts = datetime.now().strftime("%d%m%Y_%H%M%S")
+    uid = uuid.uuid4().hex[:8]
+    prefix = f"{label}_{ts}_ncells_{n_cells}_{base_config['type']}_{uid}"
+    out = f"{base_config['output_folder']}/df_{prefix}.csv"
+    df_rep.to_csv(out, index=False)
+    df_base.to_csv(f"{base_config['output_folder']}/simulation_before_division_df_{prefix}.csv", index=False)
+    os.makedirs(os.path.dirname(base_config['log_file']), exist_ok=True)
+    with open(base_config['log_file'], "a") as f:
+        f.write(json.dumps({
+            "id": uid, "rows": rows, "n_cells": n_cells, "type": base_config['type'], "timestamp": ts,
+            "single_k_on": k_on_run, "single_K_calib_k_on": k_on_K,
+            "K_native": K_native, "K_used": K_used, "steady_state": ss.tolist(),
+        }) + "\n")
+    return out
+
+
 #%%
 def check_if_file_exists(rows, output_folder, type_name):
     """
@@ -1033,7 +1476,8 @@ def check_if_file_exists(rows, output_folder, type_name):
 #%%
 # --- Main execution with parallel parameter sets ---
 if __name__ == "__main__":
-    root = "/projects/b1042/GoyalLab/Keerthana/"
+    # [2026-10-01 commented out: only referenced by the commented-out example config below; old Keerthana path]
+    # root = "/projects/b1042/GoyalLab/Keerthana/"
     # Base configuration - the commented out lines can be used instead of providing arguments to the file (e.g. if using it as ipynb notebook)
     base_config = {
         'time_points':    np.arange(0, 2500, 1), #Time to reach steady state

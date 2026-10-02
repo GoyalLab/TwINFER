@@ -1,6 +1,7 @@
 #Updates
 # # Optimized Gillespie-SSA Simulation Pipeline
 # %% Input utilities
+import ast  # [2026-09-30 added: name was used without being imported (found by _tools_check_bugs.py)]
 import os
 import uuid
 import json

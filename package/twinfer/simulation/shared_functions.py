@@ -1,3 +1,4 @@
+import numpy as np  # [2026-09-30 added: np was used without being imported (found by _tools_check_bugs.py)]
 def read_input_matrix(path_to_matrix: str) -> (int, np.ndarray):
     """
     Reads an input matrix from a specified file path and returns its dimensions and content.

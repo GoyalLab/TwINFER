@@ -1,8 +1,7 @@
 """
 Single source of truth for every path referenced across this repo. Nothing
 outside this module should hardcode an absolute path, insert onto
-sys.path, or hand-type an output directory (see REORG_CHECKLIST.md,
-"Known bugs", for what that pattern already broke). See the root README
+sys.path, or hand-type an output directory. See the root README
 for installation and environment-variable configuration.
 """
 
@@ -10,21 +9,42 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-import twinfer
-
 
 def get_repo_root() -> Path:
     """
     Root directory of the TwINFER repository.
 
-    Derived from the installed twinfer package's own file location.
-    Requires `pip install -e package/` (editable install), since
-    twinfer.__file__ must resolve to <repo_root>/package/twinfer/__init__.py.
+    Resolved by walking up from this file's own location until a directory
+    containing package/pyproject.toml (the repo root's marker) is found.
+    This only works for an editable install (`pip install -e package/`),
+    since this file must resolve to
+    <repo_root>/package/twinfer/utils/paths.py; a regular (non-editable)
+    install copies the source into site-packages, severing the link back to
+    the repo. Set TWINFER_REPO_ROOT to bypass detection entirely, e.g. when
+    twinfer is installed non-editably.
 
     Returns:
-        Path: Absolute path to the repository root.
+        Path: TWINFER_REPO_ROOT if set, otherwise the detected repository root.
+
+    Raises:
+        RuntimeError: If no TWINFER_REPO_ROOT is set and no repo root marker
+            is found among this file's parent directories.
     """
-    return Path(twinfer.__file__).resolve().parents[2]
+    override = os.environ.get("TWINFER_REPO_ROOT")
+    if override:
+        return Path(override).expanduser().resolve()
+
+    start = Path(__file__).resolve()
+    for candidate in start.parents:
+        if (candidate / "package" / "pyproject.toml").is_file():
+            return candidate
+
+    raise RuntimeError(
+        f"Could not locate the TwINFER repository root from {start}. "
+        "This typically happens when twinfer is installed as a regular (non-editable) "
+        "package, so its source no longer lives inside the repo. Either run "
+        "`pip install -e package/` from the repo root, or set TWINFER_REPO_ROOT explicitly."
+    )
 
 
 def get_data_root() -> Path:
@@ -124,3 +144,18 @@ def get_external_repo_path(name: str) -> Path:
     if key not in default_siblings:
         raise ValueError(f"Unknown external repo {name!r}; set {env_var} explicitly.")
     return get_repo_root().parent / default_siblings[key]
+
+
+def get_larry_dataset_dir() -> Path:
+    """
+    Working directory of the LARRY preprocessing pipeline (raw per-library zips + barcode fastq + processed/ QC outputs).
+    [2026-10-01 added: replaces the literal /scratch/gzu5140/ka_twinfer/larry_dataset in ~25 scripts.]
+
+    Returns:
+        Path: TWINFER_LARRY_DATASET if set, otherwise /scratch/gzu5140/ka_twinfer/larry_dataset (the location the pipeline was
+            run in; scratch storage is purged, so set TWINFER_LARRY_DATASET to a shared-storage copy to keep results).
+    """
+    override = os.environ.get("TWINFER_LARRY_DATASET")
+    if override:
+        return Path(override).expanduser()
+    return Path("/scratch/gzu5140/ka_twinfer/larry_dataset")

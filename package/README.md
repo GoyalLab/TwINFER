@@ -77,3 +77,5 @@ from twinfer.inference import infer
 ## Status
 
 This package is being migrated from the previous flat `TwINFER_function_scripts/` layout. See `REORG_CHECKLIST.md` at the repository root for current progress. `simulation/` and `inference/` contain migrated code; `plotting/` and `utils/` have not yet been populated.
+## twinfer.scoring (added 2026-09-30)
+Reviewed scoring helpers shared by `benchmarks/` and `paper_analysis/`: `analytic_zscores`, `analytic_core`, `benchmark_truth`, `todo4v2`, `pidc`, `twinscore_supplement`. The package never imports from `benchmarks/` or `paper_analysis/`.

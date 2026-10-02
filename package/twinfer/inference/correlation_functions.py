@@ -4843,11 +4843,15 @@ def differentiate_single_state_reg_and_multiple_states(
                 multiple_states_gene_pairs.append((gene_i, gene_j))
             else:
                 single_state_regulation.append((gene_i, gene_j))
-            print(
-                f"gene 1: {gene_i}, gene 2: {gene_j}, z_het: {z_score}, "
-                f"z_div: {z_div} "
-                f"with threshold {z_score_threshold}, unit={unit}"
-            )
+            # 2026-09-29: unconditional per-pair print (not gated by `verbose`) was the
+            # dominant wall-clock cost at thousand-pair scale -- ~10k+ print() calls per
+            # stage. Commented out, not the math; see identify_actual_directed_edges for
+            # the matching fix.
+            # print(
+            #     f"gene 1: {gene_i}, gene 2: {gene_j}, z_het: {z_score}, "
+            #     f"z_div: {z_div} "
+            #     f"with threshold {z_score_threshold}, unit={unit}"
+            # )
         except KeyError:
             raise ValueError(f"Missing gene pair ({gene_i}, {gene_j}) in correlation matrices.")
 
@@ -6059,8 +6063,13 @@ def identify_reg_if_multiple_states(
 
     unit = _resolve_unit(unit)
 
-    if not 0 < alpha < 1:
-        raise ValueError("alpha must be between 0 and 1")
+    # 2026-09-23: alpha == 1.0 is now allowed (z_critical = norm.ppf(0) = -inf, i.e. the one-sided
+    # regulation call never rejects a pair; ci_critical = norm.ppf(0.5) = 0). Used by the FateMap
+    # "include every pair" inference rerun; default behaviour for alpha < 1 is unchanged.
+    # if not 0 < alpha < 1:
+    #     raise ValueError("alpha must be between 0 and 1")
+    if not 0 < alpha <= 1:
+        raise ValueError("alpha must be in (0, 1]")
 
     multiple_states_no_reg = []
     multiple_states_and_reg = []
@@ -6219,16 +6228,18 @@ def identify_reg_if_multiple_states(
                 / (div_finite.size + 1.0)
             )
 
-        print(
-            f"gene 1: {gene_i}, gene 2: {gene_j}, "
-            f"rho_delta_t1={corr_t1:.6f}, "
-            f"rho_delta_t2={corr_t2:.6f}, "
-            f"d={d_obs:.6f}, "
-            f"z_d_het={z_d_het:.4f}, "
-            f"z_d_div={z_d_div:.4f}, "
-            f"critical={z_critical:.4f}, "
-            f"call={call}"
-        )
+        # 2026-09-29: unconditional per-pair print, same fix as
+        # differentiate_single_state_reg_and_multiple_states -- commented out, not the math.
+        # print(
+        #     f"gene 1: {gene_i}, gene 2: {gene_j}, "
+        #     f"rho_delta_t1={corr_t1:.6f}, "
+        #     f"rho_delta_t2={corr_t2:.6f}, "
+        #     f"d={d_obs:.6f}, "
+        #     f"z_d_het={z_d_het:.4f}, "
+        #     f"z_d_div={z_d_div:.4f}, "
+        #     f"critical={z_critical:.4f}, "
+        #     f"call={call}"
+        # )
 
         details = {
             # The observed d is the same quantity under both nulls.
@@ -6588,15 +6599,17 @@ def identify_actual_directed_edges(
             )
             z_score_calc[(gene_1, gene_2)] = z_val
 
-            print(
-                f"Observed correlation for {gene_1} -> {gene_2}: "
-                f"{actual_corr:.4f}, z-score: {z_val:.4f}, "
-                f"unit={unit}"
-            )
-            print(
-                f"Significant at |z|>{z_score_threshold}: "
-                f"{is_significant}"
-            )
+            # 2026-09-29: unconditional per-pair prints (not gated by `verbose`) were the
+            # dominant wall-clock cost at thousand-pair scale. Commented out, not the math.
+            # print(
+            #     f"Observed correlation for {gene_1} -> {gene_2}: "
+            #     f"{actual_corr:.4f}, z-score: {z_val:.4f}, "
+            #     f"unit={unit}"
+            # )
+            # print(
+            #     f"Significant at |z|>{z_score_threshold}: "
+            #     f"{is_significant}"
+            # )
 
             if is_significant:
                 is_relatively_normal = plot_qq_distribution(
@@ -6605,10 +6618,10 @@ def identify_actual_directed_edges(
                     gene_pair_name,
                     verbose=verbose,
                 )
-                print(
-                    f"{gene_pair_name}: normality of null: "
-                    f"{is_relatively_normal}"
-                )
+                # print(
+                #     f"{gene_pair_name}: normality of null: "
+                #     f"{is_relatively_normal}"
+                # )
 
             if verbose:
                 plt.figure(figsize=(6, 4))
@@ -6644,11 +6657,12 @@ def identify_actual_directed_edges(
             # rho_cross_null_details[pair]["z_rho_cross"].
             z_score_calc[(gene_1, gene_2)] = None
 
-            print(
-                f"Observed correlation for {gene_1} -> {gene_2}: "
-                f"{actual_corr:.4f}, |corr| > {corr_threshold}: "
-                f"{is_significant}, unit={unit}"
-            )
+            # 2026-09-29: unconditional per-pair print, commented out (see above).
+            # print(
+            #     f"Observed correlation for {gene_1} -> {gene_2}: "
+            #     f"{actual_corr:.4f}, |corr| > {corr_threshold}: "
+            #     f"{is_significant}, unit={unit}"
+            # )
 
         is_significant_map[(gene_1, gene_2)] = is_significant
         if is_significant and is_relatively_normal:

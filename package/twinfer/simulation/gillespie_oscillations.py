@@ -20,10 +20,23 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 import glob
 import ast
-from scipy.optimize import curve_fit
+
+# =============================================================================
+# OSCILLATOR MODEL CONSTANTS (new)
+# =============================================================================
+# Shared-cell-phase oscillatory k_prod_mRNA model:
+#   k_prod_mRNA_gene_g(t, cell i) =
+#       max(0, k_prod_mRNA_base_g * (1 + A_g * sin(OMEGA*t + Phi_i/PHI_SCALE)))
+# OMEGA is global and fixed (T=38h, from t1=1h/t2=20h half-period constraint).
+# Phi_i is ONE shared phase value per cell (not per gene) -- a read-only
+# species, scaled by PHI_SCALE to store as an integer in Gillespie state.
+PHI_SCALE = 10000.0
+OMEGA = np.pi / 19.0          # T = 38h
+PHI_SPECIES_NAME = "Phi"      # one global phase species, shared by all genes
+
 # %% Input utilities
 
-def read_input_matrix(path_to_matrix: str) -> (int, np.ndarray):
+def read_input_matrix(path_to_matrix: str):
     """
     Reads an input matrix from a specified file path and returns its dimensions and content.
 
@@ -61,7 +74,10 @@ def assign_parameters_to_genes(csv_path, gene_list, rows=None):
     Args:
         csv_path (str): Path to the CSV file containing parameter values. 
                         The file should have columns including 'mrna_half_life' 
-                        and 'protein_half_life'.
+                        and 'protein_half_life'. To use the oscillator model,
+                        also include an 'A' column (per-gene oscillation
+                        amplitude) -- it will be picked up automatically as
+                        {A_<gene>}, exactly like k_prod_mRNA etc.
         gene_list (list): List of gene names to which parameters will be assigned.
         rows (list, optional): List of row indices to select from the CSV file. 
                                If None, rows are randomly selected with replacement. 
@@ -163,13 +179,22 @@ def generate_reaction_network_from_matrix(connectivity_matrix: np.ndarray,
           matrix information.
         - The function aggregates reactions with identical species and changes into a single row 
           with combined propensity functions.
+        - mRNA_prod now includes the shared-cell-phase oscillator term (NEW):
+              k_prod_mRNA * (1 + A*sin(OMEGA*t + Phi/PHI_SCALE))
+          floored at 0. Requires a per-gene {A_<gene>} parameter in param_dict
+          (add an 'A' column to your parameter CSV) and a global 'Phi' species
+          (see generate_initial_state_from_genes).
     """
     n_genes = connectivity_matrix.shape[0]
     gene_list = [f"gene_{i+1}" for i in range(n_genes)]
     prop = {
         "activation": "{k_on}*{curr_gene}_I",
         "inactivation": "{k_off}*{curr_gene}_A",
-        "mRNA_prod": "{k_prod_mRNA}*{curr_gene}_A",
+        # --- CHANGED: mRNA_prod now includes the shared-phase sinusoid ---
+        "mRNA_prod": (
+            "max(0.0, {k_prod_mRNA}*(1 + {A}*sin({omega}*t + "
+            + PHI_SPECIES_NAME + "/" + repr(PHI_SCALE) + ")))*{curr_gene}_A"
+        ),
         "mRNA_deg": "{k_deg_mRNA}*{curr_gene}_mRNA",
         "protein_prod": "{k_prod_protein}*{curr_gene}_mRNA",
         "protein_deg": "{k_deg_protein}*{curr_gene}_protein"
@@ -185,14 +210,17 @@ def generate_reaction_network_from_matrix(connectivity_matrix: np.ndarray,
                         "species2": f"{curr_gene}_A", "change2": -1,
                         "propensity": expr, "time": "-"})
 
-        # production/degradation (unchanged)
+        # production/degradation
         for label, suffix, chg in [
             ("mRNA_prod", "mRNA", 1), ("mRNA_deg", "mRNA", -1),
             ("protein_prod", "protein", 1), ("protein_deg", "protein", -1)
         ]:
             expr = prop[label].replace("{curr_gene}", curr_gene)
-            for k in ["k_prod_mRNA", "k_deg_mRNA", "k_prod_protein", "k_deg_protein"]:
+            # --- CHANGED: added "A" to the substitution list for mRNA_prod ---
+            for k in ["k_prod_mRNA", "k_deg_mRNA", "k_prod_protein", "k_deg_protein", "A"]:
                 expr = expr.replace(f"{{{k}}}", param(k))
+            # --- CHANGED: literal OMEGA substitution (global constant, not per-gene) ---
+            expr = expr.replace("{omega}", repr(OMEGA))
             reactions.append({"species1": f"{curr_gene}_{suffix}", "change1": chg,
                             "species2": "-", "change2": "-",
                             "propensity": expr, "time": "-"})
@@ -279,14 +307,19 @@ def generate_initial_state_from_genes(gene_list):
     - `<gene>_mRNA`: Messenger RNA, initialized with a count of 0.
     - `<gene>_protein`: Protein, initialized with a count of 0.
 
+    Additionally (NEW) adds ONE global 'Phi' species -- the per-cell
+    oscillator phase, scaled to an integer (see PHI_SCALE). Phi is never
+    touched by any reaction; it is a read-only lookup value used only
+    inside the mRNA production propensity. Its per-cell value is set later
+    via initialize_phi(), after pop0_mat is built.
+
     Args:
         gene_list (list of str): A list of gene names for which the initial states
                                  are to be generated.
 
     Returns:
         pandas.DataFrame: A DataFrame containing the initial states of the species
-                          for each gene. Each row represents a species with its
-                          name (`species`) and initial count (`count`).
+                          for each gene, plus one 'Phi' row.
     """
     states = []
     for g in gene_list:
@@ -296,7 +329,103 @@ def generate_initial_state_from_genes(gene_list):
             {"species":f"{g}_mRNA","count":0},
             {"species":f"{g}_protein","count":0},
         ]
+    states.append({"species": PHI_SPECIES_NAME, "count": 0})  # NEW: filled per-cell later
     return pd.DataFrame(states)
+
+
+# =============================================================================
+# NEW: population-level Phi initialization
+# =============================================================================
+def initialize_phi(pop0_mat, species_index, n_cells, scenario, seed=None,
+                    phi_center=0.0, sigma_phi_population=0.248):
+    """
+    Sets Phi for every cell in pop0_mat according to the chosen scenario.
+    Call this after building pop0_mat (tile of pop0 across n_cells) and
+    before running the Gillespie simulation.
+
+    Args:
+        pop0_mat (np.ndarray): shape (n_species, n_cells), already tiled from pop0.
+        species_index (dict): species name -> row index in pop0_mat.
+        n_cells (int): number of cells.
+        scenario (str): "in_phase" | "out_of_phase"
+            in_phase       -> all cells get Phi = 0
+            out_of_phase   -> Phi ~ Normal(phi_center, sigma_phi_population),
+                               wrapped to [0, 2*pi)
+        seed (int, optional): RNG seed.
+        phi_center (float): mean phase for out_of_phase scenario (radians).
+        sigma_phi_population (float): stdev of phase spread for out_of_phase
+            scenario (radians). Default 0.248 rad, derived from a +/-3h
+            population division-time window (~2 sigma) converted via OMEGA.
+
+    Returns:
+        np.ndarray: pop0_mat, modified in place (and returned for convenience).
+    """
+    rng = np.random.default_rng(seed)
+    phi_idx = species_index[PHI_SPECIES_NAME]
+
+    if scenario == "in_phase":
+        phi_vals = np.zeros(n_cells)
+    elif scenario == "out_of_phase":
+        phi_vals = rng.normal(loc=phi_center, scale=sigma_phi_population, size=n_cells)
+        phi_vals = np.mod(phi_vals, 2 * np.pi)
+    else:
+        raise ValueError(f"Unknown phi_scenario: {scenario}")
+
+    pop0_mat[phi_idx, :] = np.round(phi_vals * PHI_SCALE).astype(np.int64)
+    return pop0_mat
+
+
+# =============================================================================
+# NEW (scenario 4): genuinely asynchronous per-cell division timing
+# =============================================================================
+# Scenarios 1-3 all divide the whole population at the same global instant
+# (base_samples[:, -1, :]) -- only the oscillator's phase differs per cell,
+# which is a mathematically clean proxy for "cells that effectively started
+# at different times" ONLY once the population has reached its periodic
+# steady state (many oscillation periods have elapsed). Scenario 4 instead
+# makes the division EVENT ITSELF happen at a different real simulated time
+# for each cell, sampling that cell's own trajectory at its own division
+# time rather than everyone's trajectory at one shared final timepoint.
+def compute_division_indices(n_cells, time_points, sigma_t_division,
+                             base_division_index=None, seed=None):
+    """
+    Computes per-cell division-time indices into time_points, representing
+    genuinely asynchronous division: cell i divides at
+        t_div_i = time_points[base_division_index] + Delta_t_i
+    where Delta_t_i ~ Normal(0, sigma_t_division), clipped to stay within
+    the simulated time range and snapped to the nearest available
+    time_points index (time_points assumed evenly spaced, e.g. np.arange).
+
+    Args:
+        n_cells (int)
+        time_points (np.ndarray): the shared time grid used for the base
+            simulation (e.g. np.arange(0, simulation_time_before_division, 1)).
+        sigma_t_division (float): stdev of division-time spread, in the same
+            time units as time_points (e.g. hours). Default recommendation:
+            1.5h, derived the same way as sigma_phi_population (+/-3h window
+            treated as ~2 sigma).
+        base_division_index (int, optional): index into time_points around
+            which division times are centered. Defaults to the last index
+            (i.e. centered on simulation_time_before_division).
+        seed (int, optional): RNG seed.
+
+    Returns:
+        np.ndarray: shape (n_cells,), integer indices into time_points, one
+        per cell -- the timepoint at which that cell's state should be read
+        off as its "at division" state.
+    """
+    rng = np.random.default_rng(seed)
+    if base_division_index is None:
+        base_division_index = len(time_points) - 1
+    base_t = time_points[base_division_index]
+    delta_t = rng.normal(0.0, sigma_t_division, size=n_cells)
+    t_div = base_t + delta_t
+    t_div = np.clip(t_div, time_points[0], time_points[-1])
+    dt_step = time_points[1] - time_points[0]
+    idx = np.round((t_div - time_points[0]) / dt_step).astype(np.int64)
+    idx = np.clip(idx, 0, len(time_points) - 1)
+    return idx
+
 
 def assign_k_values_matrix(param_dict, connectivity_matrix, gene_list, K_to_use):
     """
@@ -775,6 +904,8 @@ def setup_gillespie_params_from_reactions(init_states: pd.DataFrame,
     Notes:
         - The function dynamically generates and compiles a propensity update function using numba for performance.
         - Species names and parameters in the propensity formulas are replaced with their respective indices and values.
+        - (NEW) np is added to the exec() namespace so np.sin resolves inside
+          the compiled propensity function (needed for the oscillator term).
     """
     species_index = {s:i for i,s in enumerate(init_states['species'])}
     validate_reactions_against_species(reactions, species_index)
@@ -801,6 +932,8 @@ def setup_gillespie_params_from_reactions(init_states: pd.DataFrame,
             continue
         for k,v in param_dictionary.items():
             expr = expr.replace(k, str(v))
+        # --- CHANGED: ensure sin(...) resolves as np.sin(...) ---
+        expr = expr.replace("sin(", "np.sin(")
         line = f"prop[{i}] = {expr}"
         prop_formulas.append(line)
     if missing:
@@ -815,7 +948,8 @@ def setup_gillespie_params_from_reactions(init_states: pd.DataFrame,
     ns = "\n".join(src)
     loc = {}
     # print(ns)
-    exec(ns, {'numba':numba}, loc)
+    # --- CHANGED: added np to the exec namespace ---
+    exec(ns, {'numba':numba, 'np': np}, loc)
     return pop0, np.array(update_matrix, dtype=np.int64), loc['update_propensities'], species_index
 
 # %% Vectorized extraction
@@ -981,196 +1115,15 @@ def gillespie_simulation_all_cells_with_event_log(update_propensities, update_ma
 
 
 # %%
-# Check for steady state
-# def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
-#                     slope_tol=0.05, window_frac=0.1, verbose=False):
-#     """
-#     Check if the simulation has reached steady state.
-
-#     Args:
-#         samples (np.ndarray): Array of shape (n_cells, n_time, n_species)
-#         time_points (np.ndarray): Array of time values
-#         mean_tol (float): Max relative change in mean allowed
-#         std_tol (float): Max relative change in std allowed
-#         slope_tol (float): Max absolute slope allowed
-#         window_frac (float): Fraction of final time used to assess steady state
-#         verbose (bool): Whether to print detailed output
-
-#     Returns:
-#         bool: True if steady state is reached
-#     """
-#     n_cells, n_time, n_species = samples.shape
-#     window = int(n_time * window_frac)
-#     if window < 2:
-#         raise ValueError("Window too small for steady state check.")
-
-#     data = samples[:, -window:, :]  # shape: (n_cells, window, n_species)
-#     mean_traj = data.mean(axis=0)   # shape: (window, n_species)
-#     std_traj  = data.std(axis=0)    # shape: (window, n_species)
-
-#     # Mean & std relative change over last window
-#     rel_mean_change = np.abs(mean_traj[-1] - mean_traj[0]) / (mean_traj[0] + 1e-6)
-#     rel_std_change  = np.abs(std_traj[-1] - std_traj[0]) / (std_traj[0] + 1e-6)
-
-#     max_mean_change = rel_mean_change.max()
-#     max_std_change  = rel_std_change.max()
-
-#     steady_mean_std = max_mean_change < mean_tol and max_std_change < std_tol
-
-#     # Slope check
-#     times = time_points[-window:]
-#     slopes = np.zeros(n_species)
-#     for g in range(n_species):
-#         y = mean_traj[:, g]
-#         x = times
-#         A = np.vstack([x, np.ones_like(x)]).T
-#         m, _ = np.linalg.lstsq(A, y, rcond=None)[0]
-#         slopes[g] = m
-
-#     max_abs_slope = np.abs(slopes).max()
-#     steady_slope = max_abs_slope < slope_tol
-
-#     is_steady = steady_mean_std or steady_slope
-
-#     print(f"🧪 Steady-state check:")
-#     print(f"  ➤ Max relative mean change: {max_mean_change:.4e}")
-#     print(f"  ➤ Max relative std  change: {max_std_change:.4e}")
-#     print(f"  ➤ Max abs slope:             {max_abs_slope:.4e}")
-#     print(f"  ➤ Steady by mean/std:        {steady_mean_std}")
-#     print(f"  ➤ Steady by slope:           {steady_slope}")
-#     print(f"  ➤ Final decision:            {is_steady}")
-
-#     return is_steady
-
 def hill_fn(x, n, k):
         x = np.asarray(x)
         return x ** n / (x ** n + k ** n)
 
-
-def _relaxation_steady_state_fit(y, time_points, steady_tol=0.01, flat_tol=0.01, min_r2=0.80):
-    """
-    Per-gene relaxation-curve steady-state check, ported verbatim (same
-    algorithm, same defaults) from check_system_in_steady_state in
-    twinfer/inference/correlation_functions.py, so the simulation's own
-    burn-in check and the downstream inference-side check agree.
-
-    1. If the observed trajectory is already flat,
-           (max(y) - min(y)) / mean(y) <= flat_tol
-       classify it as steady directly.
-    2. Otherwise fit y(t) = P_inf + (P0 - P_inf) * exp(-(t/tau)**beta) and
-       find the time at which the fit is within steady_tol of P_inf.
-    3. Classify as steady if R2 >= min_r2 and that arrival time is no later
-       than the final observed time point.
-
-    Args:
-        y (np.ndarray): 1-D trajectory (e.g. population-mean protein level
-            over time) for one gene, shape (n_time,).
-        time_points (np.ndarray): Time values matching y, shape (n_time,).
-        steady_tol (float): Relative distance from the fitted asymptotic
-            level used to define steady state.
-        flat_tol (float): Maximum relative range for the trajectory to be
-            classified directly as flat.
-        min_r2 (float): Minimum R2 required when extrapolation is needed.
-
-    Returns:
-        dict: Method, P_inf, Tau, Beta, R2, t_steady, Relative Range,
-            Final Distance, Steady State? (bool).
-    """
-    y = np.asarray(y, dtype=float)
-    time_points = np.asarray(time_points, dtype=float)
-
-    mean_level = float(np.mean(y))
-    min_level = float(np.min(y))
-    max_level = float(np.max(y))
-    relative_range = (max_level - min_level) / max(abs(mean_level), 1e-12)
-
-    # --- Case 1: observed trajectory is already flat ---
-    if relative_range <= flat_tol:
-        return {
-            "Method": "flat window", "P_inf": np.nan, "Tau": np.nan, "Beta": np.nan,
-            "R2": np.nan, "t_steady": time_points[0], "Relative Range": relative_range,
-            "Final Distance": np.nan, "Steady State?": True,
-        }
-
-    # --- Case 2: fit and extrapolate ---
-    t = time_points - time_points[0]
-    P0 = float(y[0])
-
-    def relaxation_model(t_fit, P_inf, tau, beta):
-        return P_inf + (P0 - P_inf) * np.exp(-np.power(np.maximum(t_fit, 0.0) / tau, beta))
-
-    tail_n = max(3, len(y) // 5)
-    tail_mean = float(np.mean(y[-tail_n:]))
-    median_dt = float(np.median(np.diff(t)))
-    tau_guess = max(float(t[-1]) / 4.0, median_dt)
-    observed_scale = max(abs(min_level), abs(max_level), abs(mean_level), 1.0)
-
-    try:
-        popt, _ = curve_fit(
-            relaxation_model, t, y,
-            p0=[max(tail_mean, 0.0), tau_guess, 1.0],
-            bounds=([0.0, 1e-8, 0.2], [10.0 * observed_scale, 100.0 * max(float(t[-1]), median_dt), 5.0]),
-            maxfev=50000,
-        )
-        P_inf, tau, beta = map(float, popt)
-        fitted = relaxation_model(t, P_inf, tau, beta)
-
-        ss_res = float(np.sum((y - fitted) ** 2))
-        ss_tot = float(np.sum((y - np.mean(y)) ** 2))
-        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 1.0
-
-        initial_distance = abs(P0 - P_inf)
-        allowed_distance = steady_tol * max(abs(P_inf), 1e-12)
-        if initial_distance <= allowed_distance:
-            t_steady_relative = 0.0
-        else:
-            ratio = initial_distance / allowed_distance
-            t_steady_relative = tau * np.power(np.log(ratio), 1.0 / beta)
-        t_steady = time_points[0] + t_steady_relative
-
-        final_distance = abs(fitted[-1] - P_inf) / max(abs(P_inf), 1e-12)
-        gene_steady = bool(
-            np.isfinite(t_steady) and np.isfinite(r2)
-            and r2 >= min_r2 and t_steady <= time_points[-1]
-        )
-        return {
-            "Method": "fit", "P_inf": P_inf, "Tau": tau, "Beta": beta, "R2": r2,
-            "t_steady": t_steady, "Relative Range": relative_range,
-            "Final Distance": final_distance, "Steady State?": gene_steady,
-        }
-    except (RuntimeError, ValueError, FloatingPointError):
-        return {
-            "Method": "fit failed", "P_inf": np.nan, "Tau": np.nan, "Beta": np.nan,
-            "R2": np.nan, "t_steady": np.nan, "Relative Range": relative_range,
-            "Final Distance": np.nan, "Steady State?": False,
-        }
-
-
 def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
                     window_frac=0.1, param_dict=None, interaction_matrix=None,
-                    gene_list=None, verbose=True, combinatorial_interaction_type="additive",
-                    flat_tol=0.01, steady_tol=0.01, min_r2=0.80):
+                    gene_list=None, verbose=True, combinatorial_interaction_type="additive"):
     """
     Check if simulation has reached steady state and matches expected protein levels.
-
-    Two independent per-gene criteria, combined with OR: a gene counts as
-    steady if it satisfies either one.
-      1. Param-based match: the observed mean protein level over the last
-         `last_n` time points is within 1% of the theoretical steady-state
-         level predicted from the kinetic rate constants, for >=80% of
-         those time points (unchanged from before).
-      2. Relaxation-curve check (_relaxation_steady_state_fit, ported
-         verbatim from check_system_in_steady_state in
-         correlation_functions.py): flat-trajectory short-circuit, else fit
-         P(t) = P_inf + (P0-P_inf)*exp(-(t/tau)**beta) to the gene's full
-         mean-protein trajectory and check the fit reaches steady_tol of
-         P_inf, with R2 >= min_r2, by the last time point. This catches
-         genes that have genuinely relaxed to a stable level but don't
-         closely match the mean-field theoretical approximation (e.g. due
-         to bursting noise or higher-order regulatory effects the
-         analytical formula doesn't fully capture), and keeps the
-         simulation's own burn-in check consistent with the
-         downstream inference-side steady-state check.
 
     Args:
         samples (np.ndarray): Shape (n_cells, n_time, n_species)
@@ -1183,15 +1136,16 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
         gene_list (list): Ordered list of gene names
         verbose (bool): Whether to print diagnostics
         combinatorial_interaction_type (str): One of 'additive', 'AND', 'OR'
-        flat_tol (float): Relative-range tolerance for the relaxation
-            check's flat-trajectory short-circuit.
-        steady_tol (float): Relative distance from the fitted asymptotic
-            level used to define steady state in the relaxation check.
-        min_r2 (float): Minimum R2 required when extrapolation is needed in
-            the relaxation check.
-
+    
     Returns:
         bool: True if steady state is reached
+
+    NOTE: this steady-state check's "expected protein" formula does NOT
+    account for the oscillator term (it assumes constant k_prod_mRNA). With
+    the oscillator active, protein levels will genuinely oscillate around
+    the steady-state mean rather than converge to a single value, so this
+    check may need a wider tolerance or should be interpreted as "steady
+    oscillation" rather than "constant value" when phi_scenario is active.
     """
     n_cells, n_time, n_species = samples.shape
     window = int(n_time * window_frac)
@@ -1209,11 +1163,6 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
     rel_mean_change = np.abs(mean_traj[-1] - mean_traj[0]) / (mean_traj[0] + 1e-6)
     rel_std_change  = np.abs(std_traj[-1] - std_traj[0])  / (std_traj[0]  + 1e-6)
     steady_mean_std = (rel_mean_change.max() < mean_tol) and (rel_std_change.max() < std_tol)
-
-    # Full-trajectory population-mean protein level per gene, for the
-    # relaxation-curve check below (needs to see the actual relaxation from
-    # P0, not just the tail window used by the param-based check).
-    full_mean_protein_traj = samples[:, :, protein_species_idx].mean(axis=0)  # (n_time, n_genes)
 
     # --- Step 2: compare expected vs simulated proteins ---
     last_n = min(100, n_time)
@@ -1328,23 +1277,9 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
 
     rel_error_tp = np.vstack(rel_error_tp)  # (last_n, n_genes)
 
-    # --- Step 3: per-gene success fraction (param-based match) ---
-    frac_within_tol   = np.mean(rel_error_tp < 0.01, axis=0)
-    match_per_gene    = frac_within_tol >= 0.8
-
-    # --- Step 4: per-gene relaxation-curve check on the full trajectory
-    # (ported from check_system_in_steady_state; see _relaxation_steady_state_fit) ---
-    relaxation_results = [
-        _relaxation_steady_state_fit(
-            full_mean_protein_traj[:, i], time_points,
-            steady_tol=steady_tol, flat_tol=flat_tol, min_r2=min_r2,
-        )
-        for i in range(n_genes)
-    ]
-    relaxation_per_gene = np.array([r["Steady State?"] for r in relaxation_results])
-
-    # A gene counts as steady if it matches theory OR the relaxation check passes.
-    steady_match_per_gene = match_per_gene | relaxation_per_gene
+    # --- Step 3: per-gene success fraction ---
+    frac_within_tol       = np.mean(rel_error_tp < 0.01, axis=0)
+    steady_match_per_gene = frac_within_tol >= 0.8
     steady_match          = bool(np.all(steady_match_per_gene))
 
     # --- Verbose output ---
@@ -1353,29 +1288,18 @@ def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
         print(f"  Max rel mean change over last {window} steps: {rel_mean_change.max():.4e}")
         print(f"  Max rel std  change over last {window} steps: {rel_std_change.max():.4e}")
         print(f"  Steady by mean/std stability:                 {steady_mean_std}")
-        print(f"  Steady by param-based match OR relaxation fit: {steady_match}")
-        print(f"  Per-gene fraction of time points within 1% of expected protein,"
-              f" plus relaxation-curve fit over the full trajectory:")
-        for gene, frac, matched, rel_res in zip(
-            gene_list, frac_within_tol, match_per_gene, relaxation_results
-        ):
-            if matched:
-                status = "pass (theory match)"
-            elif rel_res["Steady State?"]:
-                status = f"pass ({rel_res['Method']})"
-            else:
-                status = f"fail ({rel_res['Method']})"
-            r2_str = f"{rel_res['R2']:.3f}" if np.isfinite(rel_res["R2"]) else "n/a"
-            print(
-                f"     {gene:>15}: {frac*100:6.2f}%  "
-                f"rel_range={rel_res['Relative Range']:.4e}  R2={r2_str}  "
-                f"t_steady={rel_res['t_steady']:.1f}  {status}"
-            )
+        print(f"  Steady by param-based protein match:          {steady_match}")
+        print(f"  Per-gene fraction of time points within 1% of expected protein:")
+        for gene, frac, passed in zip(gene_list, frac_within_tol, steady_match_per_gene):
+            status = "pass" if passed else "fail"
+            print(f"     {gene:>15}: {frac*100:6.2f}%  {status}")
 
     return steady_match
 
 # %% Wrapping functions 
-def run_simulation(update_propensities, update_matrix, pop0, time_points, n_cells=1000, promoter_indices = None, pop0_mat = None):
+def run_simulation(update_propensities, update_matrix, pop0, time_points, n_cells=1000, promoter_indices = None,
+                    phi_scenario=None, phi_seed=None, phi_center=0.0, sigma_phi_population=0.248,
+                    species_index=None):
     """
     Simulates the dynamics of a population of cells using the Gillespie algorithm.
 
@@ -1385,7 +1309,15 @@ def run_simulation(update_propensities, update_matrix, pop0, time_points, n_cell
         pop0 (numpy.ndarray): Initial population vector for all species (shape: [n_species]).
         time_points (numpy.ndarray): Array of time points at which to sample the population.
         n_cells (int, optional): Number of cells to simulate. Defaults to 1000.
-        
+        phi_scenario (str, optional): NEW -- "in_phase" | "out_of_phase" | None.
+            If None, Phi is left at its pop0 default (0) for every cell, i.e.
+            in-phase behavior. If set, initialize_phi() is called to set
+            per-cell Phi before simulating. Requires species_index.
+        phi_seed (int, optional): RNG seed for initialize_phi.
+        phi_center (float): mean phase for out_of_phase scenario (radians).
+        sigma_phi_population (float): stdev of phase spread for out_of_phase
+            scenario (radians).
+        species_index (dict, optional): required if phi_scenario is set.
 
     Returns:
         numpy.ndarray: A 3D array containing the simulated population data. 
@@ -1397,18 +1329,19 @@ def run_simulation(update_propensities, update_matrix, pop0, time_points, n_cell
             - Cell stuck due to zero propensities for too long.
     """
     n_species = pop0.shape[0]
-    # pop0_mat = np.tile(pop0[:, None], (1, n_cells))   # single shared IC for every cell
-    # Allow a caller-supplied per-cell initial population (n_species, n_cells) to
-    # seed sub-populations across different basins; fall back to the tiled single IC.
-    if pop0_mat is None:
-        pop0_mat = np.tile(pop0[:, None], (1, n_cells))
-    else:
-        pop0_mat = np.asarray(pop0_mat)
-        if pop0_mat.shape != (n_species, n_cells):
-            raise ValueError(
-                f"pop0_mat must have shape ({n_species}, {n_cells}), got {pop0_mat.shape}"
-            )
-    pop0_mat = np.ascontiguousarray(pop0_mat, dtype=np.int64)
+    pop0_mat = np.tile(pop0[:, None], (1, n_cells))
+    pop0_mat = pop0_mat.copy()
+
+    # --- NEW: set per-cell Phi according to the chosen scenario ---
+    if phi_scenario is not None:
+        if species_index is None:
+            raise ValueError("species_index is required when phi_scenario is set")
+        pop0_mat = initialize_phi(
+            pop0_mat, species_index, n_cells, scenario=phi_scenario,
+            seed=phi_seed, phi_center=phi_center,
+            sigma_phi_population=sigma_phi_population,
+        )
+
     verbose_flags = np.zeros(n_cells, dtype=np.int64)
 
     samples = gillespie_simulation_all_cells(update_propensities, update_matrix,
@@ -1508,8 +1441,67 @@ def divide_mother_cell_content(
     partition_suffixes=("_mRNA", "_protein"),
     p_major=0.5,          # 0.6 means 60/40, 0.7 means 70/30
     randomize_polarity=True,
+    dephase_twins=False,
+    sigma_phi_twin=0.04,
+    division_times=None,   # NEW -- see below, fixes a real bug
+    omega=None,
+    partition_mrna_protein=True,
 ):
+    """
+    Splits mother-cell molecule counts into two daughter cells.
+
+    mRNA/protein are binomially partitioned as before. All other species
+    (promoter states, etc.) are copied exactly to both twins.
+
+    Phi is handled specially, and THIS IS WHERE A BUG WAS FIXED (division_times):
+
+    The post-division (twin) simulation always restarts its local clock at
+    t=0 (gillespie_simulation_all_cells begins at rep_time[0]=0 for every
+    cell, in every scenario). If Phi were simply copied across division
+    unmodified, the oscillator would silently "forget" how much absolute
+    time had elapsed before division -- every cell's post-division
+    oscillator would restart from whatever bare Phi value it carried,
+    rather than from the phase it had actually reached by the time it
+    divided. This made async_division look almost identical to in_phase
+    post-division (both effectively reset to phase ~Phi), even though
+    their absolute division times genuinely differed -- the asynchrony
+    was real pre-division but got erased at the division boundary.
+
+    Fix: BEFORE copying/dephasing Phi, advance it by the phase the
+    oscillator actually accumulated over each mother cell's own elapsed
+    time before division:
+        phi_at_division = (stored_Phi + omega * division_time) mod 2*pi
+    This is then what gets copied to twins (and dephased, if requested).
+    Pass division_times=None to skip this correction and fall back to the
+    old (buggy) behavior of copying Phi as-is.
+
+    Args:
+        division_times (np.ndarray, optional): shape (n_cells,), the
+            ABSOLUTE simulated time at which each mother cell was sampled
+            for division (e.g. time_points[-1] for synchronous scenarios,
+            or the per-cell t_div_i array for async_division). Required
+            for the phase-carry-through fix to apply.
+        omega (float, optional): angular frequency to use for the phase
+            advance. Defaults to the module-level OMEGA if not given.
+
+    dephase_twins:
+        - False (default): both twins get the SAME phi_at_division.
+        - True: each twin gets phi_at_division + independent
+          Normal(0, sigma_phi_twin) noise, wrapped to [0, 2*pi).
+
+    partition_mrna_protein (bool): If True (default), mRNA/protein counts are
+        binomially partitioned between twins. If False, both twins instead
+        get an exact, unscaled copy of the mother's mRNA/protein counts
+        (reproduces the old divide_binomial=False behavior for those species
+        only). Phi's phase-advance correction and dephase_twins are ALWAYS
+        applied regardless of this flag -- Phi is not a partitioned species
+        and must not be gated behind it (this coupling was a real bug: it
+        made async_division/dephase_twins indistinguishable from in_phase
+        whenever binomial partitioning was off).
+    """
     rng = np.random.default_rng(seed)
+    if omega is None:
+        omega = OMEGA
 
     mother_states = mother_states.astype(np.int64)
     n_species, n_cells = mother_states.shape
@@ -1523,28 +1515,68 @@ def divide_mother_cell_content(
          if name.endswith(partition_suffixes)],
         dtype=np.int64
     )
-    copy_indices = np.setdiff1d(np.arange(n_species), partition_indices)
+
+    # Phi is always handled separately now (not lumped into the generic
+    # copy_indices set), since it needs the phase-advance correction below
+    # regardless of dephase_twins.
+    phi_idx = species_index.get(PHI_SPECIES_NAME, None)
+    exclude_from_plain_copy = set(partition_indices.tolist())
+    if phi_idx is not None:
+        exclude_from_plain_copy.add(phi_idx)
+
+    copy_indices = np.array(
+        [i for i in range(n_species) if i not in exclude_from_plain_copy],
+        dtype=np.int64
+    )
 
     # copy everything else (promoters, etc.)
     twin_1[copy_indices] = mother_states[copy_indices]
     twin_2[copy_indices] = mother_states[copy_indices]
 
-    # total molecules available to split (your "keep mean = M" rule)
-    doubled = 2 * mother_states[partition_indices]  # shape: (n_part, n_cells)
+    if partition_mrna_protein:
+        # total molecules available to split (your "keep mean = M" rule)
+        doubled = 2 * mother_states[partition_indices]  # shape: (n_part, n_cells)
 
-    # per-cell probability for twin_1
-    if randomize_polarity:
-        # mask[j] = True => twin_1 is the major daughter for cell j
-        mask = rng.random(n_cells) < 0.5
-        p_cell = np.where(mask, p_major, 1.0 - p_major)  # shape: (n_cells,)
+        # per-cell probability for twin_1
+        if randomize_polarity:
+            # mask[j] = True => twin_1 is the major daughter for cell j
+            mask = rng.random(n_cells) < 0.5
+            p_cell = np.where(mask, p_major, 1.0 - p_major)  # shape: (n_cells,)
+        else:
+            p_cell = np.full(n_cells, p_major)
+
+        # broadcast p_cell across partitioned species rows
+        draw = rng.binomial(doubled, p_cell[None, :])
+
+        twin_1[partition_indices] = draw
+        twin_2[partition_indices] = doubled - draw
     else:
-        p_cell = np.full(n_cells, p_major)
+        # no partitioning noise: both twins get an exact copy of the mother's
+        # mRNA/protein counts (matches old divide_binomial=False behavior)
+        twin_1[partition_indices] = mother_states[partition_indices]
+        twin_2[partition_indices] = mother_states[partition_indices]
 
-    # broadcast p_cell across partitioned species rows
-    draw = rng.binomial(doubled, p_cell[None, :])
+    # --- Phi: advance by elapsed phase at division, THEN copy/dephase ---
+    if phi_idx is not None:
+        mother_phi = mother_states[phi_idx, :] / PHI_SCALE
+        if division_times is not None:
+            phi_at_division = np.mod(mother_phi + omega * np.asarray(division_times), 2 * np.pi)
+        else:
+            # legacy behavior: no correction applied (bug preserved only if
+            # caller explicitly omits division_times)
+            phi_at_division = mother_phi
 
-    twin_1[partition_indices] = draw
-    twin_2[partition_indices] = doubled - draw
+        if dephase_twins:
+            noise_1 = rng.normal(0.0, sigma_phi_twin, size=n_cells)
+            noise_2 = rng.normal(0.0, sigma_phi_twin, size=n_cells)
+            phi_1 = np.mod(phi_at_division + noise_1, 2 * np.pi)
+            phi_2 = np.mod(phi_at_division + noise_2, 2 * np.pi)
+        else:
+            phi_1 = phi_at_division
+            phi_2 = phi_at_division
+
+        twin_1[phi_idx, :] = np.round(phi_1 * PHI_SCALE).astype(np.int64)
+        twin_2[phi_idx, :] = np.round(phi_2 * PHI_SCALE).astype(np.int64)
 
     return twin_1, twin_2
 
@@ -1640,6 +1672,16 @@ def process_param_set(rows, label, base_config):
         rows (list): A list of parameter rows to be processed.
         label (str): A label for identifying the simulation run.
         base_config (dict): A dictionary containing common parameters such as paths, connectivity matrix, and simulation settings.
+
+        NEW base_config keys for the oscillator model:
+            phi_scenario           : "in_phase" | "out_of_phase" | None (default None = in-phase behavior)
+            phi_seed                : int, RNG seed for population Phi draw (default None)
+            phi_center               : float, mean phase for out_of_phase (default 0.0)
+            sigma_phi_population     : float, stdev of phase spread for out_of_phase (default 0.248 rad)
+            dephase_twins            : bool, whether twins get independent phase noise at division (default False)
+            sigma_phi_twin           : float, stdev of twin phase noise (default 0.04 rad)
+        Also requires an 'A' column in param_csv (per-gene oscillation amplitude)
+        if phi_scenario is not None / oscillator behavior is desired.
     Returns:
         str: The file path of the saved DataFrame containing the results of the simulation.
     Raises:
@@ -1653,7 +1695,49 @@ def process_param_set(rows, label, base_config):
     k_add_matrix  = base_config.get("k_add_matrix", None)    #defaults to None
     use_csv_k_add = base_config.get("use_csv_k_add", True)   #defaults to True
     n_matrix      = base_config.get("n_matrix", None)
-    time_points    = np.arange(0, base_config['simulation_time_before_division'], 1)
+
+    # --- NEW: oscillator / phase config (moved up so time_points buffer
+    #     logic below can use it directly, no duplicate lookups) ---
+    phi_scenario          = base_config.get("phi_scenario", None)          # "in_phase" | "out_of_phase" | None
+    phi_seed              = base_config.get("phi_seed", None)
+    phi_center            = base_config.get("phi_center", 0.0)
+    sigma_phi_population  = base_config.get("sigma_phi_population", 0.248)
+    dephase_twins          = base_config.get("dephase_twins", False)
+    sigma_phi_twin         = base_config.get("sigma_phi_twin", 0.04)
+
+    # --- NEW (scenario 4): genuinely asynchronous division timing ---
+    async_division         = base_config.get("async_division", False)
+    sigma_t_division        = base_config.get("sigma_t_division", 1.5)   # hours
+    division_time_seed      = base_config.get("division_time_seed", None)
+
+    # --- Consistency check: sigma_phi_population and sigma_t_division are
+    #     independent knobs, but if you intend scenario 2 (out_of_phase)
+    #     and scenario 4 (async_division) to represent the SAME underlying
+    #     spread through two different mechanisms, they should satisfy
+    #     sigma_phi_population == OMEGA * sigma_t_division. This does not
+    #     raise -- both are valid to set independently -- but a large
+    #     mismatch usually means one was updated without the other.
+    _implied_sigma_t_from_phi = sigma_phi_population / OMEGA
+    if abs(_implied_sigma_t_from_phi - sigma_t_division) > 0.5 * max(_implied_sigma_t_from_phi, sigma_t_division):
+        print(f"NOTE: sigma_phi_population={sigma_phi_population} rad implies an equivalent "
+              f"division-time spread of {_implied_sigma_t_from_phi:.2f}h, which differs "
+              f"substantially from the configured sigma_t_division={sigma_t_division}h. "
+              f"This is fine if scenario 2 and scenario 4 are meant to represent different "
+              f"magnitudes of spread; if they're meant to match, update one to align with the other.")
+
+    # --- CHANGED (scenario 4): if async_division is on, simulate a buffer
+    #     PAST simulation_time_before_division so cells whose per-cell
+    #     division time falls later than the nominal time aren't clipped at
+    #     the boundary (which would silently shrink the spread -- confirmed
+    #     empirically: without this buffer, ~half the distribution piles up
+    #     at the last timepoint instead of spreading symmetrically). The
+    #     "base" division time (center of the per-cell distribution) stays
+    #     at simulation_time_before_division either way.
+    if async_division:
+        _buffer = int(np.ceil(5 * sigma_t_division))
+        time_points = np.arange(0, base_config['simulation_time_before_division'] + _buffer, 1)
+    else:
+        time_points = np.arange(0, base_config['simulation_time_before_division'], 1)
     sample_twins_time_points = np.arange(0, base_config['twin_simulation_time_after_division'] + base_config['twin_measurement_resolution'], base_config['twin_measurement_resolution']) 
     n_cells = base_config['n_cells']
     scale_K = base_config.get("scale_K", None)
@@ -1670,6 +1754,8 @@ def process_param_set(rows, label, base_config):
         raise ValueError("The three options for combinatorial interaction type are: 'additive', 'AND', 'OR' ")
     print(f"Log pi on is set to {log_pi_on}")
     print(f"Combinatorial interaction type: {combinatorial_interaction_type}")
+    print(f"Phi scenario: {phi_scenario}, dephase_twins: {dephase_twins}, "
+          f"async_division: {async_division} (sigma_t={sigma_t_division}h)")
     # Build reactions and parameters for this row set
     n_genes, connectivity_matrix = read_input_matrix(path_to_connectivity_matrix)
     assert len(rows) >= n_genes, "The number of parameter rows entered is less than the number of genes"
@@ -1687,11 +1773,7 @@ def process_param_set(rows, label, base_config):
         regulators = np.where(connectivity_matrix[:, j] != 0)[0]
         for i in regulators:
             edge = f"{gene_list[i]}_to_{gene_list[j]}"
-            # n_matrix[i, j] = param_dict.get(f"{{n_{edge}}}", 2.0)   # always clobbered a caller-supplied n_matrix
-            # Respect a Hill exponent handed in via the n_matrix arg (non-zero entry);
-            # otherwise take the CSV value, otherwise the default of 2.0.
-            if n_matrix[i, j] == 0:
-                n_matrix[i, j] = param_dict.get(f"{{n_{edge}}}", 2.0)
+            n_matrix[i, j] = param_dict.get(f"{{n_{edge}}}", 2.0)
 
     param_dict = resolve_all_k_add(
         param_dict=param_dict, connectivity_matrix=connectivity_matrix, gene_list=gene_list,
@@ -1714,15 +1796,13 @@ def process_param_set(rows, label, base_config):
                                
     print("Starting base simulation")
     # 1) Run base simulation
-    # base_samples = run_simulation(update_prop, update_matrix, pop0, time_points, n_cells, promoter_indices= promoter_indices)
-    # Optional per-cell seeded initial population, e.g. sub-populations placed in
-    # different basins to get balanced multi-state occupancy. When a callable is
-    # given it is called as f(species_index, gene_list, n_cells) -> (n_species, n_cells).
-    pop0_mat_override = base_config.get("pop0_mat", None)
-    if callable(pop0_mat_override):
-        pop0_mat_override = pop0_mat_override(species_index, gene_list, n_cells)
-    base_samples = run_simulation(update_prop, update_matrix, pop0, time_points, n_cells,
-                                  promoter_indices=promoter_indices, pop0_mat=pop0_mat_override)
+    # --- CHANGED: pass phi_scenario/species_index through to run_simulation ---
+    base_samples = run_simulation(
+        update_prop, update_matrix, pop0, time_points, n_cells,
+        promoter_indices=promoter_indices,
+        phi_scenario=phi_scenario, phi_seed=phi_seed, phi_center=phi_center,
+        sigma_phi_population=sigma_phi_population, species_index=species_index,
+    )
     flag = 0
     if not is_steady_state(samples = base_samples, time_points =  time_points, param_dict = full_param_dict, interaction_matrix = connectivity_matrix, gene_list = gene_list):
         print(f"⚠️ Base simulation (basal) for {label} may not be steady. Please manually verify and increase pre-division time if it has not reached steady state.")
@@ -1744,19 +1824,59 @@ def process_param_set(rows, label, base_config):
     df_base = convert_samples_to_df(base_samples, species_index)
     
     # 2) Replicate into two to create daughter cells
-    final_states = base_samples[:, -1, :]
+    # --- CHANGED (scenario 4): sample each cell at its OWN division time
+    #     instead of every cell at the same final timepoint, if async_division
+    #     is enabled. Otherwise unchanged (synchronous division, as before).
+    if async_division:
+        # center on the ORIGINAL nominal division time, not the extended
+        # buffer endpoint (time_points was lengthened above specifically so
+        # this center point has room to spread on both sides without
+        # clipping at the array boundary)
+        _base_div_idx = base_config['simulation_time_before_division'] - 1
+        div_idx = compute_division_indices(
+            n_cells, time_points, sigma_t_division,
+            base_division_index=_base_div_idx, seed=division_time_seed,
+        )
+        final_states = base_samples[np.arange(n_cells), div_idx, :]
+        # per-cell absolute division time -- genuinely differs per cell
+        division_times_array = time_points[div_idx].astype(np.float64)
+    else:
+        div_idx = None
+        final_states = base_samples[:, -1, :]
+        # synchronous division: every cell divides at the same absolute time
+        division_times_array = np.full(n_cells, float(time_points[-1]))
     del base_samples
     gc.collect()
     timestamp = datetime.now().strftime("%d%m%Y_%H%M%S")
     id = uuid.uuid4().hex[:8]
     prefix = f"{label}_{timestamp}_ncells_{n_cells}_{base_config['type']}_{id}"
     df_base.to_csv(f"{base_config['output_folder']}/simulation_before_division_df_{prefix}.csv", index=False)
+
+    # --- NEW: log the actual per-cell division time used, if async_division ---
+    if async_division:
+        division_times_df = pd.DataFrame({
+            "cell_id": np.arange(n_cells),
+            "division_time_index": div_idx,
+            "division_time": time_points[div_idx],
+        })
+        division_times_df.to_csv(
+            f"{base_config['output_folder']}/division_times_{prefix}.csv", index=False
+        )
     rep_time = sample_twins_time_points
-    if divide_binomial:
-        twin_1, twin_2 = divide_mother_cell_content(final_states.T, species_index=species_index,seed=101010, p_major=p_major)
-        pop0_rep = np.concatenate([twin_1, twin_2], axis=1)
-    else:
-        pop0_rep = np.concatenate([final_states.T, final_states.T], axis=1)
+    # --- CHANGED: always go through divide_mother_cell_content so the Phi
+    #     phase-advance correction and dephase_twins always run -- they are
+    #     independent of divide_binomial (which only controls whether
+    #     mRNA/protein counts get binomial partitioning noise). Previously
+    #     this whole function -- Phi correction included -- was skipped
+    #     whenever divide_binomial=False (the default), which silently made
+    #     async_division and dephase_twins indistinguishable from in_phase. ---
+    twin_1, twin_2 = divide_mother_cell_content(
+        final_states.T, species_index=species_index, seed=101010, p_major=p_major,
+        dephase_twins=dephase_twins, sigma_phi_twin=sigma_phi_twin,
+        division_times=division_times_array, omega=OMEGA,
+        partition_mrna_protein=divide_binomial,
+    )
+    pop0_rep = np.concatenate([twin_1, twin_2], axis=1)
     verbose_flags = np.zeros(2*n_cells, dtype=np.int64)
 
     if log_pi_on:
@@ -1834,8 +1954,7 @@ def check_if_file_exists(rows, output_folder, type_name):
 #%%
 # --- Main execution with parallel parameter sets ---
 if __name__ == "__main__":
-    # [2026-10-01 commented out: only referenced by the commented-out example config below; old Keerthana path]
-    # root = "/projects/b1042/GoyalLab/Keerthana/"
+    root = "/projects/b1042/GoyalLab/Keerthana/"
     # Base configuration - the commented out lines can be used instead of providing arguments to the file (e.g. if using it as ipynb notebook)
     base_config = {
         'time_points':    np.arange(0, 2500, 1), #Time to reach steady state
@@ -1890,6 +2009,30 @@ if __name__ == "__main__":
     parser.add_argument("--use_csv_k_add", action="store_true", default=True,
                         help="Use CSV-provided k_add values when available (default: on).")
     parser.add_argument("--no_csv_k_add", dest="use_csv_k_add", action="store_false")
+    # --- NEW: oscillator / phase CLI args ---
+    parser.add_argument("--phi_scenario", type=str, default=None, choices=["in_phase", "out_of_phase", None],
+                        help="Population phase scenario for the shared-cell-phase oscillator model "
+                             "(default: None -> Phi=0 for all cells, equivalent to in_phase).")
+    parser.add_argument("--phi_seed", type=int, default=None, help="RNG seed for population Phi draw.")
+    parser.add_argument("--phi_center", type=float, default=0.0, help="Mean phase (radians) for out_of_phase scenario.")
+    parser.add_argument("--sigma_phi_population", type=float, default=0.248,
+                        help="Stdev (radians) of population phase spread for out_of_phase scenario "
+                             "(default 0.248, derived from a +/-3h division-time window).")
+    parser.add_argument("--dephase_twins", action="store_true", default=False,
+                        help="If set, twins get independent phase noise at division on top of "
+                             "the population phase scenario.")
+    parser.add_argument("--sigma_phi_twin", type=float, default=0.04,
+                        help="Stdev (radians) of twin phase noise at division (default 0.04).")
+    # --- NEW (scenario 4): genuinely asynchronous division timing ---
+    parser.add_argument("--async_division", action="store_true", default=False,
+                        help="If set, cells divide at genuinely different simulated times "
+                             "(sampled per-cell from base_samples) instead of all cells "
+                             "dividing at the same shared final timepoint.")
+    parser.add_argument("--sigma_t_division", type=float, default=1.5,
+                        help="Stdev (hours) of per-cell division-time spread for "
+                             "async_division (default 1.5, from a +/-3h window).")
+    parser.add_argument("--division_time_seed", type=int, default=None,
+                        help="RNG seed for per-cell division-time draw.")
     args = parser.parse_args()
 
     # # Update base configuration with parsed arguments
@@ -1909,6 +2052,17 @@ if __name__ == "__main__":
     base_config["twin_measurement_resolution"] = args.twin_measurement_resolution
     base_config['scale_K'] = None
     base_config['log_pi_on']= args.log_pi_on
+
+    # --- NEW: wire oscillator / phase args into base_config ---
+    base_config["phi_scenario"] = args.phi_scenario
+    base_config["phi_seed"] = args.phi_seed
+    base_config["phi_center"] = args.phi_center
+    base_config["sigma_phi_population"] = args.sigma_phi_population
+    base_config["dephase_twins"] = args.dephase_twins
+    base_config["sigma_phi_twin"] = args.sigma_phi_twin
+    base_config["async_division"] = args.async_division
+    base_config["sigma_t_division"] = args.sigma_t_division
+    base_config["division_time_seed"] = args.division_time_seed
 
     if args.k_add_list is not None:
         raw = args.k_add_list.strip()
