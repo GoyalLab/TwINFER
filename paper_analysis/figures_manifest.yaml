@@ -42,7 +42,8 @@ not_yet_placed:
   - folder: extended_figures/interaction_parameter_choice
     title: "Choice of the interaction model parameters"
     built_from: "hill_constant_effect/, k_add_effect/"
-    note: "Per-panel script mapping not yet confirmed."
+    panels: "E6c = hill_constant_effect; E6a, E6b = k_add_effect (user, 2026-10-01; which of a/b is which script is not recorded)"
+    note: "Both source folders are Extended Data figure E6; see interaction_parameter_choice/README.md."
 
   - folder: extended_figures/linear_toy_model_supplement
     title: "Linear toy model (Supplemental Material)"
@@ -50,12 +51,12 @@ not_yet_placed:
 
   - folder: paper_analysis/benchmark
     built_from: "synthetic_network_analysis/ (BEELINE/BoolODE)"
-    note: "Not referenced anywhere in the manuscript text. Purpose unconfirmed."
+    note: "Not referenced anywhere in the manuscript text. Decision 2026-10-01 (user): stays in benchmarks/ for now (clean_code/benchmarks/)."
 
   - folder: work_in_progress/saturation_and_noise_robustness
     built_from: "additional_analysis/saturation_effects/"
-    note: "No matching figure found in the manuscript text."
+    note: "No matching figure found in the manuscript text. ARCHIVED 2026-10-01 (user): clean_code/_archive/paper_analysis/parameter_scan/saturation_effects/"
 
   - folder: work_in_progress/pulsed_regulation
     built_from: "drift_multiple_state/simulate_pulse.py"
-    note: "No matching figure found in the manuscript text."
+    note: "No matching figure found in the manuscript text. ARCHIVED 2026-10-01 (user): clean_code/_archive/simulations/pulsed_regulation/"

@@ -27,7 +27,9 @@ import pandas as pd
 import scipy.io as sio
 import scipy.sparse as sp
 
-DATASET_DIR = Path("/scratch/gzu5140/ka_twinfer/larry_dataset")
+# [2026-10-01 commented out: /scratch/gzu5140 is purged scratch; see REPOINT_LOG.tsv] DATASET_DIR = Path("/scratch/gzu5140/ka_twinfer/larry_dataset")
+from twinfer.utils.paths import get_larry_dataset_dir  # [2026-10-01 added]
+DATASET_DIR = get_larry_dataset_dir()
 OUT_DIR = DATASET_DIR / "processed"
 FASTQ_PATH = DATASET_DIR / "LARRY_sorted_and_filtered_barcodes.fastq.gz"
 
@@ -284,7 +286,9 @@ def extract_clones():
         "n_lk_combos_dropped": n_lk_dropped,
         "lk_libraries_seen": lk_libraries_seen,
         "n_distinct_barcodes_before_collapse": len(all_gfp_bcs),
-        "n_distinct_clones_greedy": len(set(bc_map_greedy.values())),
+        # [2026-09-30 commented out: bc_map_greedy is never defined in this file (the greedy collapse was removed) -> NameError at the end of extract_clones]
+        # "n_distinct_clones_greedy": len(set(bc_map_greedy.values())),
+        "n_distinct_clones_greedy": None,
         "n_distinct_clones_transitive": len(set(bc_map_transitive.values())),
         "barcode_collapse_method": "transitive_highest_umi",  # feeds umi_table.csv, the
         # real pipeline input for singletCode

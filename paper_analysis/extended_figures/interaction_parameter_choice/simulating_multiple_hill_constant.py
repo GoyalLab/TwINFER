@@ -28,7 +28,8 @@ base_config = {
 # %%
 import sys
 from pathlib import Path
-sys.path.append(str(path_to_code_repo))
+# [2026-09-30 commented out: modules are imported via dotted package paths (env.sh puts clean_code and clean_code/package on PYTHONPATH)]
+# sys.path.append(str(path_to_code_repo))
 
 import copy
 from joblib import Parallel, delayed
@@ -40,20 +41,25 @@ set_num_threads(base_config['number_of_cores_per_parameter'])
 print("Threads Numba will use:", get_num_threads())
 
 import importlib
-from TwINFER_function_scripts import gillespie_script_variations
+# from TwINFER_function_scripts import gillespie_script_variations   # [2026-09-30 ported: TwINFER_function_scripts was merged into the twinfer package (git 58f3442); old import kept above as a comment]
+from twinfer.simulation import gillespie_simulations as gillespie_script_variations
 importlib.reload(gillespie_script_variations)
-from TwINFER_function_scripts.gillespie_script_variations import process_param_set
+# from TwINFER_function_scripts.gillespie_script_variations import process_param_set   # [2026-09-30 ported: TwINFER_function_scripts was merged into the twinfer package (git 58f3442); old import kept above as a comment]
+from twinfer.simulation.gillespie_simulations import process_param_set
 
 # %%
 # Calculation functions
 import importlib
-from TwINFER_function_scripts import correlation_analysis_functions
-from TwINFER_function_scripts import correlation_analysis_helpers
+# from TwINFER_function_scripts import correlation_analysis_functions   # [2026-09-30 ported: TwINFER_function_scripts was merged into the twinfer package (git 58f3442); old import kept above as a comment]
+from twinfer.inference import correlation_functions as correlation_analysis_functions
+# from TwINFER_function_scripts import correlation_analysis_helpers   # [2026-09-30 ported: TwINFER_function_scripts was merged into the twinfer package (git 58f3442); old import kept above as a comment]
+from twinfer.inference import correlation_functions as correlation_analysis_helpers
 
 importlib.reload(correlation_analysis_functions)
 importlib.reload(correlation_analysis_helpers)
 
-from TwINFER_function_scripts.correlation_analysis_functions import (
+# from TwINFER_function_scripts.correlation_analysis_functions import (   # [2026-09-30 ported: TwINFER_function_scripts was merged into the twinfer package (git 58f3442); old import kept above as a comment]
+from twinfer.inference.correlation_functions import (
     calculate_pairwise_gene_gene_correlation_matrix,
     check_system_in_steady_state,
     check_gene_gene_correlation_threshold,
@@ -64,14 +70,16 @@ from TwINFER_function_scripts.correlation_analysis_functions import (
 )
 
 # Helper functions
-from TwINFER_function_scripts.correlation_analysis_helpers import (
+# from TwINFER_function_scripts.correlation_analysis_helpers import (   # [2026-09-30 ported: TwINFER_function_scripts was merged into the twinfer package (git 58f3442); old import kept above as a comment]
+from twinfer.inference.correlation_functions import (
     extract_param_index,
     read_input_matrix,
     get_param_data, 
     plot_matrix_as_heatmap,
-    print_summary,
-    plot_network
+    print_summary
 )
+# [2026-09-30 fixed: plot_network lives in twinfer.plotting.network_plots (it was in the old correlation_analysis_helpers); my legacy-import port had mapped it to correlation_functions]
+from twinfer.plotting.network_plots import plot_network
 
 # %% [markdown]
 # ## Simulate the gene expression in a population of cells

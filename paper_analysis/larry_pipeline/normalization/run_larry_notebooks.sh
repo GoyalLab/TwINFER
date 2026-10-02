@@ -9,6 +9,9 @@
 #SBATCH --output=/home/gzu5140/TwINFER_KA/analysis_data/larry_barcode_extraction/logs/notebooks_%j.out
 #SBATCH --error=/home/gzu5140/TwINFER_KA/analysis_data/larry_barcode_extraction/logs/notebooks_%j.err
 set -euo pipefail
+# [2026-09-30 note: #SBATCH paths cannot use variables; check them before submitting. Source clean_code/env.sh before sbatch (sbatch exports the environment).]
+: "${TWINFER_CODE_ROOT:?source clean_code/env.sh before running or submitting this script}"
+: "${TWINFER_PROJECT_ROOT:?source clean_code/env.sh before running or submitting this script}"
 
 # Executes larry_preprocessing.ipynb then larry_normalization_comparison.ipynb
 # (which depends on the first's output) on a compute node -- the login
@@ -17,7 +20,9 @@ set -euo pipefail
 # sparse matrix (~1.4GB mtx on disk).
 
 JUPYTER=/home/gzu5140/.conda/envs/twinfer-code/bin/jupyter
-NBDIR=/gpfs/projects/b1255/hzhang/TwINFER_KA/code/TwINFER/real_data_analysis
+# NBDIR=/gpfs/projects/b1255/hzhang/TwINFER_KA/code/TwINFER/real_data_analysis   # [2026-09-30 replaced by env.sh variable]
+# [2026-09-30 commented out: pointed into the original code tree; now the clean_code copy] NBDIR=${TWINFER_PROJECT_ROOT}/code/TwINFER/real_data_analysis
+NBDIR=${TWINFER_CODE_ROOT}/notebooks/real_data_analysis
 
 echo "[$(date)] Executing larry_preprocessing.ipynb"
 "$JUPYTER" nbconvert --to notebook --execute --inplace \

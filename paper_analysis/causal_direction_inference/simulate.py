@@ -1,3 +1,5 @@
+from twinfer.utils.paths import get_data_root as _twinfer_get_data_root
+TWINFER_PROJECT_ROOT = _twinfer_get_data_root().parent  # [2026-09-30 added: replaces hardcoded project-root paths (/home/gzu5140/TwINFER_KA, /gpfs/projects/b1255/hzhang/TwINFER_KA, old Keerthana_b1042 tree)]
 # All packages needed to run TwINFER simulation and inference are listed here.
 # If any of them are not installed, please install them using pip or conda env.
 # %%
@@ -17,14 +19,16 @@ from numba import set_num_threads, get_num_threads
 #Paths used in the file
 
 #Path to code repo
-path_to_code_repo = "/home/gzu5140/Keerthana_b1042/TwINFER/code/TwINFER/"
+path_to_code_repo = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/'
 
 # Make sure this path is on sys.path so Python can find the package
 if path_to_code_repo not in sys.path:
-    sys.path.insert(0, path_to_code_repo)
+    pass
+    # [2026-09-30 commented out: modules are imported via dotted package paths (env.sh puts clean_code and clean_code/package on PYTHONPATH)]
+    # sys.path.insert(0, path_to_code_repo)
 
 #Path to output files
-path_to_output = "/home/gzu5140/Keerthana_b1042/TwINFER/simulation_data/test/"
+path_to_output = f'{TWINFER_PROJECT_ROOT}/simulation_data/test/'
 num_cores_available = 18
  #%%
 if __name__ == "__main__":
@@ -137,9 +141,11 @@ if __name__ == "__main__":
     import os
 
     # Now imports will be resolved relative to that repo
-    from TwINFER_function_scripts import gillespie_script_variations
+    # from TwINFER_function_scripts import gillespie_script_variations   # [2026-09-30 ported: TwINFER_function_scripts was merged into the twinfer package (git 58f3442); old import kept above as a comment]
+    from twinfer.simulation import gillespie_simulations as gillespie_script_variations
     importlib.reload(gillespie_script_variations)
-    from TwINFER_function_scripts.gillespie_script_variations import process_param_set
+    # from TwINFER_function_scripts.gillespie_script_variations import process_param_set   # [2026-09-30 ported: TwINFER_function_scripts was merged into the twinfer package (git 58f3442); old import kept above as a comment]
+    from twinfer.simulation.gillespie_simulations import process_param_set
     # from TwINFER_function_scripts import pause_run_sim
     # importlib.reload(pause_run_sim)
     # from TwINFER_function_scripts.pause_run_sim import process_param_set

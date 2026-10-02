@@ -26,8 +26,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).parent))
-from build_larry_matrix import (  # noqa: E402
+# [2026-09-30 commented out: modules are imported via dotted package paths (env.sh puts clean_code and clean_code/package on PYTHONPATH)]
+# sys.path.insert(0, str(Path(__file__).parent))
+from paper_analysis.larry_pipeline.build_matrix.build_larry_matrix import (  # noqa: E402
     DATASET_DIR, OUT_DIR, FASTQ_PATH, LSK_LIBRARIES, N_HAMMING,
     load_real_barcode_map,
 )

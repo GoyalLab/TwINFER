@@ -5,6 +5,8 @@ automatic knee, and mark where the h5ad-barcoded-but-excluded cells
 ("B only" in the barcoded-cells Venn) sit relative to it -- concentrated in
 LSK_d6_1_1 among these three example libraries.
 """
+from twinfer.utils.paths import get_data_root as _twinfer_get_data_root
+TWINFER_PROJECT_ROOT = _twinfer_get_data_root().parent  # [2026-09-30 added: replaces hardcoded project-root paths (/home/gzu5140/TwINFER_KA, /gpfs/projects/b1255/hzhang/TwINFER_KA, old Keerthana_b1042 tree)]
 import json
 
 import anndata as ad
@@ -12,7 +14,9 @@ import numpy as np
 import pandas as pd
 import scipy.io as sio
 
-PROCESSED = "/scratch/gzu5140/ka_twinfer/larry_dataset/processed"
+# [2026-10-01 commented out: /scratch/gzu5140 is purged scratch; see REPOINT_LOG.tsv] PROCESSED = "/scratch/gzu5140/ka_twinfer/larry_dataset/processed"
+from twinfer.utils.paths import get_larry_dataset_dir  # [2026-10-01 added]
+PROCESSED = str(get_larry_dataset_dir() / "processed")
 EXAMPLE_LIBS = ["LSK_d2_1", "LSK_d4_1_1", "LSK_d6_1_1"]
 K = 0.19349593495847234  # the shared multiplier chosen for the v2 whitelist
 
@@ -49,7 +53,8 @@ def main():
     total_counts = np.asarray(X.sum(axis=1)).ravel()
 
     print("[knee-plot-v2] loading h5ad obs (backed)", flush=True)
-    a = ad.read_h5ad("/home/gzu5140/TwINFER_KA/code/TwINFER/real_data/LSK_d2_d4_d6.h5ad", backed="r")
+    # [2026-09-30 commented out: data now in clean_data/, see REPOINT_LOG.tsv] a = ad.read_h5ad(f'{TWINFER_PROJECT_ROOT}/code/TwINFER/real_data/LSK_d2_d4_d6.h5ad', backed="r")
+    a = ad.read_h5ad(f'{TWINFER_PROJECT_ROOT}/clean_data/real_data/LSK_d2_d4_d6.h5ad', backed="r")
     h5_cl = a.obs["clone_id"].astype(str)
     h5_has = ((h5_cl != "-1") & (h5_cl != "nan")).to_numpy()
     h5_keys = pd.Series(a.obs["Library"].astype(str).to_numpy() + ":" + a.obs_names.astype(str).to_numpy())

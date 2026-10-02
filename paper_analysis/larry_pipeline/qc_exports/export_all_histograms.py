@@ -11,7 +11,9 @@ import numpy as np
 import pandas as pd
 import scipy.io as sio
 
-PROCESSED = "/scratch/gzu5140/ka_twinfer/larry_dataset/processed"
+# [2026-10-01 commented out: /scratch/gzu5140 is purged scratch; see REPOINT_LOG.tsv] PROCESSED = "/scratch/gzu5140/ka_twinfer/larry_dataset/processed"
+from twinfer.utils.paths import get_larry_dataset_dir  # [2026-10-01 added]
+PROCESSED = str(get_larry_dataset_dir() / "processed")
 K = 0.19349593495847234
 
 

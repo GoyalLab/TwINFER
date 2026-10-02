@@ -94,3 +94,12 @@ Code has been moved into `heterogeneity_vs_regulation/`, `causal_direction_infer
 `REORG_CHECKLIST.md` at the repository root for current per-file status.
 `extended_figures/`, `parameter_estimation/`, `benchmark/`, and `work_in_progress/`
 have not yet had code moved in.
+
+## Running a figure (added 2026-10-01)
+```
+source clean_code/env.sh
+bash paper_analysis/run_figure.sh heterogeneity_vs_regulation all --dry-run     # show what would run
+bash paper_analysis/run_figure.sh heterogeneity_vs_regulation analyze            # stages: simulate | analyze | plot | all; --variant v2 for the *_v2 notebooks
+bash paper_analysis/reproduce_all.sh --dry-run                                  # every folder of figures_manifest.yaml (shared scripts first)
+```
+`simulate` runs `simulate.py` (or `preprocess.py`), `analyze`/`plot` execute `analysis[_v2].ipynb` / `plot[_v2].ipynb` with nbconvert; executed copies go to `clean_data/paper_analysis/<folder>/executed_notebooks/`, the source notebooks are not modified. Nothing is submitted to SLURM. `reproduce_all.sh --validate` compares against `paper_analysis/expected_values.tsv`, which the author has to fill in from the manuscript (it does not exist yet, so `--validate` stops with an error instead of reporting a pass). Test: `tests/smoke/smoke_run_figure.py`.

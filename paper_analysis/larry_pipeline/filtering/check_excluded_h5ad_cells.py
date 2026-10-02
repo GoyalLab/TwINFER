@@ -6,12 +6,16 @@ scattered lower down (would suggest something systematic)?
 Also persists total_counts per cell to obs_metadata.csv so future checks
 don't need to reload the full sparse matrix again.
 """
+from twinfer.utils.paths import get_data_root as _twinfer_get_data_root
+TWINFER_PROJECT_ROOT = _twinfer_get_data_root().parent  # [2026-09-30 added: replaces hardcoded project-root paths (/home/gzu5140/TwINFER_KA, /gpfs/projects/b1255/hzhang/TwINFER_KA, old Keerthana_b1042 tree)]
 import anndata as ad
 import numpy as np
 import pandas as pd
 import scipy.io as sio
 
-PROCESSED = "/scratch/gzu5140/ka_twinfer/larry_dataset/processed"
+# [2026-10-01 commented out: /scratch/gzu5140 is purged scratch; see REPOINT_LOG.tsv] PROCESSED = "/scratch/gzu5140/ka_twinfer/larry_dataset/processed"
+from twinfer.utils.paths import get_larry_dataset_dir  # [2026-10-01 added]
+PROCESSED = str(get_larry_dataset_dir() / "processed")
 
 # per-library scaled thresholds from the whitelist-v2 run (k=0.19350 * raw knee)
 THRESHOLDS = {
@@ -35,7 +39,8 @@ def main():
 
     print("[check] loading h5ad (backed)", flush=True)
     a = ad.read_h5ad(
-        "/home/gzu5140/TwINFER_KA/code/TwINFER/real_data/LSK_d2_d4_d6.h5ad", backed="r"
+        # [2026-09-30 commented out: data now in clean_data/, see REPOINT_LOG.tsv] f'{TWINFER_PROJECT_ROOT}/code/TwINFER/real_data/LSK_d2_d4_d6.h5ad', backed="r"
+        f'{TWINFER_PROJECT_ROOT}/clean_data/real_data/LSK_d2_d4_d6.h5ad', backed="r"
     )
     h5_keys = set(f"{lib}:{bc}" for lib, bc in zip(a.obs["Library"].astype(str), a.obs_names.astype(str)))
 

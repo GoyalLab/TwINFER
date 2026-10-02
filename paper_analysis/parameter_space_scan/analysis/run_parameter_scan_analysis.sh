@@ -8,6 +8,9 @@
 #SBATCH --job-name=Parameter-Analysis
 #SBATCH --output=/home/gzu5140/Keerthana_b1042/grnInference/logs/slurmLog-%A_%a-%x.out
 #SBATCH --error=/home/gzu5140/Keerthana_b1042/grnInference/logs/slurmLog-%A_%a-%x.err
+# [2026-09-30 note: #SBATCH paths cannot use variables; check them before submitting. Source clean_code/env.sh before sbatch (sbatch exports the environment).]
+: "${TWINFER_CODE_ROOT:?source clean_code/env.sh before running or submitting this script}"
+: "${TWINFER_PROJECT_ROOT:?source clean_code/env.sh before running or submitting this script}"
 
 #Replace this with path to python in your conda environment while calling the python script: ~/.conda/envs/twinfer-code/bin/python
 
@@ -23,7 +26,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_re
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -47,7 +53,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_B_
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -72,7 +81,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan_rand
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -98,7 +110,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan_rand
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -124,7 +139,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan_rand
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -148,7 +166,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan_rand
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -171,7 +192,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan_rand
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -195,7 +219,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan_rand
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -220,7 +247,10 @@ Make job-specific subfolder
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -244,7 +274,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan_rand
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -268,7 +301,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_to
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -290,7 +326,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_B_
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -313,7 +352,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_an
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -336,7 +378,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_re
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -359,7 +404,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_re
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -381,7 +429,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_an
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -406,7 +457,10 @@ Make job-specific subfolder
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \
@@ -429,7 +483,10 @@ out="/home/gzu5140/Keerthana_b1042/grnInference/analysisData/parameter_scan/A_to
 job_out="${out}"
 mkdir -p "$job_out"
 
-~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \
+# ~/.conda/envs/twinfer-code/bin/python /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced by env.sh variable]
+# "${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" /home/gzu5140/Keerthana_b1042/grnInference/code/TwINFER/parameter_scan/analyzing_simulations_parameter_scan/analyze_parameter_scan_correlations.py \   # [2026-09-30 replaced: script now lives in the clean tree]
+"${TWINFER_PYTHON:-~/.conda/envs/twinfer-code/bin/python}" ${TWINFER_CODE_ROOT}/paper_analysis/parameter_space_scan/analysis/analyze_parameter_scan_correlations.py \
   --path_to_simulations "$path" \
   --output "$job_out" \
   --genes gene_1_mRNA gene_2_mRNA \

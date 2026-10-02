@@ -10,7 +10,8 @@
 #SBATCH --error=/home/gzu5140/TwINFER_KA/analysis_data/larry_barcode_extraction/logs/scale_check_%j.err
 set -euo pipefail
 
-FASTQ=/scratch/gzu5140/ka_twinfer/larry_dataset/LARRY_sorted_and_filtered_barcodes.fastq.gz
+# [2026-10-01 commented out: /scratch/gzu5140 is purged scratch; see REPOINT_LOG.tsv] FASTQ=/scratch/gzu5140/ka_twinfer/larry_dataset/LARRY_sorted_and_filtered_barcodes.fastq.gz
+FASTQ="${TWINFER_LARRY_DATASET:-/scratch/gzu5140/ka_twinfer/larry_dataset}/LARRY_sorted_and_filtered_barcodes.fastq.gz"
 
 echo "[$(date)] Counting distinct (lib,cell,umi,barcode) combos at various NREADS floors"
 zcat "$FASTQ" | gawk '

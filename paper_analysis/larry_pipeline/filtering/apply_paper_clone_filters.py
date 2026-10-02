@@ -24,7 +24,9 @@ import pandas as pd
 import scipy.io as sio
 from scipy.stats import chisquare
 
-PROCESSED = "/scratch/gzu5140/ka_twinfer/larry_dataset/processed"
+# [2026-10-01 commented out: /scratch/gzu5140 is purged scratch; see REPOINT_LOG.tsv] PROCESSED = "/scratch/gzu5140/ka_twinfer/larry_dataset/processed"
+from twinfer.utils.paths import get_larry_dataset_dir  # [2026-10-01 added]
+PROCESSED = str(get_larry_dataset_dir() / "processed")
 QC_DIR = PROCESSED + "/qc_filtered"
 OUT_DIR = PROCESSED + "/qc_filtered_paperfiltered"
 

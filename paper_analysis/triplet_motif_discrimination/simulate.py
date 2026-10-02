@@ -109,11 +109,15 @@ import os
 
 # Make sure this path is on sys.path so Python can find the package
 if path_to_code_repo not in sys.path:
-    sys.path.insert(0, path_to_code_repo)
+    pass
+    # [2026-09-30 commented out: modules are imported via dotted package paths (env.sh puts clean_code and clean_code/package on PYTHONPATH)]
+    # sys.path.insert(0, path_to_code_repo)
 # Now imports will be resolved relative to that repo
-from TwINFER_function_scripts import gillespie_script_variations
+# from TwINFER_function_scripts import gillespie_script_variations   # [2026-09-30 ported: TwINFER_function_scripts was merged into the twinfer package (git 58f3442); old import kept above as a comment]
+from twinfer.simulation import gillespie_simulations as gillespie_script_variations
 importlib.reload(gillespie_script_variations)
-from TwINFER_function_scripts.gillespie_script_variations import process_param_set
+# from TwINFER_function_scripts.gillespie_script_variations import process_param_set   # [2026-09-30 ported: TwINFER_function_scripts was merged into the twinfer package (git 58f3442); old import kept above as a comment]
+from twinfer.simulation.gillespie_simulations import process_param_set
 
 # Ensure output directory exists
 os.makedirs(base_config['output_folder'], exist_ok=True)

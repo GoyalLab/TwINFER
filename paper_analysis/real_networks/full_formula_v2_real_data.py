@@ -1,0 +1,125 @@
+"""Real-data heatmap data: existdir and full (flat, permutation z_fanout) AUPRC + F1(top-k)
+for all 7 real_world_networks, same 'full' formula as network_sweep_final/mixed_network_sweep's
+v2 heatmaps. Reuses the exact validated pipeline from full_gated_fanout.py (process_one's
+existdir/full_flat_perm logic) but also computes F1-top-k (tie-aware), which that script didn't.
+"""
+from twinfer.utils.paths import get_data_root as _twinfer_get_data_root
+TWINFER_PROJECT_ROOT = _twinfer_get_data_root().parent  # [2026-09-30 added: replaces hardcoded project-root paths (/home/gzu5140/TwINFER_KA, /gpfs/projects/b1255/hzhang/TwINFER_KA, old Keerthana_b1042 tree)]
+import glob
+import os
+import sys
+import time
+
+import numpy as np
+import pandas as pd
+from sklearn.metrics import auc, precision_recall_curve
+
+ROOT = f'{TWINFER_PROJECT_ROOT}'
+# HERE = os.path.dirname(os.path.abspath(__file__))   [2026-09-30 replaced: this script used to sit in the data dir analysis_data/paper_analysis/real_networks and read/write next to itself; that dir is now referenced explicitly]
+HERE = f'{TWINFER_PROJECT_ROOT}/analysis_data/paper_analysis/real_networks'
+# [2026-09-30 commented out: modules are imported via dotted package paths (env.sh puts clean_code and clean_code/package on PYTHONPATH)]
+# sys.path.insert(0, HERE)
+# [2026-09-30 commented out: modules are imported via dotted package paths (env.sh puts clean_code and clean_code/package on PYTHONPATH)]
+# sys.path.insert(0, f"{ROOT}/analysis_data/network_sweep_final")
+from paper_analysis.real_networks.fanout_mutual_z_boxplot import select_views, calculate_all_cross_z, calculate_z_fanout
+from twinfer.scoring.analytic_core import full_table_disjoint, compute_scores, s
+from benchmarks.network_benchmarks.score.formula_search.zhet_everywhere import true_edges
+
+# [2026-09-30 commented out: modules are imported via dotted package paths (env.sh puts clean_code and clean_code/package on PYTHONPATH)]
+# sys.path.insert(0, f"{ROOT}/code/TwINFER/package")
+import twinfer.inference.correlation_functions as cf
+
+N_SHUFFLES, N_CORES, SEED = 200, 1, 101010
+
+
+def score_auprc_f1(mag, true, poss):
+    y = np.array([1 if p in true else 0 for p in poss], int)
+    k = int(y.sum())
+    if k == 0 or k == len(poss):
+        return np.nan, np.nan
+    x = np.array([mag[p] for p in poss], float)
+    prec, rec, _ = precision_recall_curve(y, x)
+    auprc = auc(rec, prec)
+    order = np.argsort(-x, kind="stable")
+    boundary = x[order[k - 1]]
+    selected = x >= boundary
+    n_sel = selected.sum()
+    tp = (selected & (y == 1)).sum()
+    precision_k = tp / n_sel if n_sel else np.nan
+    recall_k = tp / k
+    f1 = 2 * precision_k * recall_k / (precision_k + recall_k) if (precision_k + recall_k) > 0 else 0.0
+    return auprc, f1
+
+
+def process_one(sim, tf, true_e, poss, GENES, T1=1, T2=20):
+    usecols = ["clone_id", "cell_id", "time_step", "replicate"] + [f"{g}_mRNA" for g in GENES]
+    data = pd.read_csv(sim, usecols=usecols)
+    views = select_views(data, T1, T2, seed=SEED)
+    cross_z = calculate_all_cross_z(views, GENES, "clone", N_SHUFFLES, SEED, N_CORES, cf)
+    tsi = full_table_disjoint(sim, T1, T2, GENES)
+    if tsi is None:
+        return None
+    sc = compute_scores(tsi, GENES)
+    existdir = {p: v["existdir"] for p, v in sc.items()}
+    zfan = {p: calculate_z_fanout(p[0], p[1], GENES, cross_z)["z_fanout"] for p in poss}
+    zdhet = tsi.reindex(poss).z_d_het.to_numpy()
+    s_zdhet = dict(zip(poss, s(zdhet)))
+    s_zfan = dict(zip(poss, s([zfan[p] for p in poss])))
+
+    full_flat = {p: existdir[p] + 1.0 * s_zfan[p] + 0.5 * s_zdhet[p] for p in poss}
+
+    auprc_ex, f1_ex = score_auprc_f1(existdir, true_e, poss)
+    auprc_full, f1_full = score_auprc_f1(full_flat, true_e, poss)
+    row = dict(auprc_existdir=auprc_ex, f1_existdir=f1_ex,
+               auprc_full=auprc_full, f1_full=f1_full)
+    del data, views, cross_z
+    import gc; gc.collect()
+    return row
+
+
+def run_real_data(tok, topo_file, n, sim_dir_override=None, max_reps=6):
+    TOPO_DIR = f"{ROOT}/input_data/real_world_networks"
+    SIM_DIR = sim_dir_override or f"{ROOT}/simulation_data/real_data"
+    tf = f"{TOPO_DIR}/{topo_file}"
+    GENES = [f"gene_{i+1}" for i in range(n)]
+    true_e, poss = true_edges(tf)
+    sims = sorted(f for f in glob.glob(f"{SIM_DIR}/*_{tok}_*.csv")
+                  if "simulation_before_division" not in os.path.basename(f))[:max_reps]
+    rows = []
+    t0 = time.time()
+    for sim in sims:
+        try:
+            r = process_one(sim, tf, true_e, poss, GENES)
+        except Exception as e:
+            print("  skip", os.path.basename(sim), e, flush=True)
+            continue
+        if r:
+            r["dataset"] = f"real_data:{tok}"; r["net"] = tok
+            rows.append(r)
+    print(f"[{time.time()-t0:.0f}s] real_data/{tok} ({len(sims)} sims, n={n})", flush=True)
+    return rows
+
+
+def main():
+    EXTRA_SIM_DIRS = {
+        "EMT": f"{ROOT}/analysis_data/paper_analysis/EMT/simulate/20260825_224653",
+        "B_cell_activation": f"{ROOT}/analysis_data/paper_analysis/B_cell_activation/simulate/20260812_153622",
+        "Pluripotent": f"{ROOT}/analysis_data/paper_analysis/Pluripotent/simulate/20260825_224511",
+    }
+    rows = []
+    rows += run_real_data("GSD", "GSD.txt", 19, max_reps=5)
+    rows += run_real_data("HSC_balanced", "HSC.txt", 11, max_reps=8)
+    rows += run_real_data("VSC", "VSC.txt", 8, max_reps=8)
+    rows += run_real_data("mCAD", "mCAD.txt", 5, max_reps=8)
+    rows += run_real_data("EMT", "EMT.txt", 17, sim_dir_override=EXTRA_SIM_DIRS["EMT"], max_reps=6)
+    rows += run_real_data("B_cell_activation", "B_cell.txt", 10, sim_dir_override=EXTRA_SIM_DIRS["B_cell_activation"], max_reps=6)
+    rows += run_real_data("Pluripotent", "Pluripotent.txt", 36, sim_dir_override=EXTRA_SIM_DIRS["Pluripotent"], max_reps=3)
+
+    df = pd.DataFrame(rows)
+    df.to_csv(f"{HERE}/full_formula_v2_real_data_twinfer.csv", index=False)
+    print(f"\nwrote {len(df)} rows")
+    print(df.groupby("dataset").mean(numeric_only=True).round(4).to_string())
+
+
+if __name__ == "__main__":
+    main()

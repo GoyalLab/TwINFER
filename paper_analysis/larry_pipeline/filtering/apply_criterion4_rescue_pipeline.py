@@ -14,10 +14,13 @@ import pandas as pd
 import scipy.io as sio
 import singletCode
 
-sys.path.insert(0, "/gpfs/projects/b1255/hzhang/TwINFER_KA/code")
-from singletcode_cross_sample_rescue import apply_cross_sample_rescue
+# [2026-09-30 commented out: modules are imported via dotted package paths (env.sh puts clean_code and clean_code/package on PYTHONPATH)]
+# sys.path.insert(0, "/gpfs/projects/b1255/hzhang/TwINFER_KA/code")
+from paper_analysis.larry_hematopoiesis_validation.preprocessing.singletcode_cross_sample_rescue import apply_cross_sample_rescue
 
-PROCESSED = "/scratch/gzu5140/ka_twinfer/larry_dataset/processed"
+# [2026-10-01 commented out: /scratch/gzu5140 is purged scratch; see REPOINT_LOG.tsv] PROCESSED = "/scratch/gzu5140/ka_twinfer/larry_dataset/processed"
+from twinfer.utils.paths import get_larry_dataset_dir  # [2026-10-01 added]
+PROCESSED = str(get_larry_dataset_dir() / "processed")
 K = 0.19349593495847234  # the shared multiplier chosen for the v2 (knee) whitelist
 
 
