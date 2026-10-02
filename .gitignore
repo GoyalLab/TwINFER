@@ -9,3 +9,13 @@ __pycache__/
 *.log
 _snapshots/
 _rescued/
+
+# Working notes, provenance logs and checking code of the 2026-10 cleanup: kept locally, not in the repo
+/docs/
+/handoff/
+/dev_tools/
+/tests/
+/REVIEW_LOG.md
+/MANIFEST.tsv
+/REPOINT_LOG.tsv
+/RESCUE_MAP.tsv
