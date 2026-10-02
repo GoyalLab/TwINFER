@@ -72,7 +72,7 @@ def main():
     df = pd.DataFrame(rows)
     agg = df.groupby(["group", "dataset_id", "rep", "method", "variant"], as_index=False)[["auprc", "f1_topk"]].mean()
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] out_csv = f"{HERE}/heatmap_data_mixed_sweep.csv"
-    out_csv = f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/heatmap_data_mixed_sweep.csv"
+    out_csv = f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/heatmap_data_mixed_sweep.csv"
     agg.to_csv(out_csv, index=False)
     print(f"{len(df)} raw rows -> {len(agg)} aggregated rows -> {out_csv}")
 

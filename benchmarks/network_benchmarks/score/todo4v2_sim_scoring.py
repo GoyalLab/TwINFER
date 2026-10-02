@@ -31,7 +31,7 @@ from sklearn.metrics import auc, precision_recall_curve
 
 ROOT = f'{TWINFER_PROJECT_ROOT}'
 # [2026-09-30 commented out: HERE was the original code directory and is used only for outputs; results now go to clean_data/, see REPOINT_LOG.tsv] HERE = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark'
-HERE = f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+HERE = f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 LARRY_DIR = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/paper_analysis/larry_hematopoiesis_validation'
 # [2026-09-30 commented out: modules are imported via dotted package paths (env.sh puts clean_code and clean_code/package on PYTHONPATH)]
 # sys.path.insert(0, LARRY_DIR)
@@ -278,7 +278,7 @@ def run_network_sweep_e13():
         lambda d: d.get("ground_truth_matrix"),
         f"{ROOT}/analysis_data/network_sweep_final/e13_pos100/beeline_analysis_output.csv",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/todo4v2_network_sweep_e13_results.csv",
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_e13_results.csv",
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_e13_results.csv",
     )
 
 
@@ -291,7 +291,7 @@ def run_network_sweep_final_broader():
         lambda d: d.get("ground_truth_matrix"),
         f"{ROOT}/analysis_data/network_sweep_final/beeline_analysis_output.csv",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/todo4v2_network_sweep_final_broader_results.csv",
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_final_broader_results.csv",
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_final_broader_results.csv",
     )
 
 
@@ -302,7 +302,7 @@ def run_mixed_network_sweep():
         lambda d: f"{ROOT}/input_data/mixed_network_sweep/{d.get('dataset_id')}.txt",
         f"{ROOT}/analysis_data/mixed_network_sweep/beeline_analysis_output.csv",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/todo4v2_mixed_network_sweep_results.csv",
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_mixed_network_sweep_results.csv",
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_mixed_network_sweep_results.csv",
     )
 
 
@@ -316,7 +316,7 @@ def run_real_networks():
         lambda d: f"{ROOT}/input_data/real_world_networks/{REAL_NETWORK_MATRIX.get(d.get('sim_type', ''), '')}",
         None,  # (no precomputed BEELINE competitor CSV found for real_networks -- reporting vs random only)
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/todo4v2_real_networks_results.csv",
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_real_networks_results.csv",
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_real_networks_results.csv",
     )
 
 

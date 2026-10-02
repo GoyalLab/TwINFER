@@ -166,7 +166,7 @@ def main():
     print(f"mean excess_var  = {df.excess_var.mean():.3f}x  (wins {100*(df.excess_var>df.baseline).mean():.0f}%)")
     print(f"mean spectral    = {df.spectral.mean():.3f}x  (wins {100*(df.spectral>df.baseline).mean():.0f}%)")
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] df.to_csv(f"{ROOT}/code/TwINFER/work_in_progress/benchmark/todo4v2_weighted_variants_real_networks.csv", index=False)
-    df.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_weighted_variants_real_networks.csv", index=False)
+    df.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_weighted_variants_real_networks.csv", index=False)
 
 
 if __name__ == "__main__":

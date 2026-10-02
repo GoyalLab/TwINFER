@@ -1,41 +1,29 @@
-This is the repository for the TwINFER project.
+# TwINFER code (reorganised 2026-10)
 
-> This repo is being reorganized into `package/` (installable library), `paper_analysis/` (per-figure simulate/analyze/plot), and `tutorials/`. See `REORG_CHECKLIST.md` at the repo root for current progress. The sections below (Installation, Paths & data location) already describe the target setup; the rest of this file still describes the pre-reorg layout until that migration finishes.
+The reorganised TwINFER code (cleanup of 2026-09/10; the previous layout is in the git history of `reorg/paper-analysis`). Data is NOT in here: it lives in the project tree next to the repo (`TWINFER_PROJECT_ROOT`, data folder `analysis_data/`, `TWINFER_DATA_ROOT`). Benchmark result tables that used to be tracked in `work_in_progress/benchmark/` are now in `analysis_data/benchmarks/network_benchmarks/score_results/`.
 
-## Installation
-
-From the repo root, inside the `twinfer-code` conda environment:
-
+## Quick start
 ```bash
-conda env create -f package/environment.yml   # first time only
-conda activate twinfer-code
-pip install -e package/
+source env.sh          # sets TWINFER_PROJECT_ROOT / DATA_ROOT / REPO_ROOT / BEELINE_PATH / BOOLODE_PATH, PYTHONPATH, TWINFER_PYTHON
+# the smoke tests and the static checkers (tests/smoke, dev_tools) are kept with the author's working copy, not in this repo
 ```
+Environment: `twinfer-code` for everything (call its python directly). Exception: Beeline/BoolODE runs use the `BEELINE` env (`BEELINE_PYTHON`), see THIRD_PARTY.md. `sbatch` exports the environment, so `source env.sh` before submitting. Nothing here has been submitted by the cleanup.
 
-This registers `twinfer` as an editable install, so `import twinfer` works from any script or notebook in this environment. See `package/README.md` for the full module map and when to use `grnboost_env.yml` instead.
+## Layout
+| Folder | Contents |
+|---|---|
+| `package/twinfer/` | the Python package (simulation, inference, plotting, utils). Not final. Editable installs in the env still point at the original tree; clean_code is used through PYTHONPATH. |
+| `benchmarks/network_benchmarks/` | synthetic/real-network benchmark pipeline by stage: `generate_networks`, `simulate`, `infer`, `to_beeline`, `score` (+`score/formula_search`), `analysis_plots` |
+| `benchmarks/beeline/`, `benchmarks/boolode/` | Beeline run scripts/configs/generators and BoolODE twin simulations; vendored fragments + local patches of both |
+| `paper_analysis/` | figure-by-figure analyses (heterogeneity, causal direction, triplet motifs, LARRY, fate-map, real networks, parameter scan, ...) |
+| `simulations/` | drift, cyclic 6-node, pulsed regulation, network dynamics checks, timing tests |
+| `notebooks/` | real-data analysis notebooks and the tutorial (outputs stripped) |
+| `real_data_scripts/`, `simulation_example_input_data/` | small data-side scripts; example inputs read by the examples |
+| `_archive/` | superseded/legacy copies kept for the record |
 
-## Paths & data location
+## Conventions
+- Replaced code is commented out with a dated note (`# [2026-09-30 ...]`); nothing was deleted.
+- Files rescued from old Claude scratchpads/`/tmp` carry `# [UNREVIEWED: rescued ...]`; their placement is a best guess.
+- Paths come from `twinfer.utils.paths` via `TWINFER_PROJECT_ROOT = get_data_root().parent`; scripts that used to sit in data folders reference those folders explicitly.
 
-All paths in this repo are resolved through `twinfer.utils.paths` (`package/twinfer/utils/paths.py`) — nothing should hardcode an absolute path. Configure it via environment variables, e.g. in your shell profile:
-
-| Variable | Purpose | Default |
-|---|---|---|
-| `TWINFER_DATA_ROOT` | Root for simulate/analyze/plot output | `<repo>/../../analysis_data` |
-| `TWINFER_RUN_TAG` | Pin a specific run's simulate/analyze/plot stages to the same output folder | auto-generated timestamp per run |
-| `TWINFER_BEELINE_PATH` | Location of the local BEELINE repo (benchmarking) | `<repo>/../Beeline` |
-| `TWINFER_BOOLODE_PATH` | Location of the local BoolODE repo (benchmarking) | `<repo>/../BoolODE` |
-
-Only set these if your setup differs from the defaults above.
-
-The notebook TwINFER_simulation_and_analysis contains code to simulate a cell population with any gene underlying a regulatory network, along with parameters for each gene and regulatory interaction. It also has the code to infer the GRN from simulated data using the TwINFER framework.
-
-Some example input data for simulation can be found in the simulation_example_input_data folder.
-Example simulation output data can be found in the simulation_example_output_data folder.
-
-The code and data used to estimate parameters from the literature are in the parameter_estimation folder.
-
-The scripts_analyse_figure_data contains scripts to analyse simulations and generate data for the figures.
-
-The scripts_to_plot_figure contain the code to generate the plots shown in the figures.
-
-The specific details of code need to reproduce the exact plots in the figures of the paper, starting from simulations, analysis and making the final plot is provided on this [Google sheet](https://docs.google.com/spreadsheets/d/1dc1jYql7xb4ZE71f3lR6cSMpQq1c9PkpWk9iuyNDUtk/edit?usp=sharing). All the data can be found in this [folder](https://drive.google.com/drive/folders/1apg1QFkGD_QGuxIaUuTUs-l7r6ofpGsA?usp=sharing) and references in the sheet are with respect to this. Paths in the individual files may need to be set as necessary.
+Working notes of the cleanup (handoffs, review log, open-items lists, provenance tables) are kept outside this repo.

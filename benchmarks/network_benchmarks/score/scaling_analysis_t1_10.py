@@ -10,7 +10,7 @@ from benchmarks.network_benchmarks.score import scaling_analysis as S
 
 ROOT = S.ROOT
 # [2026-09-30 commented out: result files now in clean_data/, see REPOINT_LOG.tsv] HERE = S.HERE
-HERE = f'{S.TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+HERE = f'{S.TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 
 
 def collect_network_sweep_final_t1_10():

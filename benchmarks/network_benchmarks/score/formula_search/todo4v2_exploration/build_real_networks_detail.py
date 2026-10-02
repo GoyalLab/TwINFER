@@ -4,7 +4,7 @@ TWINFER_PROJECT_ROOT = _twinfer_get_data_root().parent  # [2026-09-30 added: rep
 import pandas as pd
 
 # [2026-09-30 commented out: result files now in clean_data/, see REPOINT_LOG.tsv] BENCH = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark'
-BENCH = f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+BENCH = f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 
 t4 = pd.read_csv(f"{BENCH}/todo4v2_real_networks_results.csv")
 cc = pd.read_csv(f"{BENCH}/crosscorr_real_networks_results.csv")

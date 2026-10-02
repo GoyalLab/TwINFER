@@ -32,7 +32,7 @@ from twinfer.scoring.analytic_zscores import DEFAULT_SD, z_signed
 
 ROOT = f'{TWINFER_PROJECT_ROOT}'
 # [2026-09-30 commented out: HERE was the original code directory and is used only for outputs; results now go to clean_data/, see REPOINT_LOG.tsv] HERE = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark'
-HERE = f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+HERE = f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 # [2026-10-01 commented out: LARRY resources/ moved to analysis_data (user)] LARRY_R = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/paper_analysis/larry_hematopoiesis_validation/resources'
 LARRY_R = f'{TWINFER_PROJECT_ROOT}/analysis_data/paper_analysis/larry_hematopoiesis_validation/resources'
 
@@ -111,7 +111,7 @@ def main():
 
     df = pd.DataFrame(all_rows)
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] out_csv = f"{HERE}/zdagger_signal_strength_larry_vs_sims.csv"
-    out_csv = f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/zdagger_signal_strength_larry_vs_sims.csv"
+    out_csv = f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/zdagger_signal_strength_larry_vs_sims.csv"
     df.to_csv(out_csv, index=False)
 
     print(f"\nwrote {out_csv} ({len(df)} rows)\n")

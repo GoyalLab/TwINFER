@@ -34,7 +34,7 @@ from benchmarks.network_benchmarks.score.todo4v2_sim_scoring import todo4v2_scor
 
 ROOT = f'{TWINFER_PROJECT_ROOT}'
 # [2026-09-30 commented out: HERE was the original code directory and is used only for outputs; results now go to clean_data/, see REPOINT_LOG.tsv] HERE = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark'
-HERE = f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+HERE = f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 
 
 def load_true_signed_edges(matrix_path, gene_names):

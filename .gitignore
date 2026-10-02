@@ -2,4 +2,10 @@ __pycache__/
 *.pyc
 *.nbc
 *.nbi
+*.swp
 .ipynb_checkpoints/
+*.out
+*.err
+*.log
+_snapshots/
+_rescued/

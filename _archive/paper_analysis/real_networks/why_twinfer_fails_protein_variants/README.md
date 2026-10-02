@@ -1,0 +1,2 @@
+# why_twinfer_fails: protein-level variants (archived 2026-09-30)
+Per user decision only the `*_mRNA.py` versions of the paired diagnostics are kept in `paper_analysis/real_networks/why_twinfer_fails/`; the protein-level twins are kept here for the record (rescued from scratchpad session a2a3302f, UNREVIEWED). Their output CSVs (e.g. dead_edge_diagnosis.csv, which dead_edge_method_comparison.py reads) stay in `clean_data/paper_analysis/real_networks/why_twinfer_fails/`.

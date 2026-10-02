@@ -138,7 +138,7 @@ def main():
 
     combined = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] combined.to_csv(f"{HERE}/per_dataset_wins_t1_10.csv", index=False)
-    combined.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/per_dataset_wins_t1_10.csv", index=False)
+    combined.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/per_dataset_wins_t1_10.csv", index=False)
 
 
 if __name__ == "__main__":

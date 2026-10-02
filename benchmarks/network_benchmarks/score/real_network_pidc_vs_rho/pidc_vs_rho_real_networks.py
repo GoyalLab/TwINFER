@@ -174,7 +174,7 @@ def main():
               f"wins={wins}/{len(g)}")
 
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] df.to_csv(f"{ROOT}/code/TwINFER/work_in_progress/benchmark/pidc_vs_rho_real_networks.csv", index=False)
-    df.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/pidc_vs_rho_real_networks.csv", index=False)
+    df.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/pidc_vs_rho_real_networks.csv", index=False)
     wins = (df.pidc_auprc_x > df.orig_auprc_x).sum()
     print(f"\n=== TOTAL (real networks, n={len(df)}) ===")
     print(f"mean nogate(rho)      = {df.orig_auprc_x.mean():.3f}x")

@@ -23,7 +23,7 @@ from scipy.stats import norm
 from sklearn.metrics import auc, precision_recall_curve
 
 # [2026-09-30 commented out: HERE was the original code directory and is used only for outputs; results now go to clean_data/, see REPOINT_LOG.tsv] HERE = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark'
-HERE = f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+HERE = f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 ROOT = f'{TWINFER_PROJECT_ROOT}'
 import sys
 # [2026-09-30 commented out: modules are imported via dotted package paths (env.sh puts clean_code and clean_code/package on PYTHONPATH)]
@@ -251,7 +251,7 @@ def run_network_sweep_e13():
     rows = [r for r in (score_one_json(f, resolver) for f in files) if r]
     df = pd.DataFrame(rows)
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] df.to_csv(f"{HERE}/todo4v2_network_sweep_e13_results.csv", index=False)
-    df.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_e13_results.csv", index=False)
+    df.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_e13_results.csv", index=False)
     print(df.to_string(index=False))
     best_algo, best_auprc = _competitor_summary(BEELINE_CSV)
     print(f"\nmean todo4v2_old={df.todo4v2_old_auprc_x.mean():.3f}x  "
@@ -271,7 +271,7 @@ def run_network_sweep_final_broader():
     rows = [r for r in (score_one_json(f, resolver) for f in files) if r]
     df = pd.DataFrame(rows)
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] df.to_csv(f"{HERE}/todo4v2_network_sweep_final_broader_results.csv", index=False)
-    df.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_final_broader_results.csv", index=False)
+    df.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_final_broader_results.csv", index=False)
     print(f"\nmean todo4v2_old={df.todo4v2_old_auprc_x.mean():.3f}x  "
           f"todo4v2_new={df.todo4v2_new_auprc_x.mean():.3f}x  "
           f"todo4v2_nogate={df.todo4v2_nogate_auprc_x.mean():.3f}x  (n={len(df)}/{len(files)} usable)")
@@ -288,7 +288,7 @@ def run_mixed_network_sweep():
     rows = [r for r in (score_one_json(f, resolver) for f in files) if r]
     df = pd.DataFrame(rows)
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] df.to_csv(f"{HERE}/todo4v2_mixed_network_sweep_results.csv", index=False)
-    df.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_mixed_network_sweep_results.csv", index=False)
+    df.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_mixed_network_sweep_results.csv", index=False)
     best_algo, best_auprc = _competitor_summary(BEELINE_CSV)
     print(f"\nmean todo4v2_old={df.todo4v2_old_auprc_x.mean():.3f}x  "
           f"todo4v2_new={df.todo4v2_new_auprc_x.mean():.3f}x  (n={len(df)}/{len(files)} usable)")
@@ -314,7 +314,7 @@ def run_real_networks():
     rows = [r for r in (score_one_json(f, resolver) for f in files) if r]
     df = pd.DataFrame(rows)
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] df.to_csv(f"{HERE}/todo4v2_real_networks_results.csv", index=False)
-    df.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_real_networks_results.csv", index=False)
+    df.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_real_networks_results.csv", index=False)
     print(df.to_string(index=False))
     print(f"\nmean todo4v2_old={df.todo4v2_old_auprc_x.mean():.3f}x  "
           f"todo4v2_new={df.todo4v2_new_auprc_x.mean():.3f}x  (n={len(df)}/{len(files)} usable)")

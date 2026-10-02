@@ -150,7 +150,7 @@ def main():
     if overall:
         all_df = pd.concat(overall, ignore_index=True)
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] all_df.to_csv(f"{ROOT}/code/TwINFER/work_in_progress/benchmark/pidc_vs_rho_generalization.csv", index=False)
-        all_df.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/pidc_vs_rho_generalization.csv", index=False)
+        all_df.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/pidc_vs_rho_generalization.csv", index=False)
         print(f"\n=== GRAND TOTAL (all synthetic families, n={len(all_df)}) ===")
         wins = (all_df.pidc_auprc_x > all_df.orig_auprc_x).sum()
         print(f"mean nogate(rho)      = {all_df.orig_auprc_x.mean():.3f}x")

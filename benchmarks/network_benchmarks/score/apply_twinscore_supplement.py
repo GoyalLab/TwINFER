@@ -52,7 +52,7 @@ from twinfer.scoring.analytic_zscores import DEFAULT_SD, z_signed
 
 ROOT = f'{TWINFER_PROJECT_ROOT}'
 # [2026-09-30 commented out: HERE was the original code directory and is used only for outputs; results now go to clean_data/, see REPOINT_LOG.tsv] HERE = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark'
-HERE = f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+HERE = f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 JSON_DIR = f"{ROOT}/analysis_data/network_sweep_final/e13_pos100/twinfer_inference_allpairs"
 BEELINE_CSV = f"{ROOT}/analysis_data/network_sweep_final/e13_pos100/beeline_analysis_output.csv"
 
@@ -260,7 +260,7 @@ def main():
     rows = [r for r in (score_one(f) for f in files) if r]
     df = pd.DataFrame(rows)
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] df.to_csv(f"{HERE}/twinscore_supplement_e13_pos100_results.csv", index=False)
-    df.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/twinscore_supplement_e13_pos100_results.csv", index=False)
+    df.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/twinscore_supplement_e13_pos100_results.csv", index=False)
     print(df.to_string(index=False))
     print(f"\nmean twinscore_auprc_x = {df.twinscore_auprc_x.mean():.3f}x  (n={len(df)}/{len(files)} usable, mean w={df.w.mean():.3f})")
 

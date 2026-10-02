@@ -26,7 +26,7 @@ from benchmarks.network_benchmarks.score.todo4v2_sim_scoring import todo4v2_scor
 
 ROOT = f'{TWINFER_PROJECT_ROOT}'
 # [2026-09-30 commented out: HERE was the original code directory and is used only for outputs; results now go to clean_data/, see REPOINT_LOG.tsv] HERE = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark'
-HERE = f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+HERE = f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 
 FEATURES = ["z_abs_rho_t1", "z_abs_rho_t2", "z_abs_rho_change", "z_rho_change", "z_div",
             "z_het", "z_d_het", "z_gamma", "abs_rho_cross_xy", "z_dagger", "z_flux", "z_reg_gated"]
@@ -146,7 +146,7 @@ def main():
 
     df = pd.DataFrame(all_rows)
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] out_csv = f"{HERE}/scaling_analysis_pooled.csv"
-    out_csv = f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/scaling_analysis_pooled.csv"
+    out_csv = f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/scaling_analysis_pooled.csv"
     df.to_csv(out_csv, index=False)
     print(f"\nwrote {out_csv} ({len(df)} rows total)\n")
 
@@ -170,7 +170,7 @@ def main():
         print(f"\n--- vs {prop} ---")
         print(sub[["metric", "rho", "p", "n"]].to_string(index=False))
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] cdf_sorted.to_csv(f"{HERE}/scaling_analysis_correlations.csv", index=False)
-    cdf_sorted.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/scaling_analysis_correlations.csv", index=False)
+    cdf_sorted.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/scaling_analysis_correlations.csv", index=False)
 
     print("\n=== per-benchmark n_genes / density / neg_frac ranges ===")
     print(df.groupby("benchmark")[props].agg(["min", "max", "mean"]).to_string())

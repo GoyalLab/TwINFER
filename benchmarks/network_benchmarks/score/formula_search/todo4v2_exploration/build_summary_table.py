@@ -5,9 +5,9 @@ import pandas as pd
 import re
 
 # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] t4 = pd.read_csv(f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark/todo4v2_network_sweep_final_broader_results.csv')
-t4 = pd.read_csv(f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_final_broader_results.csv')
+t4 = pd.read_csv(f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_final_broader_results.csv')
 # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] cc = pd.read_csv(f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark/crosscorr_network_sweep_final_broader_results.csv')
-cc = pd.read_csv(f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/crosscorr_network_sweep_final_broader_results.csv')
+cc = pd.read_csv(f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/crosscorr_network_sweep_final_broader_results.csv')
 
 def topo_group(ds):
     m = re.match(r'grn_n6_(e\d+_pos\d+_\w+?)_rep\d+', ds)

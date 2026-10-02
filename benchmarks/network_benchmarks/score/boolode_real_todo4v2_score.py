@@ -23,5 +23,5 @@ for p in sorted(glob.glob(f"{INF}/*_all_results.json")):
     rows.append(r)
 # [2026-09-30 replaced os.path.dirname(os.path.abspath(__file__)): the CSV used to be written next to the script in the (original) work_in_progress/benchmark dir; that location is kept]
 # [2026-09-30 commented out: result files now in clean_data/, see REPOINT_LOG.tsv] df = pd.DataFrame(rows); df.to_csv(os.path.join(f"{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark", "todo4v2_boolode_real_networks_results.csv"), index=False)
-df = pd.DataFrame(rows); df.to_csv(os.path.join(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results", "todo4v2_boolode_real_networks_results.csv"), index=False)
+df = pd.DataFrame(rows); df.to_csv(os.path.join(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results", "todo4v2_boolode_real_networks_results.csv"), index=False)
 print(len(df), "replicates scored")

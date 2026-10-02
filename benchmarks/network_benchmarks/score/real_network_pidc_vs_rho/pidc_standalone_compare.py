@@ -76,7 +76,7 @@ def main():
     print(f"pidc-swap beats PIDC-alone on {(df.nogate_pidc_swap > df.pidc_alone).sum()}/{len(df)} "
           f"({100*(df.nogate_pidc_swap > df.pidc_alone).mean():.0f}%)")
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] df.to_csv(f"{ROOT}/code/TwINFER/work_in_progress/benchmark/pidc_standalone_compare.csv", index=False)
-    df.to_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/pidc_standalone_compare.csv", index=False)
+    df.to_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/pidc_standalone_compare.csv", index=False)
 
 
 if __name__ == "__main__":

@@ -99,13 +99,13 @@ def compare_to_t1_1():
     """Side-by-side t1=1 vs t1=10 mean auprc_x table, all variants, all 4 benchmarks."""
     pairs = [
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] ("network_sweep_e13", f"{HERE}/todo4v2_network_sweep_e13_results.csv", f"{HERE}/todo4v2_network_sweep_e13_results_t1_10.csv"),
-        ("network_sweep_e13", f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_e13_results.csv", f"{HERE}/todo4v2_network_sweep_e13_results_t1_10.csv"),
+        ("network_sweep_e13", f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_e13_results.csv", f"{HERE}/todo4v2_network_sweep_e13_results_t1_10.csv"),
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] ("network_sweep_final_broader", f"{HERE}/todo4v2_network_sweep_final_broader_results.csv", f"{HERE}/todo4v2_network_sweep_final_broader_results_t1_10.csv"),
-        ("network_sweep_final_broader", f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_final_broader_results.csv", f"{HERE}/todo4v2_network_sweep_final_broader_results_t1_10.csv"),
+        ("network_sweep_final_broader", f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_final_broader_results.csv", f"{HERE}/todo4v2_network_sweep_final_broader_results_t1_10.csv"),
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] ("mixed_network_sweep", f"{HERE}/todo4v2_mixed_network_sweep_results.csv", f"{HERE}/todo4v2_mixed_network_sweep_results_t1_10.csv"),
-        ("mixed_network_sweep", f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_mixed_network_sweep_results.csv", f"{HERE}/todo4v2_mixed_network_sweep_results_t1_10.csv"),
+        ("mixed_network_sweep", f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_mixed_network_sweep_results.csv", f"{HERE}/todo4v2_mixed_network_sweep_results_t1_10.csv"),
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] ("real_networks", f"{HERE}/todo4v2_real_networks_results.csv", f"{HERE}/todo4v2_real_networks_results_t1_10.csv"),
-        ("real_networks", f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_real_networks_results.csv", f"{HERE}/todo4v2_real_networks_results_t1_10.csv"),
+        ("real_networks", f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_real_networks_results.csv", f"{HERE}/todo4v2_real_networks_results_t1_10.csv"),
     ]
     rows = []
     for name, p1, p10 in pairs:

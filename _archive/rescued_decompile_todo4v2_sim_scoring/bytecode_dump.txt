@@ -1,0 +1,90 @@
+=== CODE: <module>  args=() ===
+  names (globals/attrs used): ('__doc__', 'glob', 'json', 'os', 'numpy', 'np', 'pandas', 'pd', 'scipy.stats', 'norm', 'sklearn.metrics', 'auc', 'precision_recall_curve', 'HERE', 'ROOT', 'sys', 'path', 'insert', 'analytic_zscores', 'DEFAULT_SD', 'z_signed', 'P_VALUE', 'float', 'ppf', 'Z_TWO_SIDED', 'Z_ONE_SIDED', 'Z_HET_THR_NEW', 's', 'full_report', 'lookup', '_reg_and_flux', 'todo4v2_score', 'load_true_edges', 'score_one_json', '_competitor_summary', 'run_network_sweep_e13', 'run_network_sweep_final_broader', 'run_mixed_network_sweep', 'run_real_networks', '__name__', 'environ', 'get', 'which')
+  string consts: ['/home/gzu5140/TwINFER_KA/code/TwINFER/work_in_progress/benchmark', '/home/gzu5140/TwINFER_KA', '/gpfs/projects/b1255/hzhang/TwINFER_KA/code/TwINFER/paper_analysis/larry_hematopoiesis_validation', '__main__', 'WHICH', 'all']
+  numeric consts: [0, 0.01, 1, 2, -2.326]
+  === CODE: s  args=('v',) ===
+    names (globals/attrs used): ('np', 'asarray', 'float', 'isfinite', 'zeros', 'len', 'sum', 'mean', 'max', 'std', 'any', 'min')
+    string consts: []
+    numeric consts: [1, 1e-12, 1.0, 0.0]
+  === CODE: full_report  args=('sc', 'y') ===
+    DOCSTRING: "2026-09-17: a score vector with zero finite entries (every pair failed the gate) is a\n    completely tied/degenerate ranking -- sklearn's precision_recall_curve on a constant array\n    still returns a non-trivial-looking AUPRC number that depends only on class balance, not any\n    real discriminatio"
+    names (globals/attrs used): ('np', 'asarray', 'float', 'isfinite', 'any', 'mean', 'int', 'sum', 'dict', 'nan_to_num', 'nanmin', 'precision_recall_curve', 'auc', 'argsort', 'inf', 'min', 'max')
+    string consts: ['nan', 'stable']
+    numeric consts: [0, 1.0, 1, 0.0, 2]
+  === CODE: lookup  args=('z_reg_map', 'a', 'b') ===
+    names (globals/attrs used): ('np', 'nan')
+    string consts: ['__']
+    numeric consts: []
+  === CODE: _reg_and_flux  args=('dd', 'abs_valued') ===
+    names (globals/attrs used): ('z_signed', 'rho_cross_xy', 'to_numpy', 'DEFAULT_SD', 'rho_cross_yx', 'np', 'abs', 'assign', 'groupby', 'mean', 'to_dict', 'array', 'zip', 'gene_1', 'gene_2', 'get')
+    string consts: ['cross', 'gene_1', 'z_out', 'z_in']
+    numeric consts: [0.0]
+  === CODE: todo4v2_score  args=('dd', 'U', 'z_reg_map', 'variant') ===
+    DOCSTRING: "variant='old': signed REG, one-sided z_reg_gated>2.326 gate (matches the version that beat\n    pidc on LARRY correlation_high/annotfilter). variant='new': abs REG, two-sided\n    |z_reg_gated|>2.576 gate (the version that regressed across the LARRY panel)."
+    names (globals/attrs used): ('_reg_and_flux', 'z_abs_rho_t1', 'to_numpy', 'z_abs_rho_t2', 'z_abs_rho_change', 'np', 'array', 'lookup', 'z_het', 'z_div', 'z_gamma', 'z_rho_change', 'z_signed', 'rho_cross_xy', 'DEFAULT_SD', 'abs', 'maximum', 'Z_TWO_SIDED', 'nan_to_num', 'inf', 'Z_ONE_SIDED', 'ones', 'len', 'bool', 'ValueError', 's', 'Z_HET_THR_NEW', 'astype', 'float', 'where', 'int', 'sum')
+    string consts: ['new', 'cross', 'old', 'nogate', 'unknown variant ']
+    numeric consts: [0.0, 1.0]
+  === CODE: load_true_edges  args=('matrix_path', 'gene_names') ===
+    names (globals/attrs used): ('np', 'loadtxt', 'len', 'shape', 'range')
+    string consts: [',', ': shape ', ' != (', ')']
+    numeric consts: [0]
+  === CODE: score_one_json  args=('json_path', 'gt_matrix_path_resolver') ===
+    DOCSTRING: "twin_score_inputs only contains rows that survived TwINFER's own upstream significance\n    filtering (step1 existence test etc) -- for these simulated-network runs (not the LARRY\n    ALL_PAIRS=1/threshold=0 unrestricted mode), that can be a small fraction of the full\n    n*(n-1) universe. Score over"
+    names (globals/attrs used): ('json', 'load', 'open', 'get', 'pd', 'DataFrame', 'gene_1', 'gene_2', 'reset_index', 'rho_cross_xy', 'notna', 'len', 'os', 'path', 'exists', 'load_true_edges', 'list', 'zip', 'set', 'np', 'array', 'sum', 'dict', 'basename', 'int', 'todo4v2_score', 'isfinite', 'any', 'nanmin', 'full_report')
+    string consts: ['twin_score_inputs', 'gated_regulation', 'z_reg_gated', 'data', 'columns', 'gene_names', 'dataset_id', 'analysis_key', 'auprc_x', 'todo4v2_', '_auprc_x', 'tp', '/', 'k', ' (of ', 'n_selected', ' selected)', '_topk', 'topk_f1', '_topk_f1', '_pass_gate', 'degenerate', '_degenerate']
+    numeric consts: [3, 1, 0, 1.0, -1.0]
+  === CODE: _competitor_summary  args=('beeline_csv', 'dataset_ids') ===
+    DOCSTRING: "Mean directed 'auprc' per algorithm across every row (all datasets/reps/runs), and the\n    single best-performing algorithm by that mean -- same 7 BEELINE methods used elsewhere."
+    names (globals/attrs used): ('os', 'path', 'exists', 'pd', 'read_csv', 'dataset_id', 'isin', 'empty', 'groupby', 'mean', 'sort_values', 'index', 'float', 'iloc')
+    string consts: ["Mean directed 'auprc' per algorithm across every row (all datasets/reps/runs), and the\n    single best-performing algorithm by that mean -- same 7 BEELINE methods used elsewhere.", 'algorithm', 'auprc']
+    numeric consts: [0]
+  === CODE: run_network_sweep_e13  args=() ===
+    names (globals/attrs used): ('ROOT', 'sorted', 'glob', 'print', 'len', 'pd', 'DataFrame', 'to_csv', 'HERE', 'to_string', '_competitor_summary', 'todo4v2_old_auprc_x', 'mean', 'todo4v2_new_auprc_x')
+    string consts: ['/analysis_data/network_sweep_final/e13_pos100/twinfer_inference_allpairs', '/analysis_data/network_sweep_final/e13_pos100/beeline_analysis_output.csv', '/*_all_results.json', 'network_sweep (e13_pos100): ', ' files', '/todo4v2_network_sweep_e13_results.csv', '\nmean todo4v2_old=', '.3f', 'x  todo4v2_new=', 'x  (n=', '/', ' usable)', 'best competitor (raw AUPRC, not x-random): ', '=']
+    numeric consts: []
+    === CODE: <lambda>  args=('d',) ===
+      names (globals/attrs used): ('get',)
+      string consts: ['ground_truth_matrix']
+      numeric consts: []
+    === CODE: <genexpr>  args=('.0',) ===
+      names (globals/attrs used): ('score_one_json',)
+      string consts: []
+      numeric consts: []
+  === CODE: run_network_sweep_final_broader  args=() ===
+    DOCSTRING: "The rest of network_sweep_final's OFAT topology sweep (e5/e9/e17 x pos0/pos50/pos100,\n    150 replicates) -- e13_pos100 was scored separately by run_network_sweep_e13 above."
+    names (globals/attrs used): ('ROOT', 'sorted', 'glob', 'print', 'len', 'pd', 'DataFrame', 'to_csv', 'HERE', 'todo4v2_old_auprc_x', 'mean', 'todo4v2_new_auprc_x', 'todo4v2_nogate_auprc_x')
+    string consts: ["The rest of network_sweep_final's OFAT topology sweep (e5/e9/e17 x pos0/pos50/pos100,\n    150 replicates) -- e13_pos100 was scored separately by run_network_sweep_e13 above.", '/analysis_data/network_sweep_final/twinfer_inference_allpairs', '/*_all_results.json', 'network_sweep_final (broader OFAT sweep): ', ' files', '/todo4v2_network_sweep_final_broader_results.csv', '\nmean todo4v2_old=', '.3f', 'x  todo4v2_new=', 'x  todo4v2_nogate=', 'x  (n=', '/', ' usable)']
+    numeric consts: []
+    === CODE: <lambda>  args=('d',) ===
+      names (globals/attrs used): ('get',)
+      string consts: ['ground_truth_matrix']
+      numeric consts: []
+    === CODE: <genexpr>  args=('.0',) ===
+      names (globals/attrs used): ('score_one_json',)
+      string consts: []
+      numeric consts: []
+  === CODE: run_mixed_network_sweep  args=() ===
+    names (globals/attrs used): ('ROOT', 'sorted', 'glob', 'print', 'len', 'pd', 'DataFrame', 'to_csv', 'HERE', '_competitor_summary', 'todo4v2_old_auprc_x', 'mean', 'todo4v2_new_auprc_x')
+    string consts: ['/analysis_data/mixed_network_sweep/twinfer_inference_allpairs', '/input_data/mixed_network_sweep', '/analysis_data/mixed_network_sweep/beeline_analysis_output.csv', '/*_all_results.json', 'mixed_network_sweep: ', ' files', '/todo4v2_mixed_network_sweep_results.csv', '\nmean todo4v2_old=', '.3f', 'x  todo4v2_new=', 'x  (n=', '/', ' usable)', 'best competitor (raw AUPRC, not x-random): ', '=']
+    numeric consts: []
+    === CODE: <lambda>  args=('d',) ===
+      names (globals/attrs used): ('get',)
+      string consts: ['/', 'dataset_id', '.txt']
+      numeric consts: []
+    === CODE: <genexpr>  args=('.0',) ===
+      names (globals/attrs used): ('score_one_json',)
+      string consts: []
+      numeric consts: []
+  === CODE: run_real_networks  args=() ===
+    DOCSTRING: "Ground truth: each JSON's own base_config path (not persisted directly in the current\n    infer_real_network_allpairs.py record) -- reconstruct via the same NETWORKS/topology mapping\n    that script uses, keyed off sim_type."
+    names (globals/attrs used): ('ROOT', 'sorted', 'glob', 'print', 'len', 'pd', 'DataFrame', 'to_csv', 'HERE', 'to_string', 'todo4v2_old_auprc_x', 'mean', 'todo4v2_new_auprc_x')
+    string consts: ['/analysis_data/paper_analysis/real_networks/twinfer_inference_allpairs', '/input_data/real_world_networks', 'GSD.txt', 'HSC.txt', 'VSC.txt', 'mCAD.txt', 'B_cell.txt', 'circadian.txt', 'EMT.txt', 'Pluripotent.txt', '/*_all_results.json', 'real_networks: ', ' files', '/todo4v2_real_networks_results.csv', '\nmean todo4v2_old=', '.3f', 'x  todo4v2_new=', 'x  (n=', '/', ' usable)', '(no precomputed BEELINE competitor CSV found for real_networks -- reporting vs random only)']
+    numeric consts: []
+    === CODE: <lambda>  args=('d',) ===
+      names (globals/attrs used): ('get',)
+      string consts: ['/', 'sim_type', '']
+      numeric consts: []
+    === CODE: <genexpr>  args=('.0',) ===
+      names (globals/attrs used): ('score_one_json',)
+      string consts: []
+      numeric consts: []

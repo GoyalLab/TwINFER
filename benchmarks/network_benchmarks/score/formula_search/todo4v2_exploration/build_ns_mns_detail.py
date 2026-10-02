@@ -5,7 +5,7 @@ import re
 import pandas as pd
 
 # [2026-09-30 commented out: result files now in clean_data/, see REPOINT_LOG.tsv] BENCH = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark'
-BENCH = f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+BENCH = f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 
 
 def topo_group_ns(ds):

@@ -20,9 +20,9 @@ import matplotlib.colors as mcolors
 import pandas as pd
 
 # [2026-09-30 commented out: HERE was the original code directory and is used only for outputs; results now go to clean_data/, see REPOINT_LOG.tsv] HERE = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark'
-HERE = f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+HERE = f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] DF = pd.read_csv(f"{HERE}/summary_metrics_table_network_sweep_t1_1.csv")
-DF = pd.read_csv(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/summary_metrics_table_network_sweep_t1_1.csv")
+DF = pd.read_csv(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/summary_metrics_table_network_sweep_t1_1.csv")
 
 GROUPS = [
     ("Network density", [("5 edges", "grn_n6_e5_pos100_density"),
@@ -172,10 +172,10 @@ def render():
 def main():
     fig = render()
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] fig.savefig(f"{HERE}/heatmap_network_sweep.pdf", format="pdf", bbox_inches="tight")
-    fig.savefig(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/heatmap_network_sweep.pdf", format="pdf", bbox_inches="tight")
+    fig.savefig(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/heatmap_network_sweep.pdf", format="pdf", bbox_inches="tight")
     fig2 = render()
     # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] fig2.savefig(f"{HERE}/heatmap_network_sweep.png", format="png", dpi=200, bbox_inches="tight")
-    fig2.savefig(f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/heatmap_network_sweep.png", format="png", dpi=200, bbox_inches="tight")
+    fig2.savefig(f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/heatmap_network_sweep.png", format="png", dpi=200, bbox_inches="tight")
     print("wrote heatmap_network_sweep.pdf / .png")
 
 

@@ -23,7 +23,7 @@ from sklearn.metrics import auc, precision_recall_curve
 
 ROOT = f'{TWINFER_PROJECT_ROOT}'
 # [2026-09-30 commented out: HERE was the original code directory and is used only for outputs; results now go to clean_data/, see REPOINT_LOG.tsv] HERE = f'{TWINFER_PROJECT_ROOT}/code/TwINFER/work_in_progress/benchmark'
-HERE = f'{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results'
+HERE = f'{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results'
 UNSIGNED_ALGOS = ["GENIE3", "GRNBOOST2", "PIDC", "SCODE"]
 NATIVE_SIGNED_ALGOS = ["PEARSON", "PPCOR", "SCSGL"]
 
@@ -191,22 +191,22 @@ def main():
         f"{ROOT}/analysis_data/network_sweep_final/beeline_gmm_analysis_output.csv",
         lambda ds: f"{ROOT}/input_data/network_sweep_final/{ds}.txt",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/todo4v2_network_sweep_final_broader_results.csv",
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_final_broader_results.csv",
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_network_sweep_final_broader_results.csv",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/crosscorr_network_sweep_final_broader_results.csv",
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/crosscorr_network_sweep_final_broader_results.csv",
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/crosscorr_network_sweep_final_broader_results.csv",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/signed_network_sweep_final_results.csv")
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/signed_network_sweep_final_results.csv")
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/signed_network_sweep_final_results.csv")
 
     run("mixed_network_sweep",
         f"{ROOT}/analysis_data/mixed_network_sweep/beeline_inference",
         f"{ROOT}/analysis_data/mixed_network_sweep/beeline_analysis_output.csv",
         lambda ds: f"{ROOT}/input_data/mixed_network_sweep/{ds}.txt",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/todo4v2_mixed_network_sweep_results.csv",
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_mixed_network_sweep_results.csv",
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_mixed_network_sweep_results.csv",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/crosscorr_mixed_network_sweep_results.csv",
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/crosscorr_mixed_network_sweep_results.csv",
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/crosscorr_mixed_network_sweep_results.csv",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/signed_mixed_network_sweep_results.csv")
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/signed_mixed_network_sweep_results.csv")
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/signed_mixed_network_sweep_results.csv")
 
     TOPO_MAP = {"GSD": "GSD.txt", "HSC": "HSC.txt", "VSC": "VSC.txt", "mCAD": "mCAD.txt",
                 "B_cell_activation": "B_cell.txt", "Circadian_cycle": "circadian.txt",
@@ -223,11 +223,11 @@ def main():
         f"{ROOT}/analysis_data/paper_analysis/real_networks/beeline_scores.csv",
         real_gt_resolver,
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/todo4v2_real_networks_results.csv",
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/todo4v2_real_networks_results.csv",
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/todo4v2_real_networks_results.csv",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/crosscorr_real_networks_results.csv",
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/crosscorr_real_networks_results.csv",
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/crosscorr_real_networks_results.csv",
         # [2026-09-30 commented out: result file now in clean_data/, see REPOINT_LOG.tsv] f"{HERE}/signed_real_networks_results.csv")
-        f"{TWINFER_PROJECT_ROOT}/clean_data/benchmarks/network_benchmarks/score_results/signed_real_networks_results.csv")
+        f"{TWINFER_PROJECT_ROOT}/analysis_data/benchmarks/network_benchmarks/score_results/signed_real_networks_results.csv")
 
 
 if __name__ == "__main__":
