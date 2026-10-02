@@ -1,0 +1,1209 @@
+diff --git a/BLRun/genie3Runner.py b/BLRun/genie3Runner.py
+index 238b23b4..c3924110 100644
+--- a/BLRun/genie3Runner.py
++++ b/BLRun/genie3Runner.py
+@@ -1,8 +1,22 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ 
+ from BLRun.runner import Runner
+ 
++# GENIE3 runs natively via the arboreto Python package rather than through
++# Docker, which isn't available on this HPC cluster. arboreto/pandas/distributed
++# are installed in the "grnboost310" conda env, mirroring what the
++# grnbeeline/arboreto:base image installs via `conda install -c bioconda arboreto pandas`.
++_REPO_ROOT       = Path(__file__).resolve().parent.parent
++_ARBORETO_SCRIPT = _REPO_ROOT / "Algorithms" / "ARBORETO" / "runArboreto.py"
++# Invoked by absolute path rather than `conda run -n grnboost310`: this host
++# has more than one conda installation, and name-based env resolution can
++# silently pick up the wrong one (or fail to find pandas at all) depending on
++# which install's `conda` binary is first on PATH for a given shell/node.
++_ENV_PYTHON      = Path.home() / ".conda" / "envs" / "grnboost310" / "bin" / "python"
++
+ 
+ class GENIE3Runner(Runner):
+     """Concrete runner for the GENIE3 GRN inference algorithm."""
+@@ -30,13 +44,10 @@ class GENIE3Runner(Runner):
+         Function to run GENIE3 algorithm
+         '''
+ 
+-        cmdToRun = ' '.join(['docker run --rm',
+-                            f"-v {self.working_dir}:/usr/working_dir",
+-                            '--expose=41269',
+-                            f'{self.image} /bin/sh -c \"time -v -o',
+-                            "/usr/working_dir/time.txt",
+-                            'python runArboreto.py --algo=GENIE3',
+-                            '--inFile=/usr/working_dir/ExpressionData.csv', '--outFile=/usr/working_dir/outFile.txt', '\"'])
++        cmdToRun = ' '.join(["/usr/bin/time -v -o", f"{self.working_dir}/time.txt",
++                            str(_ENV_PYTHON), str(_ARBORETO_SCRIPT), "--algo=GENIE3",
++                            f"--inFile={self.working_dir}/ExpressionData.csv",
++                            f"--outFile={self.working_dir}/outFile.txt"])
+ 
+         self._run_docker(cmdToRun)
+ 
+diff --git a/BLRun/grisliRunner.py b/BLRun/grisliRunner.py
+index 17faa50e..d0cd7b55 100644
+--- a/BLRun/grisliRunner.py
++++ b/BLRun/grisliRunner.py
+@@ -1,9 +1,23 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ import numpy as np
+ 
+ from BLRun.runner import Runner
+ 
++# GRISLI runs natively via its precompiled MATLAB-Compiler binary rather than
++# through Docker, which isn't available on this HPC cluster. Quest has no
++# MATLAB Runtime R2019a (v9.6) module (the closest installed MATLAB is
++# R2018a/R2018b, then a gap straight to R2020b), so the exact MCR v9.6 was
++# self-installed into mcr_installs/v96/ from the same public, unauthenticated
++# MathWorks URL the Dockerfile uses (RUN wget ... MATLAB_Runtime_R2019a...).
++# The wrapper script (run_GRISLI.sh) is already vendored in the repo — same
++# one the Dockerfile COPYs in — and takes the MCR root as its first argument.
++_REPO_ROOT   = Path(__file__).resolve().parent.parent
++_GRISLI_DIR  = _REPO_ROOT / "Algorithms" / "GRISLI" / "runGRISLI"
++_MCR_ROOT    = _REPO_ROOT / "mcr_installs" / "v96"
++
+ 
+ class GRISLIRunner(Runner):
+     """Concrete runner for the GRISLI GRN inference algorithm."""
+@@ -53,14 +67,11 @@ class GRISLIRunner(Runner):
+         for idx in range(len(colNames)):
+             os.makedirs(str(self.working_dir / str(idx)), exist_ok = True)
+ 
+-            cmdToRun = ' '.join(['docker run --rm',
+-                                f"-v {self.working_dir}:/usr/working_dir",
+-                                f'{self.image} /bin/sh -c \"time -v -o',
+-                                "/usr/working_dir/time" + str(idx) + ".txt",
+-                                './GRISLI',
+-                                "/usr/working_dir/" + str(idx) + "/",
+-                                "/usr/working_dir/" + str(idx) + "/outFile.txt",
+-                                L, R, alphaMin, '\"'])
++            cmdToRun = ' '.join(["/usr/bin/time -v -o", f"{self.working_dir}/time{idx}.txt",
++                                str(_GRISLI_DIR / "run_GRISLI.sh"), str(_MCR_ROOT),
++                                f"{self.working_dir}/{idx}/",
++                                f"{self.working_dir}/{idx}/outFile.txt",
++                                L, R, alphaMin])
+ 
+             self._run_docker(cmdToRun, append=(idx > 0))
+ 
+diff --git a/BLRun/grnboost2Runner.py b/BLRun/grnboost2Runner.py
+index 94614a62..833acc8b 100644
+--- a/BLRun/grnboost2Runner.py
++++ b/BLRun/grnboost2Runner.py
+@@ -1,8 +1,21 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ 
+ from BLRun.runner import Runner
+ 
++# GRNBoost2 runs natively via the arboreto Python package rather than through
++# Docker, which isn't available on this HPC cluster. See genie3Runner.py for
++# details — both algorithms share the same runArboreto.py entry point and
++# conda env.
++_REPO_ROOT       = Path(__file__).resolve().parent.parent
++_ARBORETO_SCRIPT = _REPO_ROOT / "Algorithms" / "ARBORETO" / "runArboreto.py"
++# Invoked by absolute path rather than `conda run -n grnboost310` -- see
++# genie3Runner.py for why (multiple conda installations on this host make
++# name-based env resolution unreliable depending on shell/node).
++_ENV_PYTHON      = Path.home() / ".conda" / "envs" / "grnboost310" / "bin" / "python"
++
+ 
+ class GRNBoost2Runner(Runner):
+     """Concrete runner for the GRNBoost2 GRN inference algorithm."""
+@@ -29,13 +42,10 @@ class GRNBoost2Runner(Runner):
+         Function to run GRNBOOST2 algorithm
+         '''
+ 
+-        cmdToRun = ' '.join(['docker run --rm',
+-                            f"-v {self.working_dir}:/usr/working_dir",
+-                            '--expose=41269',
+-                            f'{self.image} /bin/sh -c \"time -v -o',
+-                            "/usr/working_dir/time.txt",
+-                            'python runArboreto.py --algo=GRNBoost2',
+-                            '--inFile=/usr/working_dir/ExpressionData.csv', '--outFile=/usr/working_dir/outFile.txt', '\"'])
++        cmdToRun = ' '.join(["/usr/bin/time -v -o", f"{self.working_dir}/time.txt",
++                            str(_ENV_PYTHON), str(_ARBORETO_SCRIPT), "--algo=GRNBoost2",
++                            f"--inFile={self.working_dir}/ExpressionData.csv",
++                            f"--outFile={self.working_dir}/outFile.txt"])
+ 
+         self._run_docker(cmdToRun)
+ 
+diff --git a/BLRun/grnvbemRunner.py b/BLRun/grnvbemRunner.py
+index 0c1c467d..72776669 100644
+--- a/BLRun/grnvbemRunner.py
++++ b/BLRun/grnvbemRunner.py
+@@ -1,8 +1,21 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ 
+ from BLRun.runner import Runner
+ 
++# GRNVBEM runs natively via its precompiled MATLAB-Compiler binary rather
++# than through Docker, which isn't available on this HPC cluster. Quest has
++# no MATLAB Runtime R2019a (v9.6) module, so the exact MCR v9.6 was
++# self-installed into mcr_installs/v96/ from the same public, unauthenticated
++# MathWorks URL the Dockerfile uses (shared with GRISLI/JUMP3). The wrapper
++# script (run_GRNVBEM.sh) is already vendored in the repo and takes the MCR
++# root as its first argument.
++_REPO_ROOT    = Path(__file__).resolve().parent.parent
++_GRNVBEM_DIR  = _REPO_ROOT / "Algorithms" / "GRNVBEM" / "VBEM"
++_MCR_ROOT     = _REPO_ROOT / "mcr_installs" / "v96"
++
+ 
+ class GRNVBEMRunner(Runner):
+     """Concrete runner for the GRN-VBEM GRN inference algorithm."""
+@@ -50,13 +63,10 @@ class GRNVBEMRunner(Runner):
+ 
+         colNames = PTData.columns
+         for idx in range(len(colNames)):
+-            cmdToRun = ' '.join(['docker run --rm',
+-                                f"-v {self.working_dir}:/usr/working_dir",
+-                                f'{self.image} /bin/sh -c \"time -v -o',
+-                                "/usr/working_dir/time" + str(idx) + ".txt",
+-                                './GRNVBEM',
+-                                "/usr/working_dir/ExpressionData" + str(idx) + ".csv",
+-                                "/usr/working_dir/outFile" + str(idx) + ".txt", '\"'])
++            cmdToRun = ' '.join(["/usr/bin/time -v -o", f"{self.working_dir}/time{idx}.txt",
++                                str(_GRNVBEM_DIR / "run_GRNVBEM.sh"), str(_MCR_ROOT),
++                                f"{self.working_dir}/ExpressionData{idx}.csv",
++                                f"{self.working_dir}/outFile{idx}.txt"])
+ 
+             self._run_docker(cmdToRun, append=(idx > 0))
+ 
+diff --git a/BLRun/jump3Runner.py b/BLRun/jump3Runner.py
+index 647081fb..8ed9fe2e 100644
+--- a/BLRun/jump3Runner.py
++++ b/BLRun/jump3Runner.py
+@@ -1,9 +1,22 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ import numpy as np
+ 
+ from BLRun.runner import Runner
+ 
++# JUMP3 runs natively via its precompiled MATLAB-Compiler binary rather than
++# through Docker, which isn't available on this HPC cluster. Quest has no
++# MATLAB Runtime R2019a (v9.6) module (the closest installed MATLAB is
++# R2018a/R2018b, then a gap straight to R2020b), so the exact MCR v9.6 was
++# self-installed into mcr_installs/v96/ from the same public, unauthenticated
++# MathWorks URL the Dockerfile uses. The wrapper script (run_runJump3.sh) is
++# already vendored in the repo and takes the MCR root as its first argument.
++_REPO_ROOT  = Path(__file__).resolve().parent.parent
++_JUMP3_DIR  = _REPO_ROOT / "Algorithms" / "JUMP3" / "J3p"
++_MCR_ROOT   = _REPO_ROOT / "mcr_installs" / "v96"
++
+ 
+ class JUMP3Runner(Runner):
+     """Concrete runner for the JUMP3 GRN inference algorithm."""
+@@ -11,33 +24,47 @@ class JUMP3Runner(Runner):
+     def generateInputs(self):
+         '''
+         Function to generate desired inputs for JUMP3.
+-        If the folder/files under self.input_dir exist,
+-        this function will not do anything.
++
++        Splits into one input file per pseudotime trajectory (column in
++        PseudoTime.csv), matching the pattern used by the other multi-
++        trajectory runners (GRISLI, SCODE, etc.). The original version
++        assumed a single column literally named 'PseudoTime', which does
++        not exist for multi-trajectory datasets like the GSD example
++        (columns are 'PseudoTime1'/'PseudoTime2') and raised a KeyError.
++
++        Cells are written in ascending pseudotime order (matching the
++        sort_values pattern already used by LEAP/GRNVBEM) because JUMP3
++        requires the first row of each time series to be at time 0 — it
++        does not re-sort by the Time column itself.
+         '''
+ 
+-        # Create ExpressionData.csv file in the created input directory
+-        JUMP3_EXPRESSION_FILE = self.working_dir / "ExpressionData.csv"
+-        if not JUMP3_EXPRESSION_FILE.exists():
+-            ExpressionData = pd.read_csv(self.input_dir / self.exprData,
++        ExpressionData = pd.read_csv(self.input_dir / self.exprData,
+                                          header = 0, index_col = 0)
+-            newExpressionData = ExpressionData.T.copy()
+-            PTData = pd.read_csv(self.input_dir / self.pseudoTimeData,
+-                                 header = 0, index_col = 0)
+-            # make sure the indices are strings for both dataframes
++        PTData = pd.read_csv(self.input_dir / self.pseudoTimeData,
++                             header = 0, index_col = 0)
++
++        colNames = PTData.columns
++        for idx in range(len(colNames)):
++            colName = colNames[idx]
++            index = PTData[colName].index[PTData[colName].notnull()]
++            # Sort ascending by pseudotime so the first written row is the
++            # earliest time point (see docstring above).
++            index = PTData.loc[index, colName].sort_values().index
++
++            newExpressionData = ExpressionData.loc[:,index].T.copy()
+             newExpressionData.index = newExpressionData.index.map(str)
+-            PTData.index = PTData.index.map(str)
++
++            subPT = PTData.loc[index, colName]
++            subPT.index = subPT.index.map(str)
++
+             # Acc. to JUMP3:
+             # In input argument Time, the first time point of each time series must be 0.
+-            # Also has to be an integer!
+-            newExpressionData['Time'] = PTData['PseudoTime']-PTData['PseudoTime'].min()
+-            if 'Experiment' in PTData:
+-                newExpressionData['Experiment'] = PTData['Experiment']
+-            else:
+-                # generate it from cell number Ex_y, where x is experiment number
+-                #newExpressionData['Experiment'] = [int(x.split('_')[0].strip('E')) for x in PTData.index.astype(str)]
+-                newExpressionData['Experiment'] = 1
+-
+-            newExpressionData.to_csv(JUMP3_EXPRESSION_FILE,
++            # Also has to be an integer! (JUMP3's MATLAB code uses Time as an
++            # array-size argument, so continuous pseudotime must be rounded.)
++            newExpressionData['Time'] = np.round(subPT - subPT.min()).astype(int)
++            newExpressionData['Experiment'] = 1
++
++            newExpressionData.to_csv(self.working_dir / f"ExpressionData{idx}.csv",
+                                  sep = ',', header  = True, index = False)
+ 
+     def run(self):
+@@ -45,44 +72,58 @@ class JUMP3Runner(Runner):
+         Function to run JUMP3 algorithm
+         '''
+ 
+-        cmdToRun = ' '.join(['docker run --rm',
+-                            f"-v {self.working_dir}:/usr/working_dir",
+-                            f'{self.image} /bin/sh -c \"time -v -o',
+-                            "/usr/working_dir/time.txt",
+-                            './runJump3',
+-                            "/usr/working_dir/ExpressionData.csv", "/usr/working_dir/outFile.txt", '\"'])
++        PTData = pd.read_csv(self.input_dir / self.pseudoTimeData,
++                             header = 0, index_col = 0)
++        colNames = PTData.columns
+ 
+-        self._run_docker(cmdToRun)
++        for idx in range(len(colNames)):
++            cmdToRun = ' '.join(["/usr/bin/time -v -o", f"{self.working_dir}/time{idx}.txt",
++                                str(_JUMP3_DIR / "run_runJump3.sh"), str(_MCR_ROOT),
++                                f"{self.working_dir}/ExpressionData{idx}.csv",
++                                f"{self.working_dir}/outFile{idx}.txt"])
++
++            self._run_docker(cmdToRun, append=(idx > 0))
+ 
+     def parseOutput(self):
+         '''
+         Function to parse outputs from JUMP3.
+         '''
+         workDir = self.working_dir
+-        outFile = workDir / 'outFile.txt'
+-
+-        # Quit if output file does not exist
+-        if not outFile.exists():
+-            print(str(outFile) + ' does not exist, skipping...')
+-            return
+ 
+-        # Read output
+-        OutDF = pd.read_csv(outFile, sep = ',')
++        PTData = pd.read_csv(self.input_dir / self.pseudoTimeData,
++                             header = 0, index_col = 0)
++        colNames = PTData.columns
++        OutSubDF = [0]*len(colNames)
+ 
+-        # Sort values in a matrix using code from:
+-        # https://stackoverflow.com/questions/21922806/sort-values-of-matrix-in-python
+-        OutMatrix = np.abs(OutDF.values)
+-        idx = np.argsort(OutMatrix, axis = None)[::-1]
+-        rows, cols = np.unravel_index(idx, OutDF.shape)
+-        DFSorted = OutMatrix[rows, cols]
+-
+-        # read input file for list of gene names
+-        ExpressionData = pd.read_csv(self.input_dir / 'ExpressionData.csv',
++        ExpressionData = pd.read_csv(self.input_dir / self.exprData,
+                                          header = 0, index_col = 0)
+         GeneList = list(ExpressionData.index)
+ 
+-        self._write_ranked_edges(pd.DataFrame({
+-            'Gene1':      [GeneList[r] for r in rows],
+-            'Gene2':      [GeneList[c] for c in cols],
+-            'EdgeWeight': DFSorted,
+-        }))
++        for indx in range(len(colNames)):
++            outFile = workDir / f'outFile{indx}.txt'
++            if not outFile.exists():
++                print(str(outFile) + ' does not exist, skipping...')
++                return
++
++            # Read output
++            OutDF = pd.read_csv(outFile, sep = ',')
++
++            # Sort values in a matrix using code from:
++            # https://stackoverflow.com/questions/21922806/sort-values-of-matrix-in-python
++            OutMatrix = np.abs(OutDF.values)
++            idx = np.argsort(OutMatrix, axis = None)[::-1]
++            rows, cols = np.unravel_index(idx, OutDF.shape)
++            DFSorted = OutMatrix[rows, cols]
++
++            OutSubDF[indx] = pd.DataFrame({
++                'Gene1':      [GeneList[r] for r in rows],
++                'Gene2':      [GeneList[c] for c in cols],
++                'EdgeWeight': DFSorted,
++            })
++
++        outDF = pd.concat(OutSubDF)
++        # megre the dataframe by taking the maximum value from each DF
++        res = outDF[outDF['EdgeWeight'] == outDF.groupby(['Gene1','Gene2'])['EdgeWeight'].transform('max')]
++        finalDF = res.sort_values('EdgeWeight', ascending=False)
++
++        self._write_ranked_edges(finalDF[['Gene1', 'Gene2', 'EdgeWeight']])
+\ No newline at end of file
+diff --git a/BLRun/leapRunner.py b/BLRun/leapRunner.py
+index 23cbfd77..6af65083 100644
+--- a/BLRun/leapRunner.py
++++ b/BLRun/leapRunner.py
+@@ -1,9 +1,19 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ import numpy as np
+ 
+ from BLRun.runner import Runner
+ 
++# LEAP runs natively via R (module load R/4.2.3 on Quest) rather than through
++# Docker, which isn't available on this HPC cluster. The LEAP CRAN package is
++# installed into a project-local R library (r_lib/), mirroring what the
++# grnbeeline/leap:base image installs from the same CRAN Archive URL.
++_REPO_ROOT    = Path(__file__).resolve().parent.parent
++_LEAP_SCRIPT  = _REPO_ROOT / "Algorithms" / "LEAP" / "runLeap.R"
++_R_LIBS_USER  = _REPO_ROOT / "r_lib"
++
+ 
+ class LEAPRunner(Runner):
+     """Concrete runner for the LEAP GRN inference algorithm."""
+@@ -53,14 +63,18 @@ class LEAPRunner(Runner):
+ 
+         colNames = PTData.columns
+         for idx in range(len(colNames)):
+-            cmdToRun = ' '.join(['docker run --rm',
+-                                f"-v {self.working_dir}:/usr/working_dir",
+-                                f'{self.image} /bin/sh -c \"time -v -o',
+-                                "/usr/working_dir/time" + str(idx) + ".txt",
+-                                'Rscript runLeap.R',
+-                                "/usr/working_dir/ExpressionData" + str(idx) + ".csv",
+-                                maxLag,
+-                                "/usr/working_dir/outFile" + str(idx) + ".txt", '\"'])
++            inner = ' '.join([f"R_LIBS_USER={_R_LIBS_USER}",
++                              "/usr/bin/time -v -o", f"{self.working_dir}/time{idx}.txt",
++                              "Rscript", str(_LEAP_SCRIPT),
++                              f"{self.working_dir}/ExpressionData{idx}.csv",
++                              maxLag,
++                              f"{self.working_dir}/outFile{idx}.txt"])
++            # bash -lc ensures Lmod's `module` function is available and that
++            # module-provided R takes priority over any R bundled in a conda
++            # env BLRunner.py might itself be running under (BEELINE's
++            # environment.yml pins an old r=3.5.0, which otherwise silently
++            # shadows the module's Rscript on PATH).
++            cmdToRun = f'bash -lc "module load R/4.2.3 && {inner}"'
+ 
+             self._run_docker(cmdToRun, append=(idx > 0))
+ 
+diff --git a/BLRun/pearsonRunner.py b/BLRun/pearsonRunner.py
+index 35f349ad..399970b0 100644
+--- a/BLRun/pearsonRunner.py
++++ b/BLRun/pearsonRunner.py
+@@ -1,4 +1,6 @@
++import numpy as np
+ import pandas as pd
++from scipy.stats import pearsonr
+ 
+ from BLRun.runner import Runner
+ 
+@@ -23,16 +25,21 @@ class PearsonRunner(Runner):
+ 
+     def run(self):
+         '''
+-        Computes pairwise Pearson correlation between all gene pairs.
++        Computes pairwise Pearson correlation (and its p-value) between all gene pairs.
+         Each gene's expression is first normalized by its maximum expression value
+         across all cells, bringing values into the range [0, 1] for non-negative data.
+         Genes with zero maximum expression are left unnormalized (divisor replaced with 1).
+-        Writes the full (genes x genes) correlation matrix to working_dir/outFile.txt.
++        Writes the full (genes x genes) correlation matrix to working_dir/outFile.txt, and
++        the per-pair significance test (scipy.stats.pearsonr's two-sided p-value, standard
++        t-distribution test on the correlation) to working_dir/pvalues.txt -- same long-format
++        Gene1/Gene2/PValue convention as PPCOR's outFile.txt, for scoring-time consumers
++        (e.g. benchmark_network_sweep.ipynb's natural-threshold metric) to read directly.
+ 
+         :param self.input_dir: Path — directory containing expression data
+         :param self.exprData: str — CSV filename; rows = genes, columns = cells
+-        :param self.working_dir: Path — output location for outFile.txt
++        :param self.working_dir: Path — output location for outFile.txt/pvalues.txt
+         :output working_dir/outFile.txt: tab-separated (genes x genes) correlation matrix
++        :output working_dir/pvalues.txt: tab-separated Gene1, Gene2, PValue (both directions)
+         '''
+         # Read expression data: rows = genes, columns = cells
+         ExpressionData = pd.read_csv(
+@@ -45,11 +52,24 @@ class PearsonRunner(Runner):
+         max_per_gene = ExpressionData.max(axis=1).replace(0, 1)
+         normalized = ExpressionData.div(max_per_gene, axis=0)
+ 
+-        # Transpose to (cells x genes) so .corr() produces a (genes x genes) matrix.
+-        corr = normalized.T.corr(method='pearson')
+-
++        genes = normalized.index.tolist()
++        n = len(genes)
++        corr_matrix = np.eye(n)
++        pvalue_rows = []
++        for i in range(n):
++            row_i = normalized.iloc[i].values
++            for j in range(i + 1, n):
++                r, p = pearsonr(row_i, normalized.iloc[j].values)
++                corr_matrix[i, j] = corr_matrix[j, i] = r
++                pvalue_rows.append({'Gene1': genes[i], 'Gene2': genes[j], 'PValue': p})
++                pvalue_rows.append({'Gene1': genes[j], 'Gene2': genes[i], 'PValue': p})
++
++        corr = pd.DataFrame(corr_matrix, index=genes, columns=genes)
+         corr.to_csv(self.working_dir / 'outFile.txt', sep='\t')
+ 
++        pd.DataFrame(pvalue_rows, columns=['Gene1', 'Gene2', 'PValue']).to_csv(
++            self.working_dir / 'pvalues.txt', sep='\t', index=False)
++
+     def parseOutput(self):
+         '''
+         Reads the gene x gene correlation matrix from working_dir/outFile.txt and
+diff --git a/BLRun/pidcRunner.py b/BLRun/pidcRunner.py
+index d7a16323..8b28873a 100644
+--- a/BLRun/pidcRunner.py
++++ b/BLRun/pidcRunner.py
+@@ -1,8 +1,18 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ 
+ from BLRun.runner import Runner
+ 
++# PIDC runs natively via Julia (module load julia/1.10.2 on Quest) rather than
++# through Docker, which isn't available on this HPC cluster. NetworkInference
++# and LightGraphs are installed into JULIA_DEPOT below, mirroring what the
++# grnbeeline/pidc:base image installs via Algorithms/PIDC/installPackages.jl.
++_REPO_ROOT   = Path(__file__).resolve().parent.parent
++_PIDC_SCRIPT = _REPO_ROOT / "Algorithms" / "PIDC" / "runPIDC.jl"
++_JULIA_DEPOT = _REPO_ROOT / "julia_depot"
++
+ 
+ class PIDCRunner(Runner):
+     """Concrete runner for the PIDC GRN inference algorithm."""
+@@ -19,6 +29,21 @@ class PIDCRunner(Runner):
+         if not PIDC_EXPRESSION_FILE.exists():
+             ExpressionData = pd.read_csv(self.input_dir / self.exprData,
+                                          header = 0, index_col = 0)
++
++            # A zero-variance (constant across every cell) gene breaks
++            # InformationMeasures.jl's bin-width calculation in get_bin_ids!
++            # (ArgumentError: indexed assignment with a single value to
++            # possibly many locations is not supported) -- a degenerate range
++            # for a discretizer that assumes some spread. Drop such genes
++            # before handing PIDC the expression matrix; they carry no mutual
++            # information with anything else anyway, so this only removes
++            # genes PIDC could never have scored an edge for regardless.
++            constant_genes = ExpressionData.index[ExpressionData.nunique(axis=1) <= 1]
++            if len(constant_genes) > 0:
++                print(f"PIDC: dropping {len(constant_genes)} zero-variance gene(s): "
++                      f"{list(constant_genes)}")
++                ExpressionData = ExpressionData.drop(index=constant_genes)
++
+             ExpressionData.to_csv(PIDC_EXPRESSION_FILE,
+                                  sep = '\t', header  = True, index = True)
+ 
+@@ -27,12 +52,10 @@ class PIDCRunner(Runner):
+         Function to run PIDC algorithm
+         '''
+ 
+-        cmdToRun = ' '.join(['docker run --rm',
+-                            f"-v {self.working_dir}:/usr/working_dir",
+-                            f'{self.image} /bin/sh -c \"time -v -o',
+-                            "/usr/working_dir/time.txt",
+-                            'julia runPIDC.jl',
+-                            "/usr/working_dir/ExpressionData.csv", "/usr/working_dir/outFile.txt", '\"'])
++        cmdToRun = ' '.join([f"JULIA_DEPOT_PATH={_JULIA_DEPOT}",
++                            "time -v -o", f"{self.working_dir}/time.txt",
++                            "julia", str(_PIDC_SCRIPT),
++                            f"{self.working_dir}/ExpressionData.csv", f"{self.working_dir}/outFile.txt"])
+ 
+         self._run_docker(cmdToRun)
+ 
+diff --git a/BLRun/ppcorRunner.py b/BLRun/ppcorRunner.py
+index 7a72dd4d..a139cfc6 100644
+--- a/BLRun/ppcorRunner.py
++++ b/BLRun/ppcorRunner.py
+@@ -1,8 +1,17 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ 
+ from BLRun.runner import Runner
+ 
++# PPCOR runs natively via R (module load R/4.2.3 on Quest) rather than through
++# Docker, which isn't available on this HPC cluster. The ppcor CRAN package is
++# installed into a project-local R library (r_lib/), shared with LEAP.
++_REPO_ROOT     = Path(__file__).resolve().parent.parent
++_PPCOR_SCRIPT  = _REPO_ROOT / "Algorithms" / "PPCOR" / "runPPCOR.R"
++_R_LIBS_USER   = _REPO_ROOT / "r_lib"
++
+ 
+ class PPCORRunner(Runner):
+     """Concrete runner for the PPCOR GRN inference algorithm."""
+@@ -31,12 +40,16 @@ class PPCORRunner(Runner):
+         Function to run PPCOR algorithm
+         '''
+ 
+-        cmdToRun = ' '.join(['docker run --rm',
+-                            f"-v {self.working_dir}:/usr/working_dir",
+-                            f'{self.image} /bin/sh -c \"time -v -o',
+-                            "/usr/working_dir/time.txt",
+-                            'Rscript runPPCOR.R',
+-                            "/usr/working_dir/ExpressionData.csv", "/usr/working_dir/outFile.txt", '\"'])
++        inner = ' '.join([f"R_LIBS_USER={_R_LIBS_USER}",
++                          "/usr/bin/time -v -o", f"{self.working_dir}/time.txt",
++                          "Rscript", str(_PPCOR_SCRIPT),
++                          f"{self.working_dir}/ExpressionData.csv", f"{self.working_dir}/outFile.txt"])
++        # bash -lc ensures Lmod's `module` function is available and that
++        # module-provided R takes priority over any R bundled in a conda env
++        # BLRunner.py might itself be running under (BEELINE's environment.yml
++        # pins an old r=3.5.0, which otherwise silently shadows the module's
++        # Rscript on PATH).
++        cmdToRun = f'bash -lc "module load R/4.2.3 && {inner}"'
+ 
+         # Run command
+         self._run_docker(cmdToRun)
+@@ -53,19 +66,15 @@ class PPCORRunner(Runner):
+             print(str(outFile) + ' does not exist, skipping...')
+             return
+ 
+-        # Read output
++        # Read output. EdgeWeight is the raw corVal for every pair, unthresholded --
++        # same convention as every other algorithm's rankedEdges.csv. The p-value-based
++        # significance decision belongs to scoring-time consumers (e.g. the natural-
++        # threshold metric in benchmark_network_sweep.ipynb), which read `pValue`
++        # straight from this same outFile.txt rather than from a pre-filtered EdgeWeight.
+         OutDF = pd.read_csv(outFile, sep = '\t', header = 0)
+-        # edges with significant p-value
+-        part1 = OutDF.loc[OutDF['pValue'] <= float(self.params['pVal'])]
+-        part1 = part1.assign(absCorVal = part1['corVal'].abs())
+-        # edges without significant p-value
+-        part2 = OutDF.loc[OutDF['pValue'] > float(self.params['pVal'])]
+-
+-        part1_sorted = part1.sort_values('absCorVal', ascending=False)
+-        part2_out = part2[['Gene1', 'Gene2']].copy()
+-        part2_out['EdgeWeight'] = 0.0
+-
+-        self._write_ranked_edges(pd.concat([
+-            part1_sorted[['Gene1', 'Gene2']].assign(EdgeWeight=part1_sorted['corVal']),
+-            part2_out,
+-        ], ignore_index=True)[['Gene1', 'Gene2', 'EdgeWeight']])
++        OutDF = OutDF.assign(absCorVal = OutDF['corVal'].abs())
++        OutDF = OutDF.sort_values('absCorVal', ascending=False)
++
++        self._write_ranked_edges(
++            OutDF[['Gene1', 'Gene2']].assign(EdgeWeight=OutDF['corVal'])[['Gene1', 'Gene2', 'EdgeWeight']]
++        )
+diff --git a/BLRun/scodeRunner.py b/BLRun/scodeRunner.py
+index a187cabf..6d1f3c95 100644
+--- a/BLRun/scodeRunner.py
++++ b/BLRun/scodeRunner.py
+@@ -1,9 +1,23 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ import numpy as np
+ 
+ from BLRun.runner import Runner
+ 
++# SCODE runs natively via R (module load R/4.2.3) + Ruby (module load
++# ruby/3.1.0-gcc-4.8.5) rather than through Docker, which isn't available on
++# this HPC cluster. The MASS CRAN package is installed into the shared
++# project-local r_lib/. SCODE's own source isn't vendored by BEELINE — the
++# Dockerfile clones it from GitHub at a pinned commit at build time — so it's
++# cloned the same way into Algorithms/SCODE/SCODE_src/. run_R.rb invokes
++# SCODE.R/averageA.R via relative paths, so it must be run with that
++# directory as cwd (mirroring the Dockerfile's WORKDIR /SCODE/).
++_REPO_ROOT    = Path(__file__).resolve().parent.parent
++_SCODE_SRC    = _REPO_ROOT / "Algorithms" / "SCODE" / "SCODE_src"
++_R_LIBS_USER  = _REPO_ROOT / "r_lib"
++
+ 
+ class SCODERunner(Runner):
+     """Concrete runner for the SCODE GRN inference algorithm."""
+@@ -62,17 +76,20 @@ class SCODERunner(Runner):
+             nCells = str(ExpressionData.shape[1])
+             nGenes = str(ExpressionData.shape[0])
+ 
+-            cmdToRun = ' '.join(['docker run --rm',
+-                                f'--user {os.getuid()}:{os.getgid()}',
+-                                '-e HOME=/tmp',
+-                                f"-v {self.working_dir}:/usr/working_dir",
+-                                f'{self.image} /bin/sh -c \"time -v -o',
+-                                "/usr/working_dir/time" + str(idx) + ".txt",
+-                                'ruby run_R.rb',
+-                                "/usr/working_dir/ExpressionData" + str(idx) + ".csv",
+-                                "/usr/working_dir/PseudoTime" + str(idx) + ".csv",
+-                                "/usr/working_dir/" + str(idx),
+-                                nGenes, z, nCells, nIter, nRep, '\"'])
++            inner = ' '.join([f"cd {_SCODE_SRC} &&",
++                              f"R_LIBS_USER={_R_LIBS_USER}",
++                              "/usr/bin/time -v -o", f"{self.working_dir}/time{idx}.txt",
++                              "ruby run_R.rb",
++                              f"{self.working_dir}/ExpressionData{idx}.csv",
++                              f"{self.working_dir}/PseudoTime{idx}.csv",
++                              f"{self.working_dir}/{idx}",
++                              nGenes, z, nCells, nIter, nRep])
++            # bash -lc ensures Lmod's `module` function is available and that
++            # module-provided R takes priority over any R bundled in a conda
++            # env BLRunner.py might itself be running under (BEELINE's
++            # environment.yml pins an old r=3.5.0, which otherwise silently
++            # shadows the module's Rscript that run_R.rb invokes internally).
++            cmdToRun = f'bash -lc "module load R/4.2.3 ruby/3.1.0-gcc-4.8.5 && {inner}"'
+ 
+             self._run_docker(cmdToRun, append=(idx > 0))
+ 
+diff --git a/BLRun/scribeRunner.py b/BLRun/scribeRunner.py
+index 6891b37d..17267bf0 100644
+--- a/BLRun/scribeRunner.py
++++ b/BLRun/scribeRunner.py
+@@ -1,8 +1,23 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ 
+ from BLRun.runner import Runner
+ 
++# SCRIBE runs natively via a dedicated "scribe" conda env (Bioconductor R 4.1
++# + monocle 2.22.0 + custom-built RANNinf/Scribe packages) rather than through
++# Docker, which isn't available on this HPC cluster.
++_REPO_ROOT     = Path(__file__).resolve().parent.parent
++_SCRIBE_SCRIPT = _REPO_ROOT / "Algorithms" / "SCRIBE" / "runScribe.R"
++# Invoked by absolute path rather than `conda run -p ...` -- this host has
++# more than one conda installation, and the `conda` command itself can behave
++# unreliably depending on which install's binary is first on PATH for a
++# given shell/node. Conda R builds embed their own lib dir via RPATH, so no
++# extra env vars are needed to find shared libraries at runtime.
++_CONDA_PREFIX  = _REPO_ROOT / "conda_envs" / "scribe"
++_ENV_RSCRIPT   = _CONDA_PREFIX / "bin" / "Rscript"
++
+ 
+ class SCRIBERunner(Runner):
+     """Concrete runner for the SCRIBE GRN inference algorithm."""
+@@ -70,21 +85,17 @@ class SCRIBERunner(Runner):
+             outFile = "outFile"+str(idx)+".csv"
+             timeFile = 'time'+str(idx)+".txt"
+ 
+-            cmdToRun = ' '.join(['docker run --rm',
+-                           f"-v {self.working_dir}:/usr/working_dir",
+-                           f'{self.image} /bin/sh -c \"time -v -o',
+-                           "/usr/working_dir/" + timeFile, 'Rscript runScribe.R',
+-                           '-e', "/usr/working_dir/" + exprName, '-c', "/usr/working_dir/" + cellName,
+-                           '-g', "/usr/working_dir/GeneData.csv", '-o /usr/working_dir/', '-d', delay, '-l', low,
+-                           '-m', method, '-x', fam, '--outFile ' + outFile])
++            cmdToRun = ' '.join(["/usr/bin/time -v -o", f"{self.working_dir}/{timeFile}",
++                           str(_ENV_RSCRIPT), str(_SCRIBE_SCRIPT),
++                           '-e', f"{self.working_dir}/{exprName}", '-c', f"{self.working_dir}/{cellName}",
++                           '-g', f"{self.working_dir}/GeneData.csv", '-o', f"{self.working_dir}/", '-d', delay, '-l', low,
++                           '-m', method, '-x', fam, '--outFile', outFile])
+ 
+             if str(self.params['log']) == 'True':
+                 cmdToRun += ' --log'
+             if str(self.params['ignorePT']) == 'True':
+                 cmdToRun += ' -i'
+ 
+-            cmdToRun += '\"'
+-
+             self._run_docker(cmdToRun, append=(idx > 0))
+ 
+     def parseOutput(self):
+diff --git a/BLRun/scsglRunner.py b/BLRun/scsglRunner.py
+index faa6524b..7222eb54 100644
+--- a/BLRun/scsglRunner.py
++++ b/BLRun/scsglRunner.py
+@@ -1,8 +1,26 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ 
+ from BLRun.runner import Runner
+ 
++# scSGL runs natively via a dedicated "scsgl" conda env (Python 3.8 + R 4.1 +
++# r-pcaPP together, so rpy2 can find R at runtime) rather than through Docker,
++# which isn't available on this HPC cluster.
++_REPO_ROOT      = Path(__file__).resolve().parent.parent
++_SCSGL_DIR      = _REPO_ROOT / "Algorithms" / "SCSGL"
++_SCSGL_SCRIPT   = _SCSGL_DIR / "run_scSGL.py"
++# Invoked by absolute path rather than `conda run -n scsgl` -- this host has
++# more than one conda installation, and name-based env resolution can
++# silently pick up the wrong one depending on which install's `conda` binary
++# is first on PATH for a given shell/node. R_HOME and PATH are set explicitly
++# (rather than relying on conda's activate.d hooks, which only run through
++# `conda activate`/`conda run`) so rpy2 can still find this env's bundled R.
++_ENV_PREFIX     = Path.home() / ".conda" / "envs" / "scsgl"
++_ENV_PYTHON     = _ENV_PREFIX / "bin" / "python"
++_ENV_R_HOME     = _ENV_PREFIX / "lib" / "R"
++
+ 
+ class SCSGLRunner(Runner):
+     """Concrete runner for the scSGL GRN inference algorithm."""
+@@ -43,16 +61,15 @@ class SCSGLRunner(Runner):
+         neg_density = str(self.params['neg_density'])
+         assoc = str(self.params['assoc'])
+ 
+-        cmdToRun = ' '.join(['docker run --rm',
+-                            f"-v {self.working_dir}:/usr/working_dir",
+-                            '--expose=41269',
+-                            f'{self.image} /bin/sh -c \"time -v -o',
+-                            "/usr/working_dir/time.txt", 'python run_scSGL.py',
+-                            '--expression_file=/usr/working_dir/ExpressionData.csv',
+-                            '--ground_truth_net_file=/usr/working_dir/GroundTruthNetwork.csv',
+-                            '--out_file=/usr/working_dir/outFile.txt',
+-                            '--pos_density='+pos_density, '--neg_density='+neg_density, '--assoc='+assoc,
+-                            '\"'])
++        cmdToRun = ' '.join([f"cd {_SCSGL_DIR} &&",
++                            f"R_HOME={_ENV_R_HOME}",
++                            f"PATH={_ENV_PREFIX}/bin:$PATH",
++                            "/usr/bin/time -v -o", f"{self.working_dir}/time.txt",
++                            str(_ENV_PYTHON), str(_SCSGL_SCRIPT),
++                            f"--expression_file={self.working_dir}/ExpressionData.csv",
++                            f"--ground_truth_net_file={self.working_dir}/GroundTruthNetwork.csv",
++                            f"--out_file={self.working_dir}/outFile.txt",
++                            '--pos_density='+pos_density, '--neg_density='+neg_density, '--assoc='+assoc])
+ 
+         self._run_docker(cmdToRun)
+ 
+diff --git a/BLRun/sinceritiesRunner.py b/BLRun/sinceritiesRunner.py
+index 81c86f36..131ad6ce 100644
+--- a/BLRun/sinceritiesRunner.py
++++ b/BLRun/sinceritiesRunner.py
+@@ -1,8 +1,21 @@
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ 
+ from BLRun.runner import Runner
+ 
++# SINCERITIES runs natively via R (module load R/4.2.3 on Quest) rather than
++# through Docker, which isn't available on this HPC cluster. Its R packages
++# are installed into the shared project-local r_lib/. SINCERITIES' own source
++# is vendored in the repo as SINCERITIES.zip (COPY'd by the Dockerfile, not
++# fetched externally), unzipped here into SINCERITIES_src/. MAIN.R loads
++# "SINCERITIES functions/*.R" via relative paths, so it must be run with that
++# directory as cwd (mirroring the Dockerfile's WORKDIR /SINCERITIES/).
++_REPO_ROOT       = Path(__file__).resolve().parent.parent
++_SINCERITIES_SRC = _REPO_ROOT / "Algorithms" / "SINCERITIES" / "SINCERITIES_src"
++_R_LIBS_USER     = _REPO_ROOT / "r_lib"
++
+ 
+ class SINCERITIESRunner(Runner):
+     """Concrete runner for the SINCERITIES GRN inference algorithm."""
+@@ -46,13 +59,18 @@ class SINCERITIESRunner(Runner):
+ 
+         colNames = PTData.columns
+         for idx in range(len(colNames)):
+-            cmdToRun = ' '.join(['docker run --rm',
+-                                f"-v {self.working_dir}:/usr/working_dir",
+-                                f'{self.image} /bin/sh -c \"time -v -o',
+-                                "/usr/working_dir/time" + str(idx) + ".txt",
+-                                'Rscript MAIN.R',
+-                                "/usr/working_dir/ExpressionData" + str(idx) + ".csv",
+-                                "/usr/working_dir/outFile" + str(idx) + ".txt", '\"'])
++            inner = ' '.join([f"cd {_SINCERITIES_SRC} &&",
++                              f"R_LIBS_USER={_R_LIBS_USER}",
++                              "/usr/bin/time -v -o", f"{self.working_dir}/time{idx}.txt",
++                              "Rscript MAIN.R",
++                              f"{self.working_dir}/ExpressionData{idx}.csv",
++                              f"{self.working_dir}/outFile{idx}.txt"])
++            # bash -lc ensures Lmod's `module` function is available and that
++            # module-provided R takes priority over any R bundled in a conda
++            # env BLRunner.py might itself be running under (BEELINE's
++            # environment.yml pins an old r=3.5.0, which otherwise silently
++            # shadows the module's Rscript on PATH).
++            cmdToRun = f'bash -lc "module load R/4.2.3 && {inner}"'
+ 
+             self._run_docker(cmdToRun, append=(idx > 0))
+ 
+diff --git a/BLRun/singeRunner.py b/BLRun/singeRunner.py
+index d414ba8c..8285ca6d 100644
+--- a/BLRun/singeRunner.py
++++ b/BLRun/singeRunner.py
+@@ -1,8 +1,33 @@
++import hashlib
+ import os
++from pathlib import Path
++
+ import pandas as pd
+ 
+ from BLRun.runner import Runner
+ 
++# SINGE runs natively via its precompiled MATLAB-Compiler binaries rather
++# than through Docker, which isn't available on this HPC cluster. Quest's
++# `module load matlab/r2018a` is an exact version match (v9.4) for the
++# binaries (fetched from the same public gitter-lab/SINGE GitHub release URL
++# the Dockerfile uses), so no self-installed MCR is needed here (contrast
++# GRISLI/GRNVBEM/JUMP3, which need MCR v9.6 — a version Quest has no
++# installed MATLAB for at all). The CSV->mat conversion step (originally
++# `octave` inside the container) runs via a conda-forge octave build, since
++# Quest's own octave/8.3.0 module is missing libcholmod.so.2 (SuiteSparse)
++# and fails to start.
++_REPO_ROOT     = Path(__file__).resolve().parent.parent
++_SINGE_DIR     = _REPO_ROOT / "Algorithms" / "SINGE"
++_MATLAB_ROOT   = Path("/software/matlab/R2018a")
++# Invoked by absolute path rather than `conda run -n octave_env` -- this host
++# has more than one conda installation, and name-based env resolution can
++# silently pick up the wrong one depending on which install's `conda` binary
++# is first on PATH for a given shell/node. OCTAVE_HOME is set explicitly
++# (rather than relying on conda's activate.d hook, which only runs through
++# `conda activate`/`conda run`) to match what that hook itself does.
++_OCTAVE_PREFIX = Path.home() / ".conda" / "envs" / "octave_env"
++_OCTAVE_BIN    = _OCTAVE_PREFIX / "bin" / "octave"
++
+ 
+ class SINGERunner(Runner):
+     """Concrete runner for the SINGE GRN inference algorithm."""
+@@ -71,17 +96,29 @@ class SINGERunner(Runner):
+         for idx in range(len(colNames)):
+             os.makedirs(str(self.working_dir / str(idx)), exist_ok = True)
+ 
+-            outFileSymlink = "out" + str(idx)
+-            inputFile = "/usr/working_dir/ExpressionData"+str(idx)+".csv"
+-            inputMat = "/usr/working_dir/ExpressionData"+str(idx)+".mat"
+-            geneListMat = "/usr/working_dir/GeneList"+str(idx)+".mat"
+-            paramsFile = "/usr/working_dir/hyperparameters.txt"
++            inputFile = str(self.working_dir / f"ExpressionData{idx}.csv")
++            inputMat = str(self.working_dir / f"ExpressionData{idx}.mat")
++            geneListMat = str(self.working_dir / f"GeneList{idx}.mat")
++            paramsFile = self.working_dir / "hyperparameters.txt"
++            paramsFile.write_text(params_str + '\n')
+ 
+             '''
+             This is a workaround for https://github.com/gitter-lab/SINGE/blob/master/code/parseParams.m#L39
+-            not allowing '/' characters in the outDir parameter.
++            not allowing '/' characters in the outDir parameter. The symlink is created inside
++            _SINGE_DIR (alongside SINGE.sh) so a bare relative name can be passed as outdir.
++
++            The symlink name is derived from a hash of self.working_dir rather than just
++            `idx` so that concurrent runs (e.g. a Slurm array job running many
++            dataset/algorithm combinations at once) don't clobber each other's symlink --
++            every runner shares this one _SINGE_DIR, but idx alone (0, 1, 2, ...) repeats
++            across every dataset.
+             '''
+-            symlink_out_file = ' '.join(['ln -s', "/usr/working_dir/" + str(idx) + "/", outFileSymlink])
++            run_hash = hashlib.md5(str(self.working_dir).encode()).hexdigest()[:10]
++            outFileSymlink = f"out_{run_hash}_{idx}"
++            symlink_path = _SINGE_DIR / outFileSymlink
++            if symlink_path.is_symlink() or symlink_path.exists():
++                symlink_path.unlink()
++            symlink_path.symlink_to(self.working_dir / str(idx))
+ 
+             '''
+             See https://github.com/gitter-lab/SINGE/blob/master/README.md.  SINGE expects a data matfile with variables "X" and "ptime",
+@@ -90,21 +127,19 @@ class SINGERunner(Runner):
+             Saving fullKp is a very hacky workaround for https://github.com/gitter-lab/SINGE/blob/master/code/iLasso_for_SINGE.m#L56,
+             that assumes this input was saved in matfile v7.3 which octave does not support.
+             '''
+-            convert_input_to_matfile = 'octave -q --eval \\"CSV = csvread(\'' + inputFile + '\'); ' + \
++            convert_input_to_matfile = f'OCTAVE_HOME={_OCTAVE_PREFIX} {_OCTAVE_BIN} -q --eval "CSV = csvread(\'' + inputFile + '\'); ' + \
+                                  'X = sparse(CSV(2:end,1:end-1).\'); ptime = CSV(2:end,end).\'; ' + \
+                                  'Kp2.Kp = single(ptime); Kp2.sumKp = single(ptime*X.\'); fullKp(1, ' + \
+                                  str(int(params['dT'])*int(params['num_lags'])) + ') = Kp2; ' + \
+                                  'save(\'-v7\',\'' + inputMat + '\', \'X\', \'ptime\', \'fullKp\'); ' + \
+                                  'f = fopen(\'' + inputFile + '\'); gene_list = strsplit(fgetl(f), \',\')(1:end-1).\'; fclose(f); ' + \
+-                                 'save(\'-v7\',\'' + geneListMat + '\', \'gene_list\')\\"'
+-
+-            cmdToRun = ' '.join(['docker run --rm --entrypoint /bin/sh',
+-                                f"-v {self.working_dir}:/usr/working_dir",
+-                                f'{self.image} -c \"echo \\"',
+-                                 params_str, '\\" >', paramsFile, '&&', symlink_out_file, '&&', convert_input_to_matfile,
+-                                 '&& time -v -o', "/usr/working_dir/time" + str(idx) + ".txt",
+-                                 '/usr/local/SINGE/SINGE.sh /usr/local/MATLAB/MATLAB_Runtime/v94 standalone',
+-                                 inputMat, geneListMat, outFileSymlink, paramsFile, '\"'])
++                                 'save(\'-v7\',\'' + geneListMat + '\', \'gene_list\')"'
++
++            cmdToRun = ' '.join([convert_input_to_matfile,
++                                '&&', f"cd {_SINGE_DIR} &&",
++                                '/usr/bin/time -v -o', str(self.working_dir / f"time{idx}.txt"),
++                                './SINGE.sh', str(_MATLAB_ROOT), 'standalone',
++                                inputMat, geneListMat, outFileSymlink, str(paramsFile)])
+ 
+             self._run_docker(cmdToRun, append=(idx > 0))
+ 
+diff --git a/BLRunner.py b/BLRunner.py
+index 936f1582..6e9308a5 100644
+--- a/BLRunner.py
++++ b/BLRunner.py
+@@ -46,9 +46,31 @@ def parse_args():
+         required=True,
+         help='Path to the configuration file used to run the inference algorithms.'
+     )
++    parser.add_argument(
++        '--reverse',
++        action='store_true',
++        help='Process runners in reverse order instead of forward. Run one instance '
++             'without this flag and one with it to split the work across two '
++             'invocations that meet in the middle.'
++    )
++    parser.add_argument(
++        '--skip-populated',
++        action='store_true',
++        dest='skip_populated',
++        help='Skip dataset/algorithm combinations whose working_dir already exists '
++             'and is non-empty, instead of overwriting them. Combine with --reverse '
++             'to run two invocations that split only the remaining (not-yet-run) work.'
++    )
++    parser.add_argument(
++        '-y', '--yes',
++        action='store_true',
++        help='Overwrite populated working directories without the interactive '
++             'confirmation prompt. Required when running non-interactively (e.g. '
++             'under sbatch/SLURM), since there is no terminal there to answer the '
++             'prompt -- use this or --skip-populated, not the bare overwrite prompt.'
++    )
+     return parser.parse_args()
+ 
+-
+ def load_config(config_path):
+     with open(config_path, 'r') as f:
+         return yaml.safe_load(f)
+@@ -140,38 +162,25 @@ def build_runner(algo_name, image, params, dataset, input_settings, output_setti
+     return RUNNERS[algo_name](Path.cwd(), runner_config)
+ 
+ 
+-def build_runners(config):
+-    input_settings  = config['input_settings']
+-    output_settings = config['output_settings']
+-    datasets        = get_datasets(input_settings)
+-    algorithms      = input_settings.get('algorithms', [])
+-
+-    runners = []
+-    for dataset in datasets:
+-        for algo in algorithms:
+-            if not algo.get('should_run', [False])[0]:
+-                continue
+-            params = algo.get('params', {})
+-            runners.append(build_runner(algo['algorithm_id'], algo['image'], params, dataset, input_settings, output_settings))
+-    return runners
+-
+-
+-def get_working_dirs(config):
++def enumerate_dataset_algo_pairs(config):
+     """
+-    Compute expected working_dir paths from config without constructing Runner objects.
++    Yield (dataset, algo, working_dir) for every enabled dataset/algorithm
++    combination, in the canonical build order.
+ 
+-    Mirrors the path logic in Runner.__init__ so the overwrite check can run
+-    before runners are built (and their __init__ erases the directories).
++    Single source of truth for both get_working_dirs (path-only, no Runner
++    side effects -- safe to call before deciding what to build) and
++    build_runners (which must avoid constructing a Runner for anything meant
++    to be skipped, since Runner.__init__ erases its working_dir).
+ 
+     Parameters
+     ----------
+     config : dict
+         Parsed YAML configuration dictionary.
+ 
+-    Returns
+-    -------
+-    list of Path
+-        One working_dir path per enabled dataset/algorithm combination.
++    Yields
++    ------
++    (dict, dict, Path)
++        dataset entry, algo entry, and that combination's working_dir path.
+     """
+     root            = Path.cwd()
+     input_settings  = config['input_settings']
+@@ -181,7 +190,6 @@ def get_working_dirs(config):
+     datasets        = get_datasets(input_settings)
+     algorithms      = input_settings.get('algorithms', [])
+ 
+-    paths = []
+     for dataset in datasets:
+         for algo in algorithms:
+             if not algo.get('should_run', [False])[0]:
+@@ -190,10 +198,61 @@ def get_working_dirs(config):
+             if experiment_id:
+                 base_output = base_output / experiment_id
+             base_output = base_output / dataset['dataset_id'] / dataset['run_id'] / algo['algorithm_id']
+-            paths.append(base_output / 'working_dir')
++            yield dataset, algo, base_output / 'working_dir'
+ 
+-    return paths
+ 
++def build_runners(config, skip_populated=False):
++    """
++    Build Runner objects for every enabled dataset/algorithm combination.
++
++    Parameters
++    ----------
++    config : dict
++        Parsed YAML configuration dictionary.
++    skip_populated : bool, default False
++        If True, don't build (and don't erase the working_dir of) any
++        combination whose rankedEdges.csv already exists -- i.e. resume
++        rather than overwrite. Checked before construction, since
++        Runner.__init__ erases its working_dir as a side effect.
++
++        Deliberately keyed on rankedEdges.csv (the actual parsed inference
++        output), not on working_dir being non-empty: working_dir fills up
++        with intermediate files (copied ExpressionData.csv, partial
++        algorithm output, etc.) as soon as a run starts, so a run killed
++        mid-way (e.g. OOM) leaves a non-empty working_dir with no
++        rankedEdges.csv -- checking working_dir alone would treat that as
++        "already done" and skip it forever instead of resuming it.
++
++    Returns
++    -------
++    list of Runner
++    """
++    input_settings  = config['input_settings']
++    output_settings = config['output_settings']
++
++    runners = []
++    for dataset, algo, working_dir in enumerate_dataset_algo_pairs(config):
++        if skip_populated and (working_dir.parent / 'rankedEdges.csv').exists():
++            continue
++        params = algo.get('params', {})
++        runners.append(build_runner(algo['algorithm_id'], algo['image'], params, dataset, input_settings, output_settings))
++    return runners
++
++def get_working_dirs(config):
++    """
++    Compute expected working_dir paths from config without constructing Runner objects.
++
++    Parameters
++    ----------
++    config : dict
++        Parsed YAML configuration dictionary.
++
++    Returns
++    -------
++    list of Path
++        One working_dir path per enabled dataset/algorithm combination.
++    """
++    return [working_dir for _, _, working_dir in enumerate_dataset_algo_pairs(config)]
+ 
+ def warn_if_populated(working_dirs):
+     """
+@@ -209,36 +268,57 @@ def warn_if_populated(working_dirs):
+     bool
+         True if the user confirms they want to proceed, False otherwise.
+     """
+-    n_populated = sum(
+-        1 for p in working_dirs
+-        if p.exists() and any(p.iterdir())
+-    )
++    populated_dirs = [p for p in working_dirs if p.exists() and any(p.iterdir())]
++    n_populated = len(populated_dirs)
+     if n_populated == 0:
+         return True
++    print(f"Example populated working dir: {populated_dirs[0]}")
+ 
+-    answer = input(
++    prompt = (
+         f"Warning: {n_populated} working director{'y' if n_populated == 1 else 'ies'} "
+         f"already exist and will be overwritten. Proceed? [y/n]: "
+-    ).strip().lower()
++    )
++    try:
++        answer = input(prompt).strip().lower()
++    except EOFError:
++        raise RuntimeError(
++            f"{prompt}\nNo interactive terminal available to answer this prompt "
++            "(e.g. running under sbatch/SLURM). Re-run with --yes to overwrite "
++            "without prompting, or --skip-populated to skip already-populated "
++            "directories instead."
++        ) from None
+     return answer == 'y'
+ 
+-
+ def main():
+     args = parse_args()
+     config = load_config(args.config)
+ 
+-    if not warn_if_populated(get_working_dirs(config)):
+-        print("Aborted.")
+-        return
++    if args.skip_populated:
++        runners = build_runners(config, skip_populated=True)
++    else:
++        if not args.yes and not warn_if_populated(get_working_dirs(config)):
++            print("Aborted.")
++            return
++        runners = build_runners(config)
+ 
+-    runners = build_runners(config)
++    if args.reverse:
++        runners = runners[::-1]
+ 
++    failures = []
+     for runner in tqdm(runners):
+         tqdm.write(runner.running_message)
+-        runner.generateInputs()
+-        runner.run()
+-        runner.parseOutput()
+-
++        try:
++            runner.generateInputs()
++            runner.run()
++            runner.parseOutput()
++        except Exception as e:
++            failures.append(runner.running_message)
++            tqdm.write(f"FAILED: {runner.running_message}\n  {type(e).__name__}: {e}")
++
++    if failures:
++        print(f"\n{len(failures)} of {len(runners)} run(s) failed:")
++        for message in failures:
++            print(f"  - {message}")
+ 
+ if __name__ == '__main__':
+     main()
+diff --git a/utils/environment.yml b/utils/environment.yml
+index 3a03fc77..410c7e66 100644
+--- a/utils/environment.yml
++++ b/utils/environment.yml
+@@ -15,7 +15,3 @@ dependencies:
+   - scikit-learn==0.21.2
+   - PyYAML==5.4
+   - bioconda::mygene==3.2.2
+-
+-  # for building documentation only
+-  - conda-forge::sphinx
+-  - conda-forge::sphinx_rtd_theme
+diff --git a/utils/setupAnacondaVENV.sh b/utils/setupAnacondaVENV.sh
+index c9bb80b9..33eebccf 100755
+--- a/utils/setupAnacondaVENV.sh
++++ b/utils/setupAnacondaVENV.sh
+@@ -17,10 +17,10 @@ ENV_NAME="BEELINE"
+ 
+ if conda info --env | grep -q "${ENV_NAME}"; then
+     echo "Conda environment '${ENV_NAME}' already exists. Checking for updates."
+-    conda env update --file=$BASEDIR/environment.yml -n "${ENV_NAME}"
++    mamba env update --file=$BASEDIR/environment.yml -n "${ENV_NAME}"
+ else
+     echo "Creating Conda environment '${ENV_NAME}'..."
+-    conda env create --file=$BASEDIR/environment.yml
++    mamba env create --file=$BASEDIR/environment.yml
+     echo "Conda environment '${ENV_NAME}' created."
+ fi
+ 

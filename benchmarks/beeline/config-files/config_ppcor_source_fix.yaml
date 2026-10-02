@@ -1,0 +1,107 @@
+input_settings:
+
+    input_dir : "inputs/network_sweep_final"
+
+    # PPCOR + PEARSON, rerun in place for the 5 datasets where PPCOR's cached
+    # working_dir/ExpressionData.csv was found (by content hash, against the
+    # SCODE-anchored source-file manifest) to come from a DIFFERENT simulation
+    # replicate than every other algorithm used for the same nominal run. Root
+    # cause: run_ppcor_rerun.sh (the p-value-prefiltering fix) reran PPCOR
+    # hours after the other algorithms had already cached their inputs, by
+    # which point the canonical converter input had drifted to a later
+    # simulation retry for these specific (topology, technical-replicate)
+    # slots. The correct source ExpressionData.csv has already been staged
+    # directly into each affected PPCOR working_dir; this config's job is only
+    # to invoke PPCOR itself against what's already staged there.
+    # PEARSON is included alongside it: it never caches a local
+    # working_dir/ExpressionData.csv (pearsonRunner.py reads the canonical
+    # input directly at run time), so its source file for these 5 datasets was
+    # never verifiable against the SCODE anchor at all -- unlike the other 4
+    # algorithms, which were positively confirmed correct by the 740-triple
+    # cross-check. Rerunning it here removes the ambiguity outright; it's
+    # effectively instant (local pandas .corr(), no subprocess).
+    algorithms:
+        - algorithm_id: "PIDC"
+          image: "grnbeeline/pidc:base"
+          should_run: [False]
+
+        - algorithm_id: "GENIE3"
+          image: "grnbeeline/arboreto:base"
+          should_run: [False]
+
+        - algorithm_id: "GRNBOOST2"
+          image: "grnbeeline/arboreto:base"
+          should_run: [False]
+
+        - algorithm_id: "PPCOR"
+          image: "grnbeeline/ppcor:base"
+          should_run: [True]
+          params:
+              pVal: [0.01]
+
+        - algorithm_id: "SCODE"
+          image: "grnbeeline/scode:base"
+          should_run: [False]
+          params:
+              z: [4]
+              nIter: [200]
+              nRep: [2]
+
+        - algorithm_id: "SINCERITIES"
+          image: "grnbeeline/sincerities:base"
+          should_run: [False]
+          params:
+              nBins: [10]
+
+        - algorithm_id: "LEAP"
+          image: "grnbeeline/leap:base"
+          should_run: [False]
+          params:
+              maxLag: [0.33]
+
+        - algorithm_id: "SCSGL"
+          image: "grnbeeline/scsgl:base"
+          should_run: [False]
+          params:
+              pos_density: [0.45]
+              neg_density: [0.45]
+              assoc: ["correlation"]
+
+        - algorithm_id: "PEARSON"
+          image: "local"
+          should_run: [False]
+
+    datasets:
+        - dataset_id: "grn_n6_e5_pos100_density_rep0"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e5_pos100_density_rep2"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e17_pos100_density_rep0"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e17_pos100_density_rep1"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e17_pos100_density_rep2"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+output_settings:
+    # SAME output root as the currently-scored data (rerun IN PLACE) -- omit
+    # --skip-populated so the 13 mismatched PPCOR working_dirs are actually
+    # overwritten, not skipped because a (stale, wrong-source) rankedEdges.csv
+    # already exists there.
+    # [2026-10-01 replaced by template placeholder (render_beeline_configs.py); was: output_dir: "/home/gzu5140/TwINFER_KA/analysis_data/synthetic_network_benchmark_06082026/beeline_inference"]
+    output_dir: "${TWINFER_DATA_ROOT}/synthetic_network_benchmark_06082026/beeline_inference"
+    experiment_id: ""

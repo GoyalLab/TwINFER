@@ -1,0 +1,127 @@
+diff --git a/BoolODE/model_generator.py b/BoolODE/model_generator.py
+index bd924a1..9760460 100644
+--- a/BoolODE/model_generator.py
++++ b/BoolODE/model_generator.py
+@@ -35,9 +35,10 @@ class GenerateModel:
+     :param interactionStrengthDF: User specified interaction strengths. Specified in config YAML as a path
+     :type interactionStrengthDF: pandas DataFrame
+     """
+-    def __init__(self, settings, parameterInputsDF, parameterSetDF, interactionStrengthDF) -> None:
++    def __init__(self, settings, parameterInputsDF, parameterSetDF, interactionStrengthDF,
++                 speciesTypeDF=None) -> None:
+         """
+-        This class is initialized with the job_settings dictionary created 
++        This class is initialized with the job_settings dictionary created
+         by the BoolODE class. Additionally, three dataframe objects are required:
+ 
+         1. parameterInputsDF - specifies parameter inputs
+@@ -45,6 +46,13 @@ class GenerateModel:
+         3. interactionStrengthDF - specifies interactions strengths
+ 
+         By default, if these aren't specified by the user, BoolODE stores empty pandas DataFrame objects.
++
++        :param speciesTypeDF: optional Node/Type dataframe marking each node as
++            'gene' or 'protein' (see readBooleanRules()). Previously loaded by
++            run_experiment.startRun() but never actually passed in here, so
++            every node silently defaulted to 'gene' regardless of what a
++            species_type file said -- fixed to actually thread this through.
++        :type speciesTypeDF: pandas DataFrame
+         """
+         self.settings = settings
+         self.parameterInputsDF = parameterInputsDF
+@@ -62,7 +70,7 @@ class GenerateModel:
+         self.inputs = list()
+         self.genelist = list()
+         self.proteinlist = list()
+-        self.nodeTypeDF = pd.DataFrame()
++        self.nodeTypeDF = speciesTypeDF if speciesTypeDF is not None else pd.DataFrame()
+         self.df = pd.DataFrame()
+         self.ModelSpec = dict()
+         self.path_to_ode_model = str()
+@@ -110,8 +118,14 @@ class GenerateModel:
+         self.withoutRules = list(self.allnodes.difference(set(self.withRules)))
+ 
+         ## Every node without a rule is treated as follows:
+-        ## If the user has specified a Parameter Input file treat as parameter, else 
+-        for n in self.withoutRules:
++        ## If the user has specified a Parameter Input file treat as parameter, else
++        # NOTE: iterate over a copy -- the loop body calls
++        # self.withoutRules.remove(n), and mutating a list while iterating
++        # over it directly skips elements (every removal shifts later items
++        # down one position, but the loop's index keeps advancing normally).
++        # With 2+ nodes needing this fallback, at least one would silently
++        # get no rule at all, causing a NameError later when it's referenced.
++        for n in list(self.withoutRules):
+             if not self.parameterInputsDF.empty\
+                and n in self.parameterInputsDF['Input'] :
+                 print("Treating %s as parameter" % {n})                
+@@ -244,7 +258,15 @@ class GenerateModel:
+         ## create the y_max parameter
+         if len(self.proteinlist) > 0:
+             self.par['y_max'] = y_max
+-            self.par['signalingtimescale'] = signalingtimescale
++            # NOTE: was a bare undefined name (NameError) -- this branch is
++            # only reached when a node is marked 'protein' via species_type,
++            # which was previously always silently ignored (speciesTypeDF
++            # was loaded from disk but never actually passed into
++            # GenerateModel -- fixed separately), so this line had never
++            # actually executed in practice until now. signalingTimescale
++            # is loaded into kineticParameterDefaults the same way every
++            # other kinetic default is (see utils.loadParameterValues()).
++            self.par['signalingtimescale'] = self.kineticParameterDefaults['signalingTimescale']
+             
+         interactionStrengths = {}
+     
+diff --git a/BoolODE/run_experiment.py b/BoolODE/run_experiment.py
+index f40b54a..9d09a5b 100644
+--- a/BoolODE/run_experiment.py
++++ b/BoolODE/run_experiment.py
+@@ -243,7 +243,8 @@ def startRun(settings):
+     mg = GenerateModel(settings,
+                        parameterInputsDF,
+                        parameterSetDF,
+-                       interactionStrengthDF)
++                       interactionStrengthDF,
++                       speciesTypeDF)
+     genesDict = {}
+ 
+     # Load the ODE model file
+diff --git a/BoolODE/simulator.py b/BoolODE/simulator.py
+index e993881..e537f3f 100644
+--- a/BoolODE/simulator.py
++++ b/BoolODE/simulator.py
+@@ -140,5 +140,12 @@ def getInitialCondition(ss, ModelSpec, rnaIndex,
+         pss = ((ModelSpec['pars']['r_' + genename])/\
+                                       (ModelSpec['pars']['l_p_' + genename]))\
+                                       *new_ics[revvarmapper['x_' + genename]]
+-        new_ics[revvarmapper['p_' + genename.replace('_','')]] = pss
++        # NOTE: was `genename.replace('_','')` -- stripped underscores from
++        # the *lookup* key here but nowhere else in this loop (the 'x_' and
++        # 'r_'/'l_p_' lookups two lines up correctly use the raw genename),
++        # so any gene name containing an underscore (e.g. names sanitized
++        # from something like 'LEF1-bCat' -> 'LEF1_bCat') produced a
++        # mismatched key and a KeyError here. Use the same genename as
++        # everywhere else in the loop.
++        new_ics[revvarmapper['p_' + genename]] = pss
+     return(new_ics)
+diff --git a/data/dyn-linear.txt b/data/dyn-linear.txt
+index 42c1409..933f1a8 100644
+--- a/data/dyn-linear.txt
++++ b/data/dyn-linear.txt
+@@ -5,4 +5,4 @@ g3	( g2 )
+ g4	( g3 )
+ g5	( g4 )
+ g6	( g5 )
+-g7	( g6 or g7)
++g7	( g6)
+diff --git a/data/mCAD.txt b/data/mCAD.txt
+index 667409f..3a5eda9 100644
+--- a/data/mCAD.txt
++++ b/data/mCAD.txt
+@@ -3,4 +3,4 @@ Fgf8	( Fgf8 and Sp8 and not (Emx2) )
+ Emx2	(Coup and not (Fgf8) and not (Pax6)  and not (Sp8))
+ Pax6	(  (Sp8) and not (Emx2) and not (Coup))
+ Coup	( not (Fgf8) and not (Sp8) )
+-Sp8	( Fgf8 and not (Emx2))
++Sp8	( Fgf8 and not (Emx2))
+\ No newline at end of file

@@ -1,0 +1,307 @@
+input_settings:
+  input_dir: inputs/mixed_network_sweep
+  algorithms:
+  - algorithm_id: PIDC
+    image: grnbeeline/pidc:base
+    should_run:
+    - true
+  - algorithm_id: GENIE3
+    image: grnbeeline/arboreto:base
+    should_run:
+    - false
+  - algorithm_id: GRNBOOST2
+    image: grnbeeline/arboreto:base
+    should_run:
+    - false
+  - algorithm_id: PPCOR
+    image: grnbeeline/ppcor:base
+    should_run:
+    - true
+    params:
+      pVal:
+      - 0.01
+  - algorithm_id: SCODE
+    image: grnbeeline/scode:base
+    should_run:
+    - true
+    params:
+      z:
+      - 4
+      nIter:
+      - 200
+      nRep:
+      - 2
+  - algorithm_id: SINCERITIES
+    image: grnbeeline/sincerities:base
+    should_run:
+    - false
+    params:
+      nBins:
+      - 10
+  - algorithm_id: LEAP
+    image: grnbeeline/leap:base
+    should_run:
+    - false
+    params:
+      maxLag:
+      - 0.33
+  - algorithm_id: SCSGL
+    image: grnbeeline/scsgl:base
+    should_run:
+    - true
+    params:
+      pos_density:
+      - 0.45
+      neg_density:
+      - 0.45
+      assoc:
+      - correlation
+  - algorithm_id: PEARSON
+    image: local
+    should_run:
+    - true
+  datasets:
+  - dataset_id: grn_n10_e10_c5_a0_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c5_a0_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c5_a0_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c5_a5_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c5_a5_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c5_a5_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c8_a0_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c8_a0_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c8_a0_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c8_a5_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c8_a5_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e10_c8_a5_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c5_a0_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c5_a0_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c5_a0_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c5_a5_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c5_a5_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c5_a5_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c8_a0_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c8_a0_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c8_a0_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c8_a5_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c8_a5_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n10_e20_c8_a5_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c3_a0_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c3_a0_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c3_a0_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c3_a3_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c3_a3_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c3_a3_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c4_a0_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c4_a0_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c4_a0_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c4_a3_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c4_a3_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e12_c4_a3_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c3_a0_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c3_a0_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c3_a0_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c3_a3_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c3_a3_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c3_a3_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c4_a0_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c4_a0_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c4_a0_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c4_a3_pos50_rep0
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c4_a3_pos50_rep1
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+  - dataset_id: grn_n6_e6_c4_a3_pos50_rep2
+    should_run:
+    - true
+    scan_run_subdirectories: true
+    groundTruthNetwork: GroundTruthNetwork.csv
+output_settings:
+  # [2026-10-01 replaced by template placeholder (render_beeline_configs.py); was: output_dir: /home/gzu5140/TwINFER_KA/analysis_data/mixed_network_sweep/beeline_inference]
+  output_dir: ${TWINFER_DATA_ROOT}/mixed_network_sweep/beeline_inference
+  experiment_id: ''

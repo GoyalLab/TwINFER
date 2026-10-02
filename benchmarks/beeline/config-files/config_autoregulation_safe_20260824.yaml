@@ -1,0 +1,86 @@
+input_settings:
+
+    input_dir : "inputs/autoregulation_20260824"
+
+    # Autoregulation benchmark (4 configs: {2-gene,3-gene} x {pos,neg} self-
+    # regulation on gene index 1, gene0->gene1 held fixed -- see
+    # paper_analysis/heterogeneity_vs_regulation/autoregulation.py). PIDC,
+    # PPCOR, SCODE, SCSGL, PEARSON here (lightweight, safe for per-dataset
+    # parallelism); GENIE3+GRNBOOST2 run separately, sequentially -- see
+    # config_autoregulation_genie3_grnboost2_20260824.yaml.
+    algorithms:
+        - algorithm_id: "PIDC"
+          image: "grnbeeline/pidc:base"
+          should_run: [True]
+
+        - algorithm_id: "GENIE3"
+          image: "grnbeeline/arboreto:base"
+          should_run: [False]
+
+        - algorithm_id: "GRNBOOST2"
+          image: "grnbeeline/arboreto:base"
+          should_run: [False]
+
+        - algorithm_id: "PPCOR"
+          image: "grnbeeline/ppcor:base"
+          should_run: [True]
+          params:
+              pVal: [0.01]
+
+        - algorithm_id: "SCODE"
+          image: "grnbeeline/scode:base"
+          should_run: [True]
+          params:
+              z: [4]
+              nIter: [200]
+              nRep: [2]
+
+        - algorithm_id: "SINCERITIES"
+          image: "grnbeeline/sincerities:base"
+          should_run: [False]
+          params:
+              nBins: [10]
+
+        - algorithm_id: "LEAP"
+          image: "grnbeeline/leap:base"
+          should_run: [False]
+          params:
+              maxLag: [0.33]
+
+        - algorithm_id: "SCSGL"
+          image: "grnbeeline/scsgl:base"
+          should_run: [True]
+          params:
+              pos_density: [0.45]
+              neg_density: [0.45]
+              assoc: ["correlation"]
+
+        - algorithm_id: "PEARSON"
+          image: "local"
+          should_run: [True]
+
+    datasets:
+        - dataset_id: "autoreg_g2_pos"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "autoreg_g2_neg"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "autoreg_g3_pos"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "autoreg_g3_neg"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+output_settings:
+    # [2026-10-01 replaced by template placeholder (render_beeline_configs.py); was: output_dir: "/home/gzu5140/TwINFER_KA/analysis_data/autoregulation_benchmark_20260824/beeline_inference"]
+    output_dir: "${TWINFER_DATA_ROOT}/autoregulation_benchmark_20260824/beeline_inference"
+    experiment_id: ""

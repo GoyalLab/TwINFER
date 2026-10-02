@@ -1,0 +1,141 @@
+input_settings:
+
+    input_dir : "inputs/network_sweep"
+
+    # SINCERITIES needs >=5 distinct pseudotime values to bin into a time
+    # series -- the twin_paired scheme only ever has 2 (t1/t2) by
+    # construction, so it can't run there at all. This config scopes it to
+    # the spread runs only (explicit `runs:` list instead of
+    # scan_run_subdirectories, which would pick up twin_paired too).
+    algorithms:
+        - algorithm_id: "SINCERITIES"
+          image: "grnbeeline/sincerities:base"
+          should_run: [True]
+          params:
+              nBins: [10]
+
+    datasets:
+        - dataset_id: "grn_n6_e5_pos50_density_rep0"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e5_pos50_density_rep1"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e5_pos50_density_rep2"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e17_pos50_density_rep0"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e17_pos50_density_rep1"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e17_pos50_density_rep2"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e9_pos50_center_rep0"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e9_pos50_center_rep1"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e9_pos50_center_rep2"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e9_pos0_sign_ratio_rep0"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e9_pos0_sign_ratio_rep1"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e9_pos0_sign_ratio_rep2"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e9_pos100_sign_ratio_rep0"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e9_pos100_sign_ratio_rep1"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+        - dataset_id: "grn_n6_e9_pos100_sign_ratio_rep2"
+          should_run: [True]
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+          runs:
+              - run_id: "simrep0_spread"
+              - run_id: "simrep1_spread"
+              - run_id: "simrep2_spread"
+
+output_settings:
+    # [2026-10-01 replaced by template placeholder (render_beeline_configs.py); was: output_dir: "/home/gzu5140/Keerthana_b1042/TwINFER/analysis_data/network_sweep/beeline_inference"]
+    output_dir: "${TWINFER_DATA_ROOT}/network_sweep/beeline_inference"
+    experiment_id: ""

@@ -1,0 +1,105 @@
+input_settings:
+
+    # The original scratch input root (/scratch/gzu5140/twinfer_real/inputs) was
+    # purged by Quest's ~30-day scratch retention policy -- every file under it
+    # was lost, only the simrep<hash>_{spread,twin_paired} directory names
+    # survived. Regenerated on shared, non-purged storage by
+    # regenerate_legacy_beeline_inputs.py (same hash-based simrep ids, e.g.
+    # simrep117c4801_*, matching /scratch/gzu5140/twinfer_real/outputs' naming --
+    # NOT the repo-local code/Beeline/inputs/{GSD,HSC,VSC,mCAD}, which uses
+    # integer simrep ids and is a separate/older BoolODE-simulated input set).
+    #
+    # spread is out of scope here -- only twin_paired input was regenerated
+    # (regenerate_legacy_beeline_inputs.py's *_spread output was deleted
+    # before this run), so scan_run_subdirectories only ever sees twin_paired
+    # run dirs. The existing *_spread entries under output_dir are untouched
+    # by this run and stay as-is.
+    #
+    # As of 2026-08-31, actual rankedEdges.csv twin_paired coverage in
+    # output_dir below (present/possible, 7 algorithms x n_runs):
+    #   GSD  : 63/63 (9 runs)  -- already complete, nothing to do
+    #   HSC  : 60/70 (10 runs) -- 10 missing
+    #   mCAD : 35/70 (10 runs) -- 35 missing
+    #   VSC  :  0/70 (10 runs) -- all missing
+    # --skip-populated (checks rankedEdges.csv existence) will run every
+    # (run, algorithm) combination above that's still missing and skip
+    # everything already present.
+    # [2026-10-01 replaced by template placeholder (render_beeline_configs.py); was: input_dir : "/home/gzu5140/TwINFER_KA/code/Beeline/inputs/real_networks_legacy"]
+    input_dir : "${TWINFER_BEELINE_PATH}/inputs/real_networks_legacy"
+
+    algorithms:
+        - algorithm_id: "PIDC"
+          image: "grnbeeline/pidc:base"
+          should_run: [True]
+
+        - algorithm_id: "GENIE3"
+          image: "grnbeeline/arboreto:base"
+          should_run: [True]
+
+        - algorithm_id: "GRNBOOST2"
+          image: "grnbeeline/arboreto:base"
+          should_run: [True]
+
+        - algorithm_id: "PPCOR"
+          image: "grnbeeline/ppcor:base"
+          should_run: [True]
+          params:
+              pVal: [0.01]
+
+        - algorithm_id: "SCODE"
+          image: "grnbeeline/scode:base"
+          should_run: [True]
+          params:
+              z: [4]
+              nIter: [200]
+              nRep: [2]
+
+        - algorithm_id: "SINCERITIES"
+          image: "grnbeeline/sincerities:base"
+          should_run: [False]
+          params:
+              nBins: [10]
+
+        - algorithm_id: "LEAP"
+          image: "grnbeeline/leap:base"
+          should_run: [False]
+          params:
+              maxLag: [0.33]
+
+        - algorithm_id: "SCSGL"
+          image: "grnbeeline/scsgl:base"
+          should_run: [True]
+          params:
+              pos_density: [0.45]
+              neg_density: [0.45]
+              assoc: ["correlation"]
+
+        - algorithm_id: "PEARSON"
+          image: "local"
+          should_run: [True]
+
+    datasets:
+        - dataset_id: "GSD"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "HSC"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "mCAD"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "VSC"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+output_settings:
+    # [2026-10-01 replaced by template placeholder (render_beeline_configs.py); was: output_dir: "/scratch/gzu5140/twinfer_real/outputs"]
+    output_dir: "${TWINFER_PROJECT_ROOT}/benchmarking_analysis/twinfer_real/outputs"
+    experiment_id: ""

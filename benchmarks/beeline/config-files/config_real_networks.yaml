@@ -1,0 +1,94 @@
+input_settings:
+
+    input_dir : "inputs/real_networks/"
+
+    # LEAP is deliberately disabled here: its max_lag is specified as a
+    # proportion of cell count, so the number of lag values it searches
+    # scales with cells too -- at 12000 cells/dataset this becomes a
+    # multi-hour-per-run bottleneck that blocks the rest of the sweep.
+    # Run it separately (its own config/job) instead. (Same reasoning as
+    # config_cycle.yaml -- these datasets use the same twin_paired/spread
+    # scheme at the same 12000 cells/run.)
+    algorithms:
+        - algorithm_id: "PIDC"
+          image: "grnbeeline/pidc:base"
+          should_run: [True]
+
+        - algorithm_id: "GENIE3"
+          image: "grnbeeline/arboreto:base"
+          should_run: [True]
+
+        - algorithm_id: "GRNBOOST2"
+          image: "grnbeeline/arboreto:base"
+          should_run: [True]
+
+        - algorithm_id: "PPCOR"
+          image: "grnbeeline/ppcor:base"
+          should_run: [True]
+          params:
+              pVal: [0.01]
+
+        - algorithm_id: "SCODE"
+          image: "grnbeeline/scode:base"
+          should_run: [True]
+          params:
+              z: [4]
+              nIter: [200]
+              # nRep=6 (not config_cycle.yaml's nRep=2) -- matches the more
+              # recent config_scode_rep6.yaml correction: nRep=2 gives only 1
+              # degree of freedom for a restart-level significance test, too
+              # little power to trust.
+              nRep: [6]
+
+        # SINCERITIES needs >=5 distinct pseudotime values to bin into a time
+        # series; the twin_paired scheme only ever has 2 (t1/t2), which it
+        # can't run on at all.
+        - algorithm_id: "SINCERITIES"
+          image: "grnbeeline/sincerities:base"
+          should_run: [False]
+          params:
+              nBins: [10]
+
+        - algorithm_id: "LEAP"
+          image: "grnbeeline/leap:base"
+          should_run: [False]
+          params:
+              maxLag: [0.33]
+
+        - algorithm_id: "SCSGL"
+          image: "grnbeeline/scsgl:base"
+          should_run: [True]
+          params:
+              pos_density: [0.45]
+              neg_density: [0.45]
+              assoc: ["correlation"]
+
+        - algorithm_id: "PEARSON"
+          image: "local"
+          should_run: [True]
+
+    datasets:
+        - dataset_id: "B_cell_activation"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "Circadian_cycle"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "EMT"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "Pluripotent"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+output_settings:
+    # [2026-10-01 replaced by template placeholder (render_beeline_configs.py); was: output_dir: "/home/gzu5140/TwINFER_KA/analysis_data/paper_analysis/real_networks/beeline_inference"]
+    output_dir: "${TWINFER_DATA_ROOT}/paper_analysis/real_networks/beeline_inference"
+    experiment_id: ""

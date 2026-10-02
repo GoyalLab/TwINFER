@@ -1,0 +1,147 @@
+input_settings:
+
+    input_dir : "inputs/network_sweep_final_20260824"
+
+    # GENIE3 + GRNBOOST2 only, run via run_genie3_grnboost2_sequential.sh with NO
+    # dataset-level parallelism -- both are Dask/arboreto-based, and the original
+    # network_sweep_final GENIE3 runs were SIGKILL'd (OOM) under a much smaller
+    # memory allocation. Even though the process was only ~4.3GB resident at the
+    # moment it was killed, that's a lower bound on the true peak, not the peak
+    # itself, and Dask's default local-cluster memory reservations can be large
+    # regardless of how tiny the actual data is (6 genes x 12000 cells here).
+    # Running 15 datasets in parallel would risk that many concurrent Dask
+    # processes hitting their peak at the same wall-clock moment; running
+    # sequentially costs only ~40 min total (measured ~11s/run for GENIE3,
+    # ~5s/run for GRNBOOST2, x 150 runs each) and needs enough memory for
+    # exactly one process at a time.
+    algorithms:
+        - algorithm_id: "PIDC"
+          image: "grnbeeline/pidc:base"
+          should_run: [False]
+
+        - algorithm_id: "GENIE3"
+          image: "grnbeeline/arboreto:base"
+          should_run: [True]
+
+        - algorithm_id: "GRNBOOST2"
+          image: "grnbeeline/arboreto:base"
+          should_run: [True]
+
+        - algorithm_id: "PPCOR"
+          image: "grnbeeline/ppcor:base"
+          should_run: [False]
+          params:
+              pVal: [0.01]
+
+        - algorithm_id: "SCODE"
+          image: "grnbeeline/scode:base"
+          should_run: [False]
+          params:
+              z: [4]
+              nIter: [200]
+              nRep: [2]
+
+        - algorithm_id: "SINCERITIES"
+          image: "grnbeeline/sincerities:base"
+          should_run: [False]
+          params:
+              nBins: [10]
+
+        - algorithm_id: "LEAP"
+          image: "grnbeeline/leap:base"
+          should_run: [False]
+          params:
+              maxLag: [0.33]
+
+        - algorithm_id: "SCSGL"
+          image: "grnbeeline/scsgl:base"
+          should_run: [False]
+          params:
+              pos_density: [0.45]
+              neg_density: [0.45]
+              assoc: ["correlation"]
+
+        - algorithm_id: "PEARSON"
+          image: "local"
+          should_run: [False]
+
+    datasets:
+        - dataset_id: "grn_n6_e5_pos100_density_rep0"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e5_pos100_density_rep1"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e5_pos100_density_rep2"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e9_pos0_sign_ratio_rep0"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e9_pos0_sign_ratio_rep1"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e9_pos0_sign_ratio_rep2"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e9_pos50_sign_ratio_rep0"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e9_pos50_sign_ratio_rep1"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e9_pos50_sign_ratio_rep2"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e9_pos100_center_rep0"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e9_pos100_center_rep1"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e9_pos100_center_rep2"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e17_pos100_density_rep0"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e17_pos100_density_rep1"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+        - dataset_id: "grn_n6_e17_pos100_density_rep2"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+output_settings:
+    # [2026-10-01 replaced by template placeholder (render_beeline_configs.py); was: output_dir: "/home/gzu5140/TwINFER_KA/analysis_data/synthetic_network_benchmark_20260824/beeline_inference"]
+    output_dir: "${TWINFER_DATA_ROOT}/synthetic_network_benchmark_20260824/beeline_inference"
+    experiment_id: ""

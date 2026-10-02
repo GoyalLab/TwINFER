@@ -1,0 +1,78 @@
+input_settings:
+
+    # Points directly at the boolode_to_twinfer_format/convert_twins_to_beeline
+    # output for the dyn-linear (7-gene linear cascade + g7 -| g1 feedback)
+    # BoolODE twin sweep, generated under analysis_data/boolode_linear_gene_sim/.
+    # Absolute path -- Path.cwd() / <absolute> resolves to the absolute path
+    # regardless of Beeline's own cwd, same as every other config here.
+    # [2026-10-01 replaced by template placeholder (render_beeline_configs.py); was: input_dir : "/home/gzu5140/TwINFER_KA/analysis_data/boolode_linear_gene_sim/beeline_format"]
+    input_dir : "${TWINFER_DATA_ROOT}/boolode_linear_gene_sim/beeline_format"
+
+    # Same algorithm set/params as config_cycle.yaml. LEAP disabled for the
+    # same reason noted there (its max_lag scales with cell count -- 12000
+    # cells/run makes it a multi-hour bottleneck; run separately if wanted).
+    # SINCERITIES needs >=5 distinct pseudotime values, which the
+    # twin_paired run (only t_early/t_final) can't supply -- it'll just run
+    # against the spread run here since scan_run_subdirectories covers both.
+    algorithms:
+        - algorithm_id: "PIDC"
+          image: "grnbeeline/pidc:base"
+          should_run: [True]
+
+        - algorithm_id: "GENIE3"
+          image: "grnbeeline/arboreto:base"
+          should_run: [True]
+
+        - algorithm_id: "GRNBOOST2"
+          image: "grnbeeline/arboreto:base"
+          should_run: [True]
+
+        - algorithm_id: "PPCOR"
+          image: "grnbeeline/ppcor:base"
+          should_run: [True]
+          params:
+              pVal: [0.01]
+
+        - algorithm_id: "SCODE"
+          image: "grnbeeline/scode:base"
+          should_run: [True]
+          params:
+              z: [4]
+              nIter: [200]
+              nRep: [2]
+
+        - algorithm_id: "SINCERITIES"
+          image: "grnbeeline/sincerities:base"
+          should_run: [True]
+          params:
+              nBins: [10]
+
+        - algorithm_id: "LEAP"
+          image: "grnbeeline/leap:base"
+          should_run: [False]
+          params:
+              maxLag: [0.33]
+
+        - algorithm_id: "SCSGL"
+          image: "grnbeeline/scsgl:base"
+          should_run: [True]
+          params:
+              pos_density: [0.45]
+              neg_density: [0.45]
+              assoc: ["correlation"]
+
+        - algorithm_id: "PEARSON"
+          image: "local"
+          should_run: [True]
+
+    datasets:
+        - dataset_id: "dyn-linear"
+          should_run: [True]
+          scan_run_subdirectories: True
+          groundTruthNetwork: "GroundTruthNetwork.csv"
+
+
+output_settings:
+    # [2026-10-01 replaced by template placeholder (render_beeline_configs.py); was: output_dir: "/home/gzu5140/TwINFER_KA/analysis_data/boolode_linear_gene_sim/beeline_inference"]
+    output_dir: "${TWINFER_DATA_ROOT}/boolode_linear_gene_sim/beeline_inference"
+    experiment_id: ""
