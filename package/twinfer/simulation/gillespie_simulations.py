@@ -1893,6 +1893,8 @@ if __name__ == "__main__":
     parser.add_argument("--use_csv_k_add", action="store_true", default=True,
                         help="Use CSV-provided k_add values when available (default: on).")
     parser.add_argument("--no_csv_k_add", dest="use_csv_k_add", action="store_false")
+    parser.add_argument("--no_save_before_division", action="store_true", default=False,
+                        help="Do not save the simulation_before_division_* file (the time course of the cells until division; large). Default: saved.")
     args = parser.parse_args()
 
     # # Update base configuration with parsed arguments
@@ -1900,6 +1902,7 @@ if __name__ == "__main__":
     base_config["param_csv"] = args.param_csv
     base_config["row_to_start"] = int(args.row_to_start)
     base_config["use_csv_k_add"] = args.use_csv_k_add
+    base_config["save_before_division"] = not args.no_save_before_division
     base_config["output_folder"] = args.output_folder
     base_config["log_file"] = args.log_file
     base_config["type"] = args.type

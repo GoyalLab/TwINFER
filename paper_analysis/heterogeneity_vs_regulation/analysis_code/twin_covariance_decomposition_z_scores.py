@@ -19,7 +19,7 @@ Scenarios (rep = 0..99 by default)
 For each scenario and replicate the 6,000 twin pairs are put in one fixed random order and the first N are used,
 so the designs with fewer twin pairs are subsets of the larger ones.
 
-Statistics (ranks of the pooled sister values of each gene, centred; "twin cells only")
+Statistics (computed by twinfer.inference.covariance_decomposition_z_scores.twin_stats, where they are defined in detail)
   S            Spearman correlation between the two genes over all cells (both sisters)
   C            cross-sister part: correlation of gene X in sister 1 with gene Y in sister 2 (and vice versa)   -> shared part
   U            S - C                                                                                           -> unshared part
@@ -45,9 +45,11 @@ import re
 import numpy as np
 import pandas as pd
 
+from twinfer.inference.covariance_decomposition_z_scores import sister_arrays, twin_stats      # the statistics (shared by all figures)
+
 N_CLONES = 6000                 # twin pairs per simulation
 TIME_STEP = 20                  # hours after division used for the analysis
-GENES = ["gene_1", "gene_2"]
+GENES = ["gene_1_mRNA", "gene_2_mRNA"]
 DEFAULT_N_TWINS = [250, 500, 1000, 1500, 2000, 2500, 3000, 6000]
 
 # scenario name -> (kind, source). Index in this list is part of the random seeds (drift scenarios use 7).
@@ -62,47 +64,11 @@ SCENARIOS = [
 DRIFT_SEED_INDEX = 7
 
 
-# ---------------------------------------------------------------- statistics
-def average_rank(values):
-    """Ranks 1..n, ties get the average rank."""
-    _, inverse, counts = np.unique(values, return_inverse=True, return_counts=True)
-    return (np.cumsum(counts) - counts + (counts + 1) / 2)[inverse]
-
-
-def twin_stats(x, y):
-    """x, y: (n_twins, 2) expression of gene X and gene Y in the two sisters. Returns the dict of statistics described above."""
-    n = len(x)
-    rx = average_rank(x.ravel()).reshape(n, 2)
-    ry = average_rank(y.ravel()).reshape(n, 2)
-    rx = rx - rx.mean()
-    ry = ry - ry.mean()
-    mean_product = lambda a, b: ((a * b).sum(1) / 2).mean()          # mean over sisters, then over twins
-    norm = np.sqrt(mean_product(rx, rx) * mean_product(ry, ry))
-    S = ((rx[:, 0] * ry[:, 0] + rx[:, 1] * ry[:, 1]) / 2).mean() / norm
-    C = ((rx[:, 0] * ry[:, 1] + rx[:, 1] * ry[:, 0]) / 2).mean() / norm
-    h_x = (rx[:, 0] * rx[:, 1]).mean() / mean_product(rx, rx)
-    h_y = (ry[:, 0] * ry[:, 1]).mean() / mean_product(ry, ry)
-    hx_pos, hy_pos = max(0., h_x), max(0., h_y)
-    sigma_rho = np.sqrt((0.5 + 0.5 * hx_pos * hy_pos) / n)
-    sigma_delta = 1 / np.sqrt(n)
-    dx, dy = rx[:, 0] - rx[:, 1], ry[:, 0] - ry[:, 1]
-    r_delta = (dx * dy).sum() / np.sqrt((dx ** 2).sum() * (dy ** 2).sum())
-    return dict(
-        z_rho=S / sigma_rho,
-        z_rho_s=np.sign(S) * C / np.sqrt((1 + S * S + hx_pos * hy_pos) / (2 * n)),
-        z_rho_delta=r_delta / sigma_delta,
-        h_x=h_x, h_y=h_y, S=S, C=C, U=S - C, sigma_rho=sigma_rho,
-        A_s=C / sigma_rho, A_u=(S - C) / sigma_rho,
-        c=np.sqrt(max((1 - h_x) * (1 - h_y), 0.)) * sigma_delta / sigma_rho,
-        r_delta=r_delta)
-
-
 # ---------------------------------------------------------------- reading the simulations
 def read_sisters(path):
     """-> {gene: (N_CLONES, 2) array of mRNA counts at TIME_STEP}, rows ordered by clone_id, columns = sister 1, 2."""
-    d = pd.read_csv(path, usecols=["time_step", "gene_1_mRNA", "gene_2_mRNA", "replicate", "clone_id"])
-    d = d[d.time_step == TIME_STEP]
-    return {g: d.pivot(index="clone_id", columns="replicate", values=f"{g}_mRNA").values for g in GENES}
+    table = pd.read_csv(path, usecols=["time_step", "gene_1_mRNA", "gene_2_mRNA", "replicate", "clone_id"])
+    return sister_arrays(table, GENES, TIME_STEP)[1]
 
 
 def find_single_state_file(sim_dir, config, rep):
@@ -148,7 +114,7 @@ def analyse_replicate(args):
         order = np.random.RandomState(rep * 100 + seed_index + 12345).permutation(N_CLONES)
         for n in n_twins:
             chosen = order[:n]
-            stats = twin_stats(data["gene_1"][chosen], data["gene_2"][chosen])
+            stats = twin_stats(data["gene_1_mRNA"][chosen], data["gene_2_mRNA"][chosen])
             rows.append(dict(scenario=name, rep=rep, N=n, **stats))
     return rows
 
