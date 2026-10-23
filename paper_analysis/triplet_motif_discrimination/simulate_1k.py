@@ -30,6 +30,11 @@ parser.add_argument("--config_index", type=int, default=0)
 parser.add_argument("--n_reps", type=int, default=10)
 parser.add_argument("--rep_offset", type=int, default=0)
 parser.add_argument("--cores", type=int, default=8)
+# [2026-10-01 added] options used by the multi-core launcher run_1k_per_motif_multicore.py
+parser.add_argument("--output_folder", type=str, default=None)
+parser.add_argument("--burnin_hours", type=int, default=None)
+parser.add_argument("--save_before_division", type=int, default=1)
+parser.add_argument("--param_csv", type=str, default=None)   # [2026-10-04 added] parameter table override (default: median_parameter.csv)
 args, _ = parser.parse_known_args()
 config_index = args.config_index
 print(f"🔧 Running base_config #{config_index}")
@@ -100,6 +105,11 @@ if not (0 <= config_index < len(base_configs)):
         f"Set your SLURM array to 0–{len(base_configs) - 1}."
     )
 base_config = base_configs[config_index]
+# [2026-10-01 added] overrides (defaults keep the old behaviour)
+if args.output_folder: base_config["output_folder"] = args.output_folder; base_config["log_file"] = f"{args.output_folder}/figure_4.log"
+if args.burnin_hours: base_config["simulation_time_before_division"] = args.burnin_hours
+base_config["save_before_division"] = bool(args.save_before_division)
+if args.param_csv: base_config["param_csv"] = args.param_csv
 # Configure numba threads
 set_num_threads(base_config["number_of_cores_per_parameter"])
 print(f"🧠 Using {get_num_threads()} threads for config: {base_config['type']}")

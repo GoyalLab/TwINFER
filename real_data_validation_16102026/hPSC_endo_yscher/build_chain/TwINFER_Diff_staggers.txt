@@ -1,0 +1,6 @@
+# sample_name<TAB>index_recomp<TAB>stagger_sequence<TAB>filtered_bc_matrix_dir
+# Leave stagger_sequence empty when there is no stagger.
+# Column 4 is optional; when filtered_bc_matrix_dir is omitted, stepTwo falls
+# back to the FILTERED_BC_MATRIX defined in stepAll.sh.
+endo_T0	ATTCAGAA	AGTAC	/projects/b1042/GoyalLab/Hanxiao/twinfer_diff/cellranger_out/endo_T0/outs/filtered_feature_bc_matrix/
+endo_T1	CATGCCTA	CTTGA	/projects/b1042/GoyalLab/Hanxiao/twinfer_diff/cellranger_out/endo_T1/outs/filtered_feature_bc_matrix/

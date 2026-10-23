@@ -1750,7 +1750,10 @@ def process_param_set(rows, label, base_config):
     timestamp = datetime.now().strftime("%d%m%Y_%H%M%S")
     id = uuid.uuid4().hex[:8]
     prefix = f"{label}_{timestamp}_ncells_{n_cells}_{base_config['type']}_{id}"
-    df_base.to_csv(f"{base_config['output_folder']}/simulation_before_division_df_{prefix}.csv", index=False)
+    # [2026-10-01 commented out: now optional via base_config['save_before_division'] (default True = old behaviour); the 1k-per-motif run sets it False (1.7 GB per replicate)]
+    # df_base.to_csv(f"{base_config['output_folder']}/simulation_before_division_df_{prefix}.csv", index=False)
+    if base_config.get("save_before_division", True):
+        df_base.to_csv(f"{base_config['output_folder']}/simulation_before_division_df_{prefix}.csv", index=False)
     rep_time = sample_twins_time_points
     if divide_binomial:
         twin_1, twin_2 = divide_mother_cell_content(final_states.T, species_index=species_index,seed=101010, p_major=p_major)

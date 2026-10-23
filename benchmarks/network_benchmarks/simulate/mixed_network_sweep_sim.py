@@ -43,8 +43,12 @@ path_to_param_csv = f"{PROJECT_ROOT}/input_data/network_sweep/parameters.csv"
 # ==========================================================
 # Fixed job-layout parameters
 # ==========================================================
-n_array_jobs = 6
-n_replicates = 3
+# n_array_jobs = 6   # [2026-10-16 replaced: extend to 10 replicates]
+# n_replicates = 3   # [2026-10-16 replaced: extend to 10 replicates]
+# n_array_jobs = 24   # [2026-10-16 replaced: user wants fewer tasks]
+# n_array_jobs = 12   # 336 new sims (reps 3-9 = 7 new per network) / 12 tasks = 28 each; ~24-48 h per task   # [2026-10-18 replaced: env override so the 27-sim quota-failure refill can use 3 tasks]
+n_array_jobs = int(os.environ.get("MIXED_N_ARRAY_JOBS", 12))
+n_replicates = 10   # reps 0-2 already exist and are skipped by output_exists()
 n_parallel_per_job = 1
 
 # numba threads per simulation: all cores SLURM gave this task
@@ -134,7 +138,15 @@ def main():
     print(f"Total jobs (networks x replicates): {len(all_jobs)} "
           f"({len(network_files)} networks x {n_replicates} replicates)")
 
-    jobs_for_this_task = all_jobs[config_index::n_array_jobs]
+    # jobs_for_this_task = all_jobs[config_index::n_array_jobs]   # [2026-10-16 replaced: stride 12 over (net*10+rep) ties task parity to rep parity -> 24 vs 32 new sims]
+    # static owner = (network_index*7 + rep) % n_array_jobs: independent of what is already done (safe on resubmit);
+    # the 7 new reps (3-9) of each network land on 7 consecutive tasks, shifting by 7 per network -> 28 new sims/task, 14 n=10 each
+    net_idx = {os.path.splitext(os.path.basename(f))[0]: i for i, f in enumerate(network_files)}
+    jobs_for_this_task = [j for j in all_jobs
+                          if (net_idx[j["network_name"]] * 7 + j["replicate"]) % n_array_jobs == config_index]
+    if os.environ.get("MIXED_REFILL_BALANCED"):   # [2026-10-18] refill mode: spread only the not-yet-done jobs round-robin over the tasks
+        pending = [j for j in all_jobs if not output_exists(j["network_name"], j["replicate"])]
+        jobs_for_this_task = pending[config_index::n_array_jobs]
     todo = [j for j in jobs_for_this_task
             if not output_exists(j["network_name"], j["replicate"])]
     print(f"▶️  Array task {config_index}: {len(jobs_for_this_task)} owned job(s), "

@@ -2,10 +2,13 @@
 #SBATCH -A b1042
 #SBATCH -p genomics
 #SBATCH -N 1
-#SBATCH --array=0-5
+##SBATCH --array=0-5   # [2026-10-16 replaced]
+##SBATCH --array=0-23   # [2026-10-16 replaced: fewer tasks]
+#SBATCH --array=0-11
 #SBATCH --cpus-per-task=52
 #SBATCH --mem 96GB
-#SBATCH -t 24:00:00
+##SBATCH -t 24:00:00   # [2026-10-16 replaced: 28 sims/task]
+#SBATCH -t 48:00:00
 #SBATCH --output=/home/gzu5140/TwINFER_KA/simulation_data/mixed_network_sweep/logs/slurm_%A_%a.out
 #SBATCH --error=/home/gzu5140/TwINFER_KA/simulation_data/mixed_network_sweep/logs/slurm_%A_%a.err
 set -eo pipefail
