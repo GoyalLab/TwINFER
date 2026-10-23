@@ -1,7 +1,5 @@
 # TwINFER code (reorganised 2026-10)
 
-The reorganised TwINFER code (cleanup of 2026-09/10; the previous layout is in the git history of `reorg/paper-analysis`). Data is NOT in here: it lives in the project tree next to the repo (`TWINFER_PROJECT_ROOT`, data folder `analysis_data/`, `TWINFER_DATA_ROOT`). Benchmark result tables that used to be tracked in `work_in_progress/benchmark/` are now in `analysis_data/benchmarks/network_benchmarks/score_results/`.
-
 ## Quick start
 ```bash
 source env.sh          # sets TWINFER_PROJECT_ROOT / DATA_ROOT / REPO_ROOT / BEELINE_PATH / BOOLODE_PATH, PYTHONPATH, TWINFER_PYTHON
@@ -25,5 +23,3 @@ Environment: `twinfer-code` for everything (call its python directly). Exception
 - Replaced code is commented out with a dated note (`# [2026-09-30 ...]`); nothing was deleted.
 - Files rescued from old Claude scratchpads/`/tmp` carry `# [UNREVIEWED: rescued ...]`; their placement is a best guess.
 - Paths come from `twinfer.utils.paths` via `TWINFER_PROJECT_ROOT = get_data_root().parent`; scripts that used to sit in data folders reference those folders explicitly.
-
-Working notes of the cleanup (handoffs, review log, open-items lists, provenance tables) are kept outside this repo.
