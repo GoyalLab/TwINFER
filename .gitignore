@@ -19,3 +19,6 @@ _rescued/
 /MANIFEST.tsv
 /REPOINT_LOG.tsv
 /RESCUE_MAP.tsv
+
+# script backups
+*.bak*
