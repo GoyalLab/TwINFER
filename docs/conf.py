@@ -36,18 +36,8 @@ def _copy_tutorials():
 _copy_tutorials()
 
 
-# [2026-10-24 replaced: the docstrings of the API functions are now NumPy style, read by napoleon]
-# # The package docstrings are plain text (|z|, *, indented lists), not reStructuredText: show them as preformatted text.
-# def _docstring_as_text(app, what, name, obj, options, lines):
-#     if lines:
-#         lines[:] = ["::", ""] + ["    " + line for line in lines]
-#
-#
-# def setup(app):
-#     app.connect("autodoc-process-docstring", _docstring_as_text)
-
 project = "TwINFER"
-author = "Keerthana M Arun, Yuval Scher"
+author = "Keerthana M Arun, Yuval Scher, Yuhan D Zhang"
 copyright = "2026, " + author
 release = (REPO_ROOT / "package" / "__version__").read_text().strip()
 version = release
@@ -80,8 +70,10 @@ napoleon_numpy_docstring = True
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {"navigation_depth": 4}
 html_title = "TwINFER"
-# [2026-10-24 replaced: docs/_static is empty, and git does not keep empty folders (warning on GitHub)]
-# html_static_path = ["_static"]
+
+html_static_path = ["_static"]
+html_css_files = ["custom.css"]
+
 html_context = {
     "display_github": True,
     "github_user": "GoyalLab",

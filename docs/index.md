@@ -63,6 +63,6 @@ If you use TwINFER, please cite the preprint: bioRxiv [10.64898/2026.02.22.70723
 installation
 covariance_decomposition_derivation
 tutorials/index
-[https://github.com/GoyalLab/TwINFER](repository)
+Repository <https://github.com/GoyalLab/TwINFER>
 api
 ```

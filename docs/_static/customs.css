@@ -1,0 +1,13 @@
+/* Wide tables scroll inside their own box instead of stretching the page */
+.cell_output table.dataframe,
+.rst-content table.docutils {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+/* Optional: long DataFrames also scroll vertically */
+.cell_output .output.text_html {
+    max-height: 30em;
+    overflow-y: auto;
+}
