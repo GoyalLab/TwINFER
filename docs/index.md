@@ -39,6 +39,8 @@ For a pair of genes X and Y measured in N twin pairs, TwINFER splits the express
 | `z_rho_s` | the twin-shared part: X in one sister against Y in the other sister |
 | `z_rho_Delta` | the correlation of the twin differences of X and Y |
 
+For a more detailed description and derivation of these scores, please read [`covariance_decomposition_derivation.ipynb`](/covariance_decomposition_derivation.ipynb).
+
 Each gene pair is then assigned an inference scenario:
 
 | scenario | z_rho | z_rho_s | z_rho_Delta |
