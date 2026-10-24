@@ -13,7 +13,7 @@ Each simulation is a **single-state** system. **Two-state** systems combine 3,00
 
 * `z_rho`: regulation, or several states, against no regulation in a single state;
 * `z_rho_s`: two states against a single state (with a random-pair control in which the twin structure is broken);
-* `z_rho_delta`: regulation against no regulation, also among two-state systems.
+* `z_rho_Delta`: regulation against no regulation, also among two-state systems.
 
 ## Code
 

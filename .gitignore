@@ -11,7 +11,6 @@ _snapshots/
 _rescued/
 
 # Working notes, provenance logs and checking code of the 2026-10 cleanup: kept locally, not in the repo
-/docs/
 /handoff/
 /dev_tools/
 /tests/
@@ -25,3 +24,11 @@ _rescued/
 
 # python build artefacts
 *.egg-info/
+
+# documentation build (docs/tutorials/*.ipynb are copies of tutorials/ made by docs/conf.py)
+docs/_build/
+docs/generated/
+docs/tutorials/*.ipynb
+
+# results written by the tutorials
+tutorials/tutorial_output/

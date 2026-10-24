@@ -640,9 +640,16 @@ def resolve_all_k_add(param_dict, connectivity_matrix, gene_list,
             elif use_csv_k_add and key in param_dict:
                 value, source = param_dict[key], "CSV (direct)"
             else:
+                # csv_edge_values = (
+                #     [v for k, v in param_dict.items()
+                #      if k.startswith("{k_add_") and k.endswith(f"_to_{curr_gene}}}")]
+                #     if use_csv_k_add else []
+                # )
+                # [2026-10-24 replaced: averaged every CSV column ending in _to_<gene>, including edges
+                #  from genes absent from the network (A_to_B averaged gene_3_to_gene_2 into gene_2's k_add)]
                 csv_edge_values = (
-                    [v for k, v in param_dict.items()
-                     if k.startswith("{k_add_") and k.endswith(f"_to_{curr_gene}}}")]
+                    [param_dict[f"{{k_add_{gene_list[i]}_to_{curr_gene}}}"] for i in regulators
+                     if f"{{k_add_{gene_list[i]}_to_{curr_gene}}}" in param_dict]
                     if use_csv_k_add else []
                 )
                 if csv_edge_values:
@@ -1636,14 +1643,25 @@ def validate_pop0(pop0, species_index):
 def process_param_set(rows, label, base_config):
     """
     Processes a set of parameters for a Gillespie simulation, running the simulation for a specified number of cells and handling the results.
-    Parameters:
-        rows (list): A list of parameter rows to be processed.
-        label (str): A label for identifying the simulation run.
-        base_config (dict): A dictionary containing common parameters such as paths, connectivity matrix, and simulation settings.
-    Returns:
-        str: The file path of the saved DataFrame containing the results of the simulation.
-    Raises:
-        AssertionError: If the number of parameter rows is less than the number of genes.
+
+    Parameters
+    ----------
+    rows : list
+        A list of parameter rows to be processed.
+    label : str
+        A label for identifying the simulation run.
+    base_config : dict
+        A dictionary containing common parameters such as paths, connectivity matrix, and simulation settings.
+
+    Returns
+    -------
+    str
+        The file path of the saved DataFrame containing the results of the simulation.
+
+    Raises
+    ------
+    AssertionError
+        If the number of parameter rows is less than the number of genes.
     """
     # base_config contains common parameters: paths, k_add_list, n_matrix, time_points
     # Unpack base_config

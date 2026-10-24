@@ -15,7 +15,7 @@ Systems  : single_state  the 6,000 twin pairs of one simulation
            two_state     3,000 twin pairs (the lower half of the sorted clone ids) from file1 + 3,000 twin pairs (the upper half) from file2
 Output   : analysis_data/twin_covariance_decomposition_z_scores.csv, one row per system with columns
              topology, system, set_id (single_state) or file1/file2 (two_state), N (twin pairs, 6,000),
-             z_rho, z_rho_s, z_rho_delta, h_x, h_y, S, C, U, sigma_rho, A_s, A_u, c, r_delta
+             z_rho, z_rho_s, z_rho_Delta, h_x, h_y, S, C, U, sigma_rho, A_s, A_u, c, r_delta
            The statistics are computed by twinfer.inference.covariance_decomposition_z_scores (defined there; N = number of twin pairs).
            A system in which a gene has no variance gets empty statistics.
 Random pairs (control): with --break-twins the twin structure is destroyed before the statistics are computed: the second sister of each

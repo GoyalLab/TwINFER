@@ -1,7 +1,7 @@
 """Twin covariance decomposition z-scores for the six heterogeneity_vs_regulation scenarios.
 
 Figure   : heterogeneity_vs_regulation (A,B vs A->B; single state, 2 states, drift).
-Used for : z_rho / z_rho_s / z_rho_delta box plots with 6,000 twin pairs, and the effect of the number of twin pairs
+Used for : z_rho / z_rho_s / z_rho_Delta box plots with 6,000 twin pairs, and the effect of the number of twin pairs
            (see plot_code/plot_z_scores_6000_twins.py and plot_code/plot_n_twins_effect.py).
 
 Input    : the raw simulations (symlinked in final_figure_data/heterogeneity_vs_regulation/simulation_data/):
@@ -27,9 +27,9 @@ Statistics (computed by twinfer.inference.covariance_decomposition_z_scores.twin
   sigma_rho    null standard deviation of S,  sqrt((0.5 + 0.5 h_x h_y) / N)
   z_rho        S / sigma_rho
   z_rho_s      sign(S) * C / sqrt((1 + S^2 + h_x h_y) / (2N))                 (shared-part z-score, z_rho_s)
-  z_rho_delta  r_delta * sqrt(N), r_delta = correlation of the sister differences of the two genes   (unshared-part z-score)
+  z_rho_Delta  r_delta * sqrt(N), r_delta = correlation of the sister differences of the two genes   (unshared-part z-score)
   A_s, A_u     C / sigma_rho and U / sigma_rho (z_rho = A_s + A_u)
-  c            sqrt((1 - h_x)(1 - h_y)) * (1 / sqrt(N)) / sigma_rho  (A_u = c * z_rho_delta)
+  c            sqrt((1 - h_x)(1 - h_y)) * (1 / sqrt(N)) / sigma_rho  (A_u = c * z_rho_Delta)
 
 Requires : numpy, pandas (the twinfer-code environment). Runtime: about 35 s for 100 replicates with 4 processes.
 Usage    : python twin_covariance_decomposition_z_scores.py [--reps 0-99] [--n-twins 250 500 1000 3000 6000] [--jobs 8]

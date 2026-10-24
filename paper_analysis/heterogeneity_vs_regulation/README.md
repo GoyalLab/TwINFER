@@ -8,7 +8,7 @@ Two genes, A and B, simulated with and without regulation (A,B: no link; A → B
 | A,B / A → B, 2 states | 3,000 twin pairs from a low-k_on population + 3,000 from a high-k_on population |
 | A,B / A → B, drift | one population whose two halves drift to a low and a high k_on after division |
 
-For each scenario, 100 replicates with 6,000 twin pairs are scored 20 hours after division with `z_rho`, `z_rho_s` and `z_rho_delta` (`twinfer.inference.covariance_decomposition_z_scores`). With 6,000 twin pairs, `z_rho` is significant in every replicate of every scenario except A,B single state (4 %); `z_rho_s` only in the scenarios with a shared state (2 states, drift: 100 %; single state: 0-3 %); and `z_rho_delta` detects regulation whether or not the cells have several states (A → B: 86-96 % of replicates; A,B: 4-9 %). A second set of plots shows how the z-scores change with the number of twin pairs (250 to 6,000).
+For each scenario, 100 replicates with 6,000 twin pairs are scored 20 hours after division with `z_rho`, `z_rho_s` and `z_rho_Delta` (`twinfer.inference.covariance_decomposition_z_scores`). With 6,000 twin pairs, `z_rho` is significant in every replicate of every scenario except A,B single state (4 %); `z_rho_s` only in the scenarios with a shared state (2 states, drift: 100 %; single state: 0-3 %); and `z_rho_Delta` detects regulation whether or not the cells have several states (A → B: 86-96 % of replicates; A,B: 4-9 %). A second set of plots shows how the z-scores change with the number of twin pairs (250 to 6,000).
 
 ## Code
 

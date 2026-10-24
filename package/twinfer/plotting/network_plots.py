@@ -1790,8 +1790,8 @@ def network_from_scenarios(
     -------
     plot_kwargs
         dict with matrix, node_labels, edge_styles, undirected_edges:
-        call plot_grn(**plot_kwargs) (other plot_grn options can be
-        added, e.g. plot_grn(**plot_kwargs, colorbar_label="z_rho")).
+        call ``plot_grn(**plot_kwargs)`` (other plot_grn options can be
+        added, e.g. ``plot_grn(**plot_kwargs, colorbar_label="z_rho")``).
     edges
         DataFrame, one row per drawn edge: source, target, weight,
         inference_scenario, line_style, directed.

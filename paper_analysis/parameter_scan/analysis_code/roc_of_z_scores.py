@@ -1,11 +1,11 @@
-"""ROC curves of z_rho, z_rho_s and z_rho_delta in the parameter scan: scenario / multiple-state panels and two-state regulation.
+"""ROC curves of z_rho, z_rho_s and z_rho_Delta in the parameter scan: scenario / multiple-state panels and two-state regulation.
 
 Figure   : parameter_scan (used by heterogeneity_vs_regulation and causal_direction_inference).
 Used for : plot_code/plot_roc_panels.py (roc_panels.pdf and roc_two_states_regulation.pdf).
 Input    : analysis_data/twin_covariance_decomposition_z_scores.csv                (twin pairs)
            analysis_data/twin_covariance_decomposition_z_scores_random_pairs.csv   (control with the twin structure broken; made with
                                                                                    twin_covariance_decomposition_z_scores.py --break-twins)
-           Columns used: topology, system (single_state / two_state), z_rho, z_rho_s, z_rho_delta. Topologies: A_B (X Y, no regulation),
+           Columns used: topology, system (single_state / two_state), z_rho, z_rho_s, z_rho_Delta. Topologies: A_B (X Y, no regulation),
            A_to_B (X -> Y), A_and_B (X <-> Y), A_rep_B (X -| Y).
 Panels   : every curve ranks the systems by |z|.
            regulation_vs_scenario_1         score z_rho    positives = single-state systems of A_and_B / A_rep_B / A_to_B (regulation, single state)
@@ -13,7 +13,7 @@ Panels   : every curve ranks the systems by |z|.
            multiple_states_vs_scenario_1    score z_rho    positives = two-state systems of each of the 4 topologies; negatives = single-state A_B
            multiple_states_vs_single_state  score z_rho_s  positives = two-state systems of the topology; negatives = single-state systems of
                                                            the same topology; computed on the twin pairs ("twins") and on the control ("random pairs")
-           regulation_two_states            score z_rho_delta  positives = two-state systems of A_and_B / A_rep_B / A_to_B (regulation, two states)
+           regulation_two_states            score z_rho_Delta  positives = two-state systems of A_and_B / A_rep_B / A_to_B (regulation, two states)
                                                            negatives = two-state A_B (no regulation, two states)
 Output   : plot_data/roc_summary.csv  panel, curve, source, positives, negatives, AUROC
            plot_data/roc_curves.csv   panel, curve, source, fpr, tpr   (each curve thinned to at most --max-points points)
@@ -44,7 +44,7 @@ def curve_definitions():
     for topology in ["A_B", "A_to_B", "A_and_B", "A_rep_B"]:                                     # multiple states vs single state
         definitions.append(("multiple_states_vs_single_state", topology, "z_rho_s", lambda d, t=topology: two(d) & (d.topology == t), lambda d, t=topology: single(d) & (d.topology == t)))
     for topology in REGULATED:                                                                   # regulation among two-state systems
-        definitions.append(("regulation_two_states", topology, "z_rho_delta", lambda d, t=topology: two(d) & (d.topology == t), lambda d: two(d) & (d.topology == "A_B")))
+        definitions.append(("regulation_two_states", topology, "z_rho_Delta", lambda d, t=topology: two(d) & (d.topology == t), lambda d: two(d) & (d.topology == "A_B")))
     return definitions
 
 
@@ -70,6 +70,8 @@ if __name__ == "__main__":
     sources = {"twins": pd.read_csv(args.twins)}                  # z-scores of the twin pairs; the random-pair control is added below if it exists
     if os.path.exists(args.random_pairs):
         sources["random_pairs"] = pd.read_csv(args.random_pairs)
+    # [2026-10-24] z_rho_delta, q_rho_delta, rho_delta renamed to z_rho_Delta, q_rho_Delta, rho_Delta: csvs written before the rename are read with the new names
+    sources = {name: frame.rename(columns=lambda c: c.replace("rho_delta", "rho_Delta")) for name, frame in sources.items()}
     summary, curves = [], []
     for panel, curve, score, positive_of, negative_of in curve_definitions():
         for source, data in sources.items():

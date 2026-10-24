@@ -1,4 +1,4 @@
-"""AUPRC of z_rho, z_rho_s and z_rho_delta in the parameter scan (precision-recall curves and areas).
+"""AUPRC of z_rho, z_rho_s and z_rho_Delta in the parameter scan (precision-recall curves and areas).
 
 Figure   : parameter_scan (used by heterogeneity_vs_regulation and causal_direction_inference).
 Used for : plot_code/plot_auprc.py (z_rho_auprc.pdf, z_rho_s_auprc.pdf, z_rho_delta_auprc.pdf).
@@ -8,7 +8,7 @@ Ranking  : every score is ranked by |z|. Systems without a z-score (a gene witho
 Classes (positive vs negative), one curve per topology:
            z_rho        positives = all systems of the topology (A_B: its two-state systems);  negatives = single-state A_B
            z_rho_s      positives = two-state systems of the topology;  negatives = single-state systems of the same topology
-           z_rho_delta  positives = all systems of the topology (A_to_B, A_and_B, A_rep_B);  negatives = A_B (single and two-state)
+           z_rho_Delta  positives = all systems of the topology (A_to_B, A_and_B, A_rep_B);  negatives = A_B (single and two-state)
 Output   : plot_data/auprc_summary.csv  one row per score and curve: positives, negatives, base_rate, AUPRC, AUPRC_over_base
                                             (AUPRC divided by the base rate, 1.0 = chance)
            plot_data/auprc_curves.csv   score, curve, recall, precision; each curve is thinned to at most --max-points points
@@ -24,7 +24,7 @@ import pandas as pd
 from sklearn.metrics import average_precision_score, precision_recall_curve
 
 TOPOLOGIES = ["A_B", "A_to_B", "A_and_B", "A_rep_B"]
-SCORES = ["z_rho", "z_rho_s", "z_rho_delta"]
+SCORES = ["z_rho", "z_rho_s", "z_rho_Delta"]
 
 
 def classes(score, topology, data):
@@ -36,7 +36,7 @@ def classes(score, topology, data):
         positive = mine & ~negative
     elif score == "z_rho_s":
         positive, negative = mine & ~single, mine & single
-    else:                                                       # z_rho_delta
+    else:                                                       # z_rho_Delta
         negative = data.topology == "A_B"
         positive = mine & ~negative                             # empty for A_B itself: no curve
     return positive | negative, positive
@@ -61,6 +61,8 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     data = pd.read_csv(args.z_scores)
+    # [2026-10-24] z_rho_delta, q_rho_delta, rho_delta renamed to z_rho_Delta, q_rho_Delta, rho_Delta: csvs written before the rename are read with the new names
+    data = data.rename(columns=lambda c: c.replace("rho_delta", "rho_Delta"))
     summary, curves = [], []
     for score in SCORES:
         usable = data[score].notna()

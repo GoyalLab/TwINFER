@@ -1,13 +1,13 @@
-"""Effect of the number of twin pairs on z_rho, z_rho_s and z_rho_delta for the six heterogeneity_vs_regulation scenarios.
+"""Effect of the number of twin pairs on z_rho, z_rho_s and z_rho_Delta for the six heterogeneity_vs_regulation scenarios.
 
 Figure   : heterogeneity_vs_regulation (A,B vs A->B; single state, 2 states, drift).
 Produces : z_rho_effect_n_twin.pdf, z_rho_s_effect_n_twin.pdf, z_rho_delta_effect_n_twin.pdf
            (x = scenario, within each scenario one box per number of twin pairs, 100 replicates; shaded greyscale, light = few, dark = many).
 Input    : analysis_data/twin_covariance_decomposition_z_scores.csv (made by analysis_code/twin_covariance_decomposition_z_scores.py);
-           columns scenario, rep, N, z_rho, z_rho_s, z_rho_delta. Other values of N in the csv are ignored. No analysis is done here.
+           columns scenario, rep, N, z_rho, z_rho_s, z_rho_Delta. Other values of N in the csv are ignored. No analysis is done here.
 Y axes   : z_rho and z_rho_s share the same y-axis limits.
 Style    : Illustrator-editable (Arial, cm math, fonttype 42, no clips/masks, transparent PDF); filled grey boxes with black edges,
-           outliers shown, light y grid, dotted zero line, dashed lines at +-1.96 (same format as the earlier by-network z_rho_delta figure).
+           outliers shown, light y grid, dotted zero line, dashed lines at +-1.96 (same format as the earlier by-network z_rho_Delta figure).
 
 Usage    : python plot_n_twins_effect.py [--data CSV] [--out-dir DIR]
 """
@@ -38,7 +38,7 @@ LABELS = [r"$\mathrm{A,\ B}$", r"$\mathrm{A} \rightarrow \mathrm{B}$", r"$\mathr
           r"$\mathrm{A,\ B}$" "\ndrift", r"$\mathrm{A} \rightarrow \mathrm{B}$" "\ndrift"]            # upright math text (Computer Modern), second line in Arial
 PLOTS = [("z_rho", r"$z$-score of expression correlation $z_\rho$", "z_rho_effect_n_twin.pdf"),
          ("z_rho_s", r"$z$-score of twin-shared correlation $z_{\rho_s}$", "z_rho_s_effect_n_twin.pdf"),
-         ("z_rho_delta", r"$z$-score of twin-difference correlation $z_{\hat{\rho}_\Delta}$", "z_rho_delta_effect_n_twin.pdf")]
+         ("z_rho_Delta", r"$z$-score of twin-difference correlation $z_{\hat{\rho}_\Delta}$", "z_rho_delta_effect_n_twin.pdf")]
 BOX_SPACING = 0.16                                                         # distance between the boxes of one scenario
 
 figure_data = os.path.join(os.environ.get("TWINFER_PROJECT_ROOT", "/gpfs/projects/b1255/hzhang/TwINFER_KA"), "final_figure_data", "heterogeneity_vs_regulation")
@@ -48,6 +48,8 @@ ap.add_argument("--out-dir", default=os.path.join(os.environ.get("TWINFER_PROJEC
 args = ap.parse_args()
 
 data = pd.read_csv(args.data)
+# [2026-10-24] z_rho_delta, q_rho_delta, rho_delta renamed to z_rho_Delta, q_rho_Delta, rho_Delta: csvs written before the rename are read with the new names
+data = data.rename(columns=lambda c: c.replace("rho_delta", "rho_Delta"))
 
 SHARED_YLIM = ("z_rho", "z_rho_s")                  # statistics drawn with the same y-axis limits
 figures = []

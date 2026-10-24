@@ -14,18 +14,18 @@ For a pair of genes X and Y measured in N twin pairs, TwINFER splits the express
 |---|---|
 | `z_rho` | the correlation of X and Y over all cells (Spearman) |
 | `z_rho_s` | the twin-shared part: X in one sister against Y in the other sister |
-| `z_rho_delta` | the correlation of the twin differences of X and Y |
+| `z_rho_Delta` | the correlation of the twin differences of X and Y |
 
 Each gene pair is then assigned an inference scenario:
 
-| scenario | z_rho | z_rho_s | z_rho_delta |
+| scenario | z_rho | z_rho_s | z_rho_Delta |
 |---|---|---|---|
 | 1 no regulation or cell heterogeneity identified | not significant | | |
 | 2 regulation | significant | not significant | |
 | 3 regulation + heterogeneity | significant | significant | significant |
 | 4 heterogeneity | significant | significant | not significant |
 
-The z-scores are tested in this order: `z_rho`, then `z_rho_s`, then `z_rho_delta`. Significant means \|z\| > 1.96 for `z_rho` and `z_rho_delta`, > 2.326 for `z_rho_s` (the thresholds can be changed). When many gene pairs are scored at once, as in real data, `z_rho` and `z_rho_delta` are instead tested with a Benjamini-Hochberg correction: `z_rho` over all pairs, `z_rho_delta` over the pairs whose `z_rho` is significant (q ≤ 0.05 for both).
+The z-scores are tested in this order: `z_rho`, then `z_rho_s`, then `z_rho_Delta`. Significant means \|z\| > 1.96 for `z_rho` and `z_rho_Delta`, > 2.326 for `z_rho_s` (the thresholds can be changed). When many gene pairs are scored at once, as in real data, `z_rho` and `z_rho_Delta` are instead tested with a Benjamini-Hochberg correction: `z_rho` over all pairs, `z_rho_Delta` over the pairs whose `z_rho` is significant (q ≤ 0.05 for both).
 
 When twins are measured at two time points, the cross-time correlation between twins (X in one sister earlier against Y in the other sister later, and the reverse) gives the direction of regulation.
 
@@ -60,10 +60,10 @@ from twinfer.inference.covariance_decomposition_z_scores import infer_with_twinf
 from twinfer.plotting.network_plots import network_from_scenarios, plot_grn
 
 # Twin pairs: one row per cell and time point, columns clone_id, replicate (1 or 2 = which sister), time_step, one column per gene
-table = pd.read_csv("simulation_example_output_data/df_rows_0_0_20112025_222419_ncells_6000_A_to_B_4e702629.csv")
+table = pd.read_csv("simulation_example_output_data/df_rows_0_0_24102026_140638_ncells_6000_A_to_B_04cf9c46.csv")
 genes = ["gene_1_mRNA", "gene_2_mRNA"]
 
-result = infer_with_twinfer(table, genes, time_points=[20])          # z_rho, z_rho_s, z_rho_delta, inference_scenario per gene pair
+result = infer_with_twinfer(table, genes, time_points=[20])          # z_rho, z_rho_s, z_rho_Delta, inference_scenario per gene pair
 result = infer_with_twinfer(table, genes, time_points=[1, 20])       # adds the direction (z_dag_xy, z_dag_yx, delta, p_delta)
 
 # Real data: one row per cell with clone_id and normalised expression (no replicate column); clones of any size

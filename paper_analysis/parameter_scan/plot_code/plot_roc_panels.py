@@ -6,7 +6,7 @@ Produces : roc_panels.pdf (three square panels)
              multiple states (TPR) against scenario 1 (FPR), score z_rho; the two-state systems of the four topologies
              multiple states (TPR) against single state (FPR), score z_rho_s; twin pairs (solid) and the random-pair control (dashed)
            roc_two_states_regulation.pdf (one square panel)
-             two states with regulation (TPR) against two states without regulation (FPR), score z_rho_delta; X <-> Y, X -> Y, X -| Y
+             two states with regulation (TPR) against two states without regulation (FPR), score z_rho_Delta; X <-> Y, X -> Y, X -| Y
            Scenario 1 = single-state A_B (no regulation, single state). Each panel gives the AUROC of its curves.
 Input    : plot_data/roc_curves.csv and plot_data/roc_summary.csv, made by analysis_code/roc_of_z_scores.py, which also defines the
            classes. No analysis is done here.

@@ -1,4 +1,4 @@
-"""Precision-recall curves (AUPRC) of z_rho, z_rho_s and z_rho_delta in the parameter scan.
+"""Precision-recall curves (AUPRC) of z_rho, z_rho_s and z_rho_Delta in the parameter scan.
 
 Figure   : parameter_scan (used by heterogeneity_vs_regulation and causal_direction_inference).
 Produces : z_rho_auprc.pdf, z_rho_s_auprc.pdf, z_rho_delta_auprc.pdf (precision against recall, exact square panels; one curve per topology in
@@ -31,7 +31,7 @@ COLOURS = {"A_B": "#ee9127", "A_to_B": "#006937", "A_and_B": "#4292c6", "A_rep_B
 LINES = {"A_B": ":", "A_to_B": "-.", "A_and_B": "-", "A_rep_B": "--"}
 NAMES = {"A_B": r"$\mathrm{X}\ \mathrm{Y}$", "A_to_B": r"$\mathrm{X} \rightarrow \mathrm{Y}$",
          "A_and_B": r"$\mathrm{X} \leftrightarrow \mathrm{Y}$", "A_rep_B": r"$\mathrm{X} \dashv \mathrm{Y}$"}
-PLOTS = [("z_rho", "z_rho_auprc.pdf"), ("z_rho_s", "z_rho_s_auprc.pdf"), ("z_rho_delta", "z_rho_delta_auprc.pdf")]
+PLOTS = [("z_rho", "z_rho_auprc.pdf"), ("z_rho_s", "z_rho_s_auprc.pdf"), ("z_rho_Delta", "z_rho_delta_auprc.pdf")]
 
 project = os.environ.get("TWINFER_PROJECT_ROOT", "/gpfs/projects/b1255/hzhang/TwINFER_KA")
 ap = argparse.ArgumentParser()
@@ -39,8 +39,14 @@ ap.add_argument("--plot-data-dir", default=os.path.join(project, "final_figure_d
 ap.add_argument("--out-dir", default=os.path.join(project, "final_plots", "parameter_scan"))
 args = ap.parse_args()
 
+# [2026-10-24] z_rho_delta, q_rho_delta, rho_delta renamed to z_rho_Delta, q_rho_Delta, rho_Delta: csvs written before the rename are read with the new names
 curves = pd.read_csv(os.path.join(args.plot_data_dir, "auprc_curves.csv"))
-summary = pd.read_csv(os.path.join(args.plot_data_dir, "auprc_summary.csv")).set_index(["score", "curve"])
+curves["score"] = curves["score"].str.replace("rho_delta", "rho_Delta")
+# [2026-10-24 replaced: score values renamed before set_index]
+# summary = pd.read_csv(os.path.join(args.plot_data_dir, "auprc_summary.csv")).set_index(["score", "curve"])
+summary = pd.read_csv(os.path.join(args.plot_data_dir, "auprc_summary.csv"))
+summary["score"] = summary["score"].str.replace("rho_delta", "rho_Delta")
+summary = summary.set_index(["score", "curve"])
 
 for score, pdf_name in PLOTS:
     fig, ax = plt.subplots(figsize=(6, 5))

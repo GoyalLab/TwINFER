@@ -2,7 +2,7 @@
 
 One list per score, by default
   z_rho_s       twin-shared part of the correlation (heterogeneity: a shared cell state)
-  z_rho_delta   twin-difference correlation (regulation)
+  z_rho_Delta   twin-difference correlation (regulation)
   z_dag         only when the result has two time points: the cross-time correlation of sisters, ranked by the larger of
                 |z_dag_xy| (gene_x earlier with gene_y later) and |z_dag_yx| (the reverse); each pair is listed as source -> target
                 in the direction of the larger one, with delta and p_delta (the test of the direction)
@@ -14,9 +14,10 @@ the default for real data), otherwise |z_rho| > z_rho_threshold. This is how the
 Example:
     from twinfer.inference.ranked_edges import ranked_edge_lists
     lists = ranked_edge_lists(result, top=100)
-    lists["z_rho_delta"]          # rank, gene_x, gene_y, z_rho_delta, z_rho, q_rho, inference_scenario, ...
+    lists["z_rho_Delta"]          # rank, gene_x, gene_y, z_rho_Delta, z_rho, q_rho, inference_scenario, ...
     lists["z_dag"]                # two time points only: rank, source, target, z_dag, z_dag_xy, z_dag_yx, delta, p_delta, ...
 """
+# [2026-10-24 renamed: z_rho_delta, q_rho_delta, rho_delta and q_values_of_z_rho_delta to z_rho_Delta, q_rho_Delta, rho_Delta, q_values_of_z_rho_Delta]
 import numpy as np
 import pandas as pd
 
@@ -27,19 +28,30 @@ import pandas as pd
 def ranked_edge_lists(result, scores=None, time="tb", significant_rho_only=True, fdr=0.05, z_rho_threshold=1.96, top=None):
     """Ranked lists of gene pairs, one per score.
 
-    result            DataFrame returned by infer_with_twinfer (one row per gene pair; with several time points, one (t_a, t_b) pair).
-    scores            score columns to rank by (without the _ta / _tb suffix), and/or "z_dag" (cross-time correlation, several time
-                      points only). None (default): ("z_rho_s", "z_rho_delta"), plus "z_dag" when the result has two time points.
-    time              "ta" or "tb": which twin group to use when the result has several time points (columns with that suffix).
-    significant_rho_only  rank only pairs whose z_rho is significant (q_rho <= fdr if a q_rho column exists, else |z_rho| > z_rho_threshold).
-    top               keep the first `top` pairs of each list (None = all).
-    Returns {score: DataFrame} with the columns rank (1 = largest |score|), gene_x, gene_y, the score, z_rho, and q_rho, q_rho_delta,
-    inference_scenario where present. The z_dag list has source, target (the direction of the larger |z_dag|), z_dag, z_dag_xy,
-    z_dag_yx, delta, p_delta instead of gene_x, gene_y. Pairs with a missing score are left out; tied pairs keep their order in `result`.
+    Parameters
+    ----------
+    result : pandas.DataFrame
+        Returned by infer_with_twinfer (one row per gene pair; with several time points, one (t_a, t_b) pair).
+    scores : list of str, optional
+        Score columns to rank by (without the _ta / _tb suffix), and/or "z_dag" (cross-time correlation, several time
+        points only). None (default): ("z_rho_s", "z_rho_Delta"), plus "z_dag" when the result has two time points.
+    time : {"ta", "tb"}
+        Which twin group to use when the result has several time points (columns with that suffix).
+    significant_rho_only, fdr, z_rho_threshold : bool, float, float
+        Rank only pairs whose z_rho is significant (q_rho <= fdr if a q_rho column exists, else ``|z_rho|`` > z_rho_threshold).
+    top : int, optional
+        Keep the first `top` pairs of each list (None = all).
+
+    Returns
+    -------
+    dict
+        {score: DataFrame} with the columns rank (1 = largest ``|score|``), gene_x, gene_y, the score, z_rho, and q_rho, q_rho_Delta,
+        inference_scenario where present. The z_dag list has source, target (the direction of the larger ``|z_dag|``), z_dag, z_dag_xy,
+        z_dag_yx, delta, p_delta instead of gene_x, gene_y. Pairs with a missing score are left out; tied pairs keep their order in `result`.
     """
     has_cross = {"z_dag_xy", "z_dag_yx"} <= set(result.columns)
     if scores is None:
-        scores = ("z_rho_s", "z_rho_delta") + (("z_dag",) if has_cross else ())
+        scores = ("z_rho_s", "z_rho_Delta") + (("z_dag",) if has_cross else ())
     suffix = "" if "z_rho" in result.columns else f"_{time}"
     if f"z_rho{suffix}" not in result.columns:
         raise ValueError(f"result has no column z_rho{suffix}")
@@ -49,7 +61,7 @@ def ranked_edge_lists(result, scores=None, time="tb", significant_rho_only=True,
             table = table[table["q_rho"] <= fdr]
         else:
             table = table[np.abs(table["z_rho"]) > z_rho_threshold]
-    extra = [c for c in ("z_rho", "q_rho", "q_rho_delta", "inference_scenario") if c in table.columns]
+    extra = [c for c in ("z_rho", "q_rho", "q_rho_Delta", "inference_scenario") if c in table.columns]
     lists = {}
     if "z_dag" in scores:
         if not has_cross:
