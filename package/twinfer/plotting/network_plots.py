@@ -892,6 +892,8 @@ def plot_grn(
     edge_styles=None,
     undirected_edges=None,
     colorbar_label="Edge Weight",
+    # [2026-10-24 added: edge_colors]
+    edge_colors=None,
 ):
     """
     Plot a signed, weighted directed GRN.
@@ -952,8 +954,16 @@ def plot_grn(
     colorbar_label
         Label of the colour bar (when show_colorbar is True).
 
-    `network_from_scenarios` builds the matrix, edge_styles and
-    undirected_edges from the output of
+    edge_colors
+        Optional dict {(source, target): Matplotlib colour}, e.g.
+        {(0, 1): "tab:blue"}: the edge 0 -> 1 (line, arrowhead or bar)
+        is drawn in that colour instead of the colour of its weight.
+        Edges not in the dict are coloured by weight.
+
+    Notes
+    -----
+    `network_from_scenarios` builds the matrix, edge_styles,
+    undirected_edges and edge_colors from the output of
     twinfer.inference.covariance_decomposition_z_scores.infer_with_twinfer.
     """
     matrix = np.asarray(
@@ -1251,6 +1261,7 @@ def plot_grn(
     )
 
     edge_styles = dict(edge_styles or {})
+    edge_colors = dict(edge_colors or {})
     undirected_edges = {
         tuple(edge)
         for edge in (undirected_edges or ())
@@ -1289,8 +1300,15 @@ def plot_grn(
             "solid",
         )
 
-        color = colormap(
-            color_norm(weight)
+        # [2026-10-24 replaced: edge_colors overrides the colour of the weight]
+        # color = colormap(
+        #     color_norm(weight)
+        # )
+        color = edge_colors.get(
+            edge,
+            colormap(
+                color_norm(weight)
+            ),
         )
 
         shift_fraction = (
@@ -1757,6 +1775,8 @@ def network_from_scenarios(
     solid_scenarios=(2, 3),
     dashed_scenarios=(4,),
     direction_alpha=0.05,
+    # [2026-10-24 added: scenario_colors]
+    scenario_colors=None,
 ):
     """
     Turn the output of `infer_with_twinfer` into the inputs of `plot_grn`.
@@ -1774,6 +1794,9 @@ def network_from_scenarios(
       Otherwise the edge is drawn without direction.
     - edge weight (colour, and activation arrow vs repression bar of a
       directed edge) = the column `weight` (default z_rho).
+    - `scenario_colors` (optional dict {scenario: colour}, e.g.
+      {3: "tab:blue", 4: "grey"}): edges of these scenarios are drawn
+      in that colour instead of the colour of their weight.
 
     Parameters
     ----------
@@ -1785,11 +1808,15 @@ def network_from_scenarios(
     time
         "ta" or "tb": which twin group's scenario and weight to use
         when the table has several time points (default the later, tb).
+    scenario_colors
+        Optional dict {inference scenario: Matplotlib colour}; see the
+        edge rules.
 
     Returns
     -------
     plot_kwargs
-        dict with matrix, node_labels, edge_styles, undirected_edges:
+        dict with matrix, node_labels, edge_styles, undirected_edges
+        (and edge_colors when scenario_colors is given):
         call ``plot_grn(**plot_kwargs)`` (other plot_grn options can be
         added, e.g. ``plot_grn(**plot_kwargs, colorbar_label="z_rho")``).
     edges
@@ -1836,6 +1863,7 @@ def network_from_scenarios(
         (len(genes), len(genes))
     )
     edge_styles = {}
+    edge_colors = {}
     undirected_edges = set()
     edges = []
 
@@ -1872,6 +1900,8 @@ def network_from_scenarios(
 
         matrix[source, target] = row[weight_column]
         edge_styles[(source, target)] = line_style
+        if scenario_colors and scenario in scenario_colors:
+            edge_colors[(source, target)] = scenario_colors[scenario]
 
         if not directed:
             undirected_edges.add(
@@ -1895,6 +1925,8 @@ def network_from_scenarios(
         edge_styles=edge_styles,
         undirected_edges=undirected_edges,
     )
+    if scenario_colors:
+        plot_kwargs["edge_colors"] = edge_colors
 
     edges = pd.DataFrame(
         edges,
