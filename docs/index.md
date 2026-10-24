@@ -54,7 +54,7 @@ When twins are measured at two time points, the cross-time correlation between t
 
 ## Citation
 
-If you use TwINFER, please cite the preprint: bioRxiv [10.1101/2026.02.22.707230](https://doi.org/10.1101/2026.02.22.707230).
+If you use TwINFER, please cite the preprint: bioRxiv [10.64898/2026.02.22.707230](https://doi.org/10.64898/2026.02.22.707230).
 
 ```{toctree}
 :hidden:
@@ -63,5 +63,6 @@ If you use TwINFER, please cite the preprint: bioRxiv [10.1101/2026.02.22.707230
 installation
 covariance_decomposition_derivation
 tutorials/index
+[https://github.com/GoyalLab/TwINFER](repository)
 api
 ```
