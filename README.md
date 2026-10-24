@@ -1,14 +1,13 @@
 # TwINFER
 
-TwINFER leverages information from recently divided sister
-cells, or *"twins"* to distinguish between correlations arising from regulation and correlations from non-regulatory sources such as cell-state heterogeneity. Twin cells, immediately after division, belong to essentially the same state and the initial difference in the gene expression levels between them is minimal. Further, a cell approximates its
+TwINFER leverages information from recently divided sister cells, or “twins”, to infer gene regulatory networks: twin information discriminates regulatory from non-regulatory correlations and resolves interaction direction and type (activation/repression). Twin cells, immediately after division, belong to essentially the same state and the initial difference in the gene expression levels between them is minimal. Further, a cell approximates its
 twin cell’s state and gene expression levels immediately after division. These two properties of twin cells enables TwINFER to *account for cell-state heterogeneity* and *infer causal relations*.
 
 This repository contains the `twinfer` Python package, tutorials, and the code behind the figures of the paper.
 
 ## How it works
 
-For a pair of genes X and Y measured in N twin pairs, TwINFER splits the expression correlation into a part shared by twins and a part that differs between twins, and reports three analytic z-scores:
+For a pair of genes X and Y measured in N twin pairs, TwINFER decomposes the correlation between genes into two components, shared and unshared between twins. It reports these metrics through three analytic z-scores:
 
 | z-score | measures |
 |---|---|
@@ -16,20 +15,22 @@ For a pair of genes X and Y measured in N twin pairs, TwINFER splits the express
 | `z_rho_s` | the twin-shared part: X in one sister against Y in the other sister |
 | `z_rho_Delta` | the correlation of the twin differences of X and Y |
 
+For a more detailed description and derivation of these scores, please read [`covariance_decomposition_derivation.ipynb`](/docs/covariance_decomposition_derivation.ipynb).
+
 Each gene pair is then assigned an inference scenario:
 
-| scenario | z_rho | z_rho_s | z_rho_Delta |
-|---|---|---|---|
-| 1 no regulation or cell heterogeneity identified | not significant | | |
-| 2 regulation | significant | not significant | |
-| 3 regulation + heterogeneity | significant | significant | significant |
-| 4 heterogeneity | significant | significant | not significant |
+| scenario | $z_\rho$ | $z_s$ | $z_\Delta$ | reading |
+|---|---|---|---|---|
+| 1 nothing | not significant | | | no correlation |
+| 2 regulation | significant | not significant | | correlation not shared by twins |
+| 3 regulation + heterogeneity | significant | significant | significant | a shared part and a twin-difference part |
+| 4 heterogeneity | significant | significant | not significant | correlation only through a shared state |
 
 The z-scores are tested in this order: `z_rho`, then `z_rho_s`, then `z_rho_Delta`. Significant means \|z\| > 1.96 for `z_rho` and `z_rho_Delta`, > 2.326 for `z_rho_s` (the thresholds can be changed). When many gene pairs are scored at once, as in real data, `z_rho` and `z_rho_Delta` are instead tested with a Benjamini-Hochberg correction: `z_rho` over all pairs, `z_rho_Delta` over the pairs whose `z_rho` is significant (q ≤ 0.05 for both).
 
 When twins are measured at two time points, the cross-time correlation between twins (X in one sister earlier against Y in the other sister later, and the reverse) gives the direction of regulation.
 
-The same statistics work for lineage-tracing data with clones of any size, including singletons.
+The same statistics can be extended to lineage-tracing data with clones of any size, including singletons by assigning equal weights to all clones.
 
 ## Installation
 
@@ -84,7 +85,7 @@ The [`tutorials/`](tutorials/) run with the data in this repository:
 |---|---|---|
 | [`inference_simulation_one_time_point.ipynb`](tutorials/inference_simulation_one_time_point.ipynb) | Twins measured at one time point: the three z-scores and the covariance decomposition, the inference scenarios, the effect of the number of twin pairs, network plots | example simulation (gene 1 → gene 2, 6,000 twin pairs) |
 | [`inference_simulation_two_time_points.ipynb`](tutorials/inference_simulation_two_time_points.ipynb) | Twins measured at two time points (1 and 20 hours, as in the paper): cross-time correlation and the direction of regulation, which pairs to test, ranked lists, directed networks | the same simulation |
-| [`inference_real_data_lineage_tracing.ipynb`](tutorials/inference_real_data_lineage_tracing.ipynb) | Real lineage-tracing data: from an AnnData object with clone labels to the input table, Benjamini-Hochberg-corrected scores, inference scenarios, ranked gene pairs, networks, several samples. The dataset-dependent choices are marked, with what is done for the example | LARRY, mouse haematopoiesis, days 2, 4, 6 (`real_data/`) |
+| [`inference_real_data_lineage_tracing.ipynb`](tutorials/inference_real_data_lineage_tracing.ipynb) | Real lineage-tracing data: from an AnnData object with clone labels to the input table, Benjamini-Hochberg-corrected scores, inference scenarios, ranked gene pairs, networks, several samples. The dataset-dependent choices are marked, with what is done for the example | LARRY (Weinreb et al., *Science* 2020), mouse haematopoiesis, days 2, 4, 6 (`real_data/`) |
 | [`convert_10x_to_twinfer_input.ipynb`](tutorials/convert_10x_to_twinfer_input.ipynb) | From 10x output and a barcode / clone table to the input table (template) | your own 10x data |
 
 ## Repository layout
@@ -98,12 +99,9 @@ The [`tutorials/`](tutorials/) run with the data in this repository:
 | `simulation_example_output_data/` | an example simulation (gene 1 → gene 2, 6,000 twin pairs) used by the simulation tutorials |
 | `real_data/` | an example lineage-tracing dataset: LARRY, mouse haematopoietic progenitors on days 2, 4 and 6 (Weinreb et al., *Science* 2020), `LSK_d2_d4_d6.h5ad`, stored with Git LFS; used by the real-data tutorial |
 
-## Reproducing the figures in the paper
-Each folder in [`paper_analysis/`](paper_analysis/) has a README with the run order. Simulation outputs and analysis tables are too large for the repository; the scripts read and write them under a project folder set by `TWINFER_PROJECT_ROOT` (see [`paper_analysis/README.md`](paper_analysis/README.md)). The large simulations were run on a SLURM cluster; the launchers (`run_*.sh`, `run_*.sbatch`) are included.
-
 ## Citation
 
-If you use TwINFER, please cite the preprint: bioRxiv [10.1101/2026.02.22.707230](https://doi.org/10.1101/2026.02.22.707230).
+If you use TwINFER, please cite the preprint: bioRxiv [10.64898/2026.02.22.707230](https://doi.org/10.64898/2026.02.22.707230).
 
 ## License
 
