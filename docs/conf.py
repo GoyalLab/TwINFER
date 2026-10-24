@@ -80,11 +80,12 @@ napoleon_numpy_docstring = True
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {"navigation_depth": 4}
 html_title = "TwINFER"
-html_static_path = ["_static"]
+# [2026-10-24 replaced: docs/_static is empty, and git does not keep empty folders (warning on GitHub)]
+# html_static_path = ["_static"]
 html_context = {
     "display_github": True,
     "github_user": "GoyalLab",
     "github_repo": "TwINFER",
-    "github_version": "main",
+    "github_version": "TwINFER_v2",
     "conf_py_path": "/docs/",
 }

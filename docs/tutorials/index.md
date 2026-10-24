@@ -1,6 +1,6 @@
 # Tutorials
 
-Worked examples of TwINFER, rendered from the notebooks in [`tutorials/`](https://github.com/GoyalLab/TwINFER/tree/main/tutorials). They run with the data in the repository; see [Installation](../installation.md) to set them up.
+Worked examples of TwINFER, rendered from the notebooks in [`tutorials/`](https://github.com/GoyalLab/TwINFER/tree/TwINFER_v2/tutorials). They run with the data in the repository; see [Installation](../installation.md) to set them up.
 
 ## Simulation
 
