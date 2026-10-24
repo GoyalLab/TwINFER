@@ -11,3 +11,21 @@
     max-height: 30em;
     overflow-y: auto;
 }
+
+/* Page width follows the window: the theme caps the text column at 800px */
+.wy-nav-content {
+    max-width: none;
+}
+
+/* Figures (notebook plots, images) shrink to fit narrow screens */
+.rst-content img,
+.cell_output img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Long display equations scroll sideways on small screens instead of overflowing the page */
+.rst-content div.math {
+    overflow-x: auto;
+    overflow-y: hidden;
+}

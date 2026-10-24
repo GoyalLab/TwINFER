@@ -3,7 +3,7 @@
 TwINFER leverages information from recently divided sister cells, or “twins”, to infer gene regulatory networks: twin information discriminates regulatory from non-regulatory correlations and resolves interaction direction and type (activation/repression). Twin cells, immediately after division, belong to essentially the same state and the initial difference in the gene expression levels between them is minimal. Further, a cell approximates its
 twin cell’s state and gene expression levels immediately after division. These two properties of twin cells enables TwINFER to *account for cell-state heterogeneity* and *infer causal relations*.
 
-This repository contains the `twinfer` Python package, tutorials, and the code behind the figures of the paper.
+This repository contains the `twinfer` Python package, tutorials, and the code behind the figures of the paper. The (website)[https://goyallab.github.io/TwINFER/] contains the idea and the math behind the proof and tutorials for different functionalities of the TwINFER package, including using new single-cell RNA sequencing data with lineage tracing.
 
 ## How it works
 
