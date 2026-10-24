@@ -18,12 +18,16 @@ pip install -e package/
 
 | Function | Does |
 |---|---|
-| `infer_with_twinfer(table, genes, time_points=None, ...)` | Scores gene pairs. Picks the data scenario from the table: **single time point** (twin pairs at one time → `z_rho`, `z_rho_s`, `z_rho_delta`, `inference_scenario`), **multiple time points** (adds the cross-time direction: `z_dag_xy`, `z_dag_yx`, `delta`, `p_delta`), **clones** (real data: one row per cell with `clone_id`, clones of any size, singletons allowed; optional `regulators=`, `targets=`). `correction="auto"` (default) uses Benjamini-Hochberg for clones (columns `q_rho`, `q_rho_delta`) and the fixed thresholds for twin-pair tables. |
+| `infer_with_twinfer(table, genes, time_points=None, ...)` | Scores gene pairs. Picks the data scenario from the table: **single time point** (twin pairs at one time → `z_rho`, `z_rho_s`, `z_rho_delta`, `inference_scenario`), **multiple time points** (adds the cross-time direction: `z_dag_xy`, `z_dag_yx`, `delta`, `p_delta`; `cross_correlation_pairs="all" | "significant_rho" | "regulation"` limits it to all pairs, pairs with significant z_rho, or pairs in scenario 2 or 3), **clones** (real data: one row per cell with `clone_id`, clones of any size, singletons allowed; optional `regulators=`, `targets=`). `correction="auto"` (default) uses Benjamini-Hochberg for clones (columns `q_rho`, `q_rho_delta`) and the fixed thresholds for twin-pair tables. |
 | `classify_inference_scenario(z_rho, z_rho_s, z_rho_delta, thresholds=(1.96, 2.326, 1.96), correction="none", fdr=0.05)` | Inference scenario 1-4 (nothing, regulation, regulation + heterogeneity, heterogeneity), tested in the order z_rho, z_rho_s, z_rho_delta. `correction="bh"` tests z_rho with Benjamini-Hochberg over all pairs given and z_rho_delta with Benjamini-Hochberg over the pairs whose z_rho is significant (q ≤ `fdr`); z_rho_s keeps its threshold. |
 | `q_values_of_z_rho(z_rho)`, `q_values_of_z_rho_delta(z_rho_delta, z_rho)`, `benjamini_hochberg(p)` | BH q-values (two-sided normal p-values; NaN is not counted as a test). |
 | `twin_stats(x, y)` | All statistics of one gene pair from two arrays of shape (N, 2) (sister 1, sister 2). |
 | `sister_arrays(table, genes, time_step)` | Turns the long twin table into those (N, 2) arrays. |
 | `clone_twin_stats(x, y, clone)`, `clone_twin_stats_matrix(X, Y, clone)` | The clone-size-aware statistics for one pair or for all regulator × target pairs (real data). |
+
+### `twinfer.inference.ranked_edges`: ranked lists
+
+`ranked_edge_lists(result, scores=("z_rho_s", "z_rho_delta"), top=None)` ranks the gene pairs of an `infer_with_twinfer` result by |z_rho_s| (shared state) and by |z_rho_delta| (regulation), among the pairs whose z_rho is significant (q_rho ≤ 0.05 when present, else \|z_rho\| > 1.96). Returns one table per score with a `rank` column. When the result has two time points it adds a third list, `z_dag`: the pairs ranked by their cross-time correlation (the larger of \|z_dag_xy\| and \|z_dag_yx\|), each listed as source → target in that direction, with `delta` and `p_delta`.
 
 The module docstring gives every formula. Input tables:
 
@@ -43,8 +47,6 @@ The module docstring gives every formula. Input tables:
 |---|---|
 | `gillespie_simulations` | Gene expression on a regulatory network (promoter switching, mRNA, protein; Gillespie algorithm), a burn-in, cell division into twin pairs, and the twins' expression over time. Run as `python -m twinfer.simulation.gillespie_simulations --help` or call `process_param_set`. Inputs: a connectivity matrix (`matrix[i, j]` = effect of gene i on gene j) and a parameter sheet, see `simulation_example_input_data/`. |
 | `gillespie_drift` | The same with promoter activation rates (k_on) that ramp linearly after division, e.g. two halves of the clones drifting into a low and a high state. |
-| `gillespie_pulse` | A transient pulse in k_on of chosen genes after division. |
-| `gillespie_oscillations` | mRNA production modulated by an oscillation shared within a cell (for example a cell-cycle-like phase). |
 | `shared_functions` | Helpers shared by the engines (matrix input, parameter assignment). |
 
 ### `twinfer.utils`
@@ -53,7 +55,7 @@ The module docstring gives every formula. Input tables:
 
 ### Other modules
 
-`twinfer.inference.infer`, `correlation_functions`, `network_naming`, `ranked_edges` and `twinfer.scoring` are the earlier, permutation-based pipeline and benchmark scoring helpers. They are kept for analyses that still import them; new code should use `covariance_decomposition_z_scores`.
+`twinfer.inference.network_naming` converts networks with real gene names to the `gene_1, gene_2, ...` names of the simulator and back.
 
 ## Environments
 

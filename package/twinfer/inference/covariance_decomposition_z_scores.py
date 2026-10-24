@@ -200,9 +200,11 @@ def classify_inference_scenario(z_rho, z_rho_s, z_rho_delta, thresholds=(1.96, 2
 # [2026-10-23 replaced: correction (BH on z_rho) added]
 # def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101010, split=(1, 1, 2),
 #                        regulators=None, targets=None, chunk_x=100, chunk_y=300, z_thresholds=(1.96, 2.326, 1.96), n_permutations=1000):
+# [2026-10-23 replaced: cross_correlation_pairs added]
+#                        correction="auto", fdr=0.05):
 def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101010, split=(1, 1, 2),
                        regulators=None, targets=None, chunk_x=100, chunk_y=300, z_thresholds=(1.96, 2.326, 1.96), n_permutations=1000,
-                       correction="auto", fdr=0.05):
+                       correction="auto", fdr=0.05, cross_correlation_pairs="all"):
     """Score gene pairs with the covariance decomposition (and the cross-time correlation when there are several time points).
 
     table       DataFrame. Twin-pair scenarios: clone_id, replicate (1 and 2 = the two sisters), time_step and one column per gene.
@@ -222,6 +224,9 @@ def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101
                 (adds the columns q_rho, q_rho_delta; with several time points with the suffix _ta / _tb); "none" = the |z| thresholds.
                 "auto" (default): "bh" for the "clones" scenario (real data, many pairs), "none" for the twin-pair scenarios (one pre-specified
                 pair per simulated system). z_rho_s always uses its threshold.
+    cross_correlation_pairs  "multiple_time_points": which gene pairs get the cross-time correlation (z_dag_xy, z_dag_yx, delta, p_delta):
+                "all" (default) every pair; "significant_rho" pairs whose z_rho is significant at t_b; "regulation" pairs in inference scenario
+                2 or 3 at t_b. The other pairs get NaN in these columns (and skip the permutations).
     Returns a DataFrame, one row per gene pair (and time pair). Columns: gene_x, gene_y, t_a, [t_b,] the N of each group and the
     statistics (STAT_COLUMNS for twin pairs, with the _ta / _tb suffix for the two twin groups of several time points, then rho_dag_xy,
     rho_dag_yx, z_dag_xy, z_dag_yx, delta (= rho_dag_xy - rho_dag_yx) and p_delta (its permutation p-value); for clones rho, S, C, U, rho_delta, h_x, h_y, sigma_rho, sigma_C, sigma_D, z_rho, z_rho_s, z_rho_delta).
@@ -234,6 +239,8 @@ def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101
         correction = "bh" if scenario == "clones" else "none"
     if correction not in ("none", "bh"):
         raise ValueError('correction must be "auto", "none" or "bh"')
+    if cross_correlation_pairs not in ("all", "significant_rho", "regulation"):
+        raise ValueError('cross_correlation_pairs must be "all", "significant_rho" or "regulation"')
     if not table.columns.is_unique:
         raise ValueError("the table has duplicate column names: " + ", ".join(sorted(set(table.columns[table.columns.duplicated()]))))
     for label, names in (("genes", genes), ("regulators", regulators), ("targets", targets)):
@@ -261,21 +268,88 @@ def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101
         frame["inference_scenario"] = classify_inference_scenario(frame.z_rho, frame.z_rho_s, frame.z_rho_delta, z_thresholds, correction, fdr)
         return frame
 
-    for t_a, t_b in combinations(time_points, 2):
+    # [2026-10-23 replaced: cross-time correlations can be limited to chosen pairs (cross_correlation_pairs); two passes]
+    # for t_a, t_b in combinations(time_points, 2):
+    #     rows_a = table[table["time_step"] == t_a].set_index(["clone_id", "replicate"])
+    #     rows_b = table[table["time_step"] == t_b].set_index(["clone_id", "replicate"])
+    #     both = sorted(set(rows_a.index.get_level_values(0)) & set(rows_b.index.get_level_values(0)))
+    #     rng = np.random.RandomState(seed)
+    #     twins_a, twins_b, cross = _split_clones(both, split, rng)
+    #     sister_a = rng.randint(1, 3, len(cross))                    # which sister is measured at t_a; the other one at t_b
+    #     perm_rng = np.random.RandomState(seed + 1)
+    #     for gx, gy in combinations(genes, 2):
+    #         _, data_a = sister_arrays(table[table["clone_id"].isin(twins_a)], [gx, gy], t_a)
+    #         _, data_b = sister_arrays(table[table["clone_id"].isin(twins_b)], [gx, gy], t_b)
+    #         stats_a, stats_b = twin_stats_or_nan(data_a[gx], data_a[gy]), twin_stats_or_nan(data_b[gx], data_b[gy])
+    #         at_a = lambda gene: rows_a[gene].reindex(list(zip(cross, sister_a))).values
+    #         at_b = lambda gene: rows_b[gene].reindex(list(zip(cross, 3 - sister_a))).values
+    #         ranks = lambda v: (lambda r: r - r.mean())(average_rank(v))
+    #         xa, ya, xb, yb = ranks(at_a(gx)), ranks(at_a(gy)), ranks(at_b(gx)), ranks(at_b(gy))      # centred ranks, cross group
+    #         norm_xy, norm_yx = np.sqrt((xa ** 2).sum() * (yb ** 2).sum()), np.sqrt((ya ** 2).sum() * (xb ** 2).sum())
+    #         rho_xy, rho_yx = (xa * yb).sum() / norm_xy, (ya * xb).sum() / norm_yx
+    #         delta = rho_xy - rho_yx
+    #         null = np.empty(n_permutations)                          # permute which t_b measurement pairs with which t_a measurement
+    #         for k in range(n_permutations):
+    #             perm = perm_rng.permutation(len(cross))
+    #             null[k] = (xa * yb[perm]).sum() / norm_xy - (ya * xb[perm]).sum() / norm_yx
+    #         p_delta = (1 + np.sum(np.abs(null) >= abs(delta))) / (n_permutations + 1)
+    #         row = dict(gene_x=gx, gene_y=gy, t_a=t_a, t_b=t_b, N_a=len(twins_a), N_b=len(twins_b), N_cross=len(cross))
+    #         row.update({f"{name}_ta": value for name, value in stats_a.items()})
+    #         row.update({f"{name}_tb": value for name, value in stats_b.items()})
+    #         row.update(rho_dag_xy=rho_xy, rho_dag_yx=rho_yx, z_dag_xy=rho_xy * np.sqrt(len(cross) - 1), z_dag_yx=rho_yx * np.sqrt(len(cross) - 1),
+    #                    delta=delta, p_delta=p_delta)
+    #         rows.append(row)
+    # frame = pd.DataFrame(rows)
+    # for suffix in ("ta", "tb"):
+    #     # [2026-10-23 replaced: correction (BH on z_rho) added]
+    #     # frame[f"inference_scenario_{suffix}"] = classify_inference_scenario(frame[f"z_rho_{suffix}"], frame[f"z_rho_s_{suffix}"], frame[f"z_rho_delta_{suffix}"], z_thresholds)
+    #     if correction == "bh":
+    #         frame[f"q_rho_{suffix}"] = q_values_of_z_rho(frame[f"z_rho_{suffix}"])
+    #         frame[f"q_rho_delta_{suffix}"] = q_values_of_z_rho_delta(frame[f"z_rho_delta_{suffix}"], frame[f"z_rho_{suffix}"], fdr)
+    #     frame[f"inference_scenario_{suffix}"] = classify_inference_scenario(frame[f"z_rho_{suffix}"], frame[f"z_rho_s_{suffix}"], frame[f"z_rho_delta_{suffix}"],
+    #                                                                         z_thresholds, correction, fdr)
+    # return frame
+    contexts, rows = {}, []
+    for t_a, t_b in combinations(time_points, 2):                   # pass 1: twin statistics of every pair at t_a and t_b
         rows_a = table[table["time_step"] == t_a].set_index(["clone_id", "replicate"])
         rows_b = table[table["time_step"] == t_b].set_index(["clone_id", "replicate"])
         both = sorted(set(rows_a.index.get_level_values(0)) & set(rows_b.index.get_level_values(0)))
         rng = np.random.RandomState(seed)
         twins_a, twins_b, cross = _split_clones(both, split, rng)
         sister_a = rng.randint(1, 3, len(cross))                    # which sister is measured at t_a; the other one at t_b
-        perm_rng = np.random.RandomState(seed + 1)
+        contexts[(t_a, t_b)] = (rows_a, rows_b, cross, sister_a)
         for gx, gy in combinations(genes, 2):
             _, data_a = sister_arrays(table[table["clone_id"].isin(twins_a)], [gx, gy], t_a)
             _, data_b = sister_arrays(table[table["clone_id"].isin(twins_b)], [gx, gy], t_b)
             stats_a, stats_b = twin_stats_or_nan(data_a[gx], data_a[gy]), twin_stats_or_nan(data_b[gx], data_b[gy])
-            at_a = lambda gene: rows_a[gene].reindex(list(zip(cross, sister_a))).values
-            at_b = lambda gene: rows_b[gene].reindex(list(zip(cross, 3 - sister_a))).values
-            ranks = lambda v: (lambda r: r - r.mean())(average_rank(v))
+            row = dict(gene_x=gx, gene_y=gy, t_a=t_a, t_b=t_b, N_a=len(twins_a), N_b=len(twins_b), N_cross=len(cross))
+            row.update({f"{name}_ta": value for name, value in stats_a.items()})
+            row.update({f"{name}_tb": value for name, value in stats_b.items()})
+            rows.append(row)
+    frame = pd.DataFrame(rows)
+    stat_columns = list(frame.columns)
+    for suffix in ("ta", "tb"):
+        if correction == "bh":
+            frame[f"q_rho_{suffix}"] = q_values_of_z_rho(frame[f"z_rho_{suffix}"])
+            frame[f"q_rho_delta_{suffix}"] = q_values_of_z_rho_delta(frame[f"z_rho_delta_{suffix}"], frame[f"z_rho_{suffix}"], fdr)
+        frame[f"inference_scenario_{suffix}"] = classify_inference_scenario(frame[f"z_rho_{suffix}"], frame[f"z_rho_s_{suffix}"], frame[f"z_rho_delta_{suffix}"],
+                                                                            z_thresholds, correction, fdr)
+    if cross_correlation_pairs == "all":
+        chosen = np.ones(len(frame), dtype=bool)
+    elif cross_correlation_pairs == "significant_rho":
+        chosen = (frame["q_rho_tb"] <= fdr).to_numpy() if correction == "bh" else (np.abs(frame["z_rho_tb"]) > z_thresholds[0]).to_numpy()
+    else:                                                            # "regulation": scenario 2 or 3 at t_b
+        chosen = frame["inference_scenario_tb"].isin([2, 3]).fillna(False).to_numpy(dtype=bool)
+    cross_columns = ["rho_dag_xy", "rho_dag_yx", "z_dag_xy", "z_dag_yx", "delta", "p_delta"]
+    for column in cross_columns:
+        frame[column] = np.nan
+    ranks = lambda v: (lambda r: r - r.mean())(average_rank(v))
+    for (t_a, t_b), (rows_a, rows_b, cross, sister_a) in contexts.items():   # pass 2: cross-time correlation of the chosen pairs
+        perm_rng = np.random.RandomState(seed + 1)
+        at_a = lambda gene: rows_a[gene].reindex(list(zip(cross, sister_a))).values
+        at_b = lambda gene: rows_b[gene].reindex(list(zip(cross, 3 - sister_a))).values
+        for i in np.flatnonzero(chosen & (frame["t_a"] == t_a).to_numpy() & (frame["t_b"] == t_b).to_numpy()):
+            gx, gy = frame.at[i, "gene_x"], frame.at[i, "gene_y"]
             xa, ya, xb, yb = ranks(at_a(gx)), ranks(at_a(gy)), ranks(at_b(gx)), ranks(at_b(gy))      # centred ranks, cross group
             norm_xy, norm_yx = np.sqrt((xa ** 2).sum() * (yb ** 2).sum()), np.sqrt((ya ** 2).sum() * (xb ** 2).sum())
             rho_xy, rho_yx = (xa * yb).sum() / norm_xy, (ya * xb).sum() / norm_yx
@@ -285,22 +359,8 @@ def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101
                 perm = perm_rng.permutation(len(cross))
                 null[k] = (xa * yb[perm]).sum() / norm_xy - (ya * xb[perm]).sum() / norm_yx
             p_delta = (1 + np.sum(np.abs(null) >= abs(delta))) / (n_permutations + 1)
-            row = dict(gene_x=gx, gene_y=gy, t_a=t_a, t_b=t_b, N_a=len(twins_a), N_b=len(twins_b), N_cross=len(cross))
-            row.update({f"{name}_ta": value for name, value in stats_a.items()})
-            row.update({f"{name}_tb": value for name, value in stats_b.items()})
-            row.update(rho_dag_xy=rho_xy, rho_dag_yx=rho_yx, z_dag_xy=rho_xy * np.sqrt(len(cross) - 1), z_dag_yx=rho_yx * np.sqrt(len(cross) - 1),
-                       delta=delta, p_delta=p_delta)
-            rows.append(row)
-    frame = pd.DataFrame(rows)
-    for suffix in ("ta", "tb"):
-        # [2026-10-23 replaced: correction (BH on z_rho) added]
-        # frame[f"inference_scenario_{suffix}"] = classify_inference_scenario(frame[f"z_rho_{suffix}"], frame[f"z_rho_s_{suffix}"], frame[f"z_rho_delta_{suffix}"], z_thresholds)
-        if correction == "bh":
-            frame[f"q_rho_{suffix}"] = q_values_of_z_rho(frame[f"z_rho_{suffix}"])
-            frame[f"q_rho_delta_{suffix}"] = q_values_of_z_rho_delta(frame[f"z_rho_delta_{suffix}"], frame[f"z_rho_{suffix}"], fdr)
-        frame[f"inference_scenario_{suffix}"] = classify_inference_scenario(frame[f"z_rho_{suffix}"], frame[f"z_rho_s_{suffix}"], frame[f"z_rho_delta_{suffix}"],
-                                                                            z_thresholds, correction, fdr)
-    return frame
+            frame.loc[i, cross_columns] = [rho_xy, rho_yx, rho_xy * np.sqrt(len(cross) - 1), rho_yx * np.sqrt(len(cross) - 1), delta, p_delta]
+    return frame[stat_columns + cross_columns + [c for c in frame.columns if c not in stat_columns + cross_columns]]
 
 
 # ---------------------------------------------------------------------------- clones of any size, singletons included

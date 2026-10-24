@@ -1,13 +1,18 @@
-# simulation
+# twinfer.simulation
 
-_Auto-generated 2026-09-30 from file docstrings/headers during the cleanup; edit freely. Files marked UNREVIEWED were rescued and not yet logic-reviewed (see RESCUE_MAP.tsv, REVIEW_LOG.md)._
+Stochastic simulation (Gillespie algorithm) of gene expression on a regulatory network. Each gene has a promoter that switches on and off, mRNA and protein; regulators change the promoter activation rate of their targets. A population of cells is simulated to steady state (burn-in), every cell divides into two sisters (twins), and the twins are followed after division. By default both sisters start from an exact copy of their mother's state (promoters and molecule counts); with `divide_binomial` the molecules are split between the sisters binomially.
 
-| File | Summary |
+| Module | Simulates |
 |---|---|
-| __init__.py |  |
-| gillespie_drift.py | Optimized Gillespie-SSA Simulation Pipeline |
-| gillespie_oscillations.py | Optimized Gillespie-SSA Simulation Pipeline |
-| gillespie_pulse.py | Optimized Gillespie-SSA Simulation Pipeline |
-| gillespie_simulations.py | Optimized Gillespie-SSA Simulation Pipeline |
-| run_drift.sh | Shared output dir with the b1042 job (5374312) and the login-node run; |
-| shared_functions.py |  |
+| `gillespie_simulations.py` | The standard simulation. Run from the command line (`python -m twinfer.simulation.gillespie_simulations --help`) or call `process_param_set`. |
+| `gillespie_drift.py` | The same, with promoter activation rates (k_on) that ramp linearly after division, e.g. two halves of the clones drifting into a low and a high state. |
+| `shared_functions.py` | Helpers shared by the engines (reading the connectivity matrix, assigning parameters to genes). |
+
+**Inputs**
+
+* a connectivity matrix: a text file with one row and one column per gene, `matrix[i, j]` = effect of gene i on gene j (positive = activation, negative = repression, 0 = no link);
+* a parameter sheet: one row per gene with the promoter switching rates, production rates and half-lives of mRNA and protein, and the regulation parameters.
+
+Examples of both are in [`simulation_example_input_data/`](../../../simulation_example_input_data/).
+
+**Output**: a table with one row per cell and time point: `cell_id`, `time_step` (hours after division), `<gene>_mRNA`, `<gene>_protein`, `replicate` (1 or 2 = which sister), `clone_id` (the twin pair). This is the input of `twinfer.inference.covariance_decomposition_z_scores.infer_with_twinfer`. An example is in [`simulation_example_output_data/`](../../../simulation_example_output_data/).
