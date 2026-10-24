@@ -89,3 +89,18 @@ html_context = {
     "github_version": "TwINFER_v2",
     "conf_py_path": "/docs/",
 }
+
+
+# Sphinx wraps every multi-line display equation in \begin{split}...\end{split}, where \tag is not allowed
+# ("\tag not allowed in split environment"). Equations with their own \tag are passed to MathJax as written.
+def _tagged_math_as_written(app, doctree):
+    from docutils import nodes
+    for node in doctree.findall(nodes.math_block):
+        text = node.astext()
+        if r"\tag" in text and not node.get("nowrap"):
+            node["nowrap"] = True
+            node.children = [nodes.Text(r"\[" + text + r"\]")]
+
+
+def setup(app):
+    app.connect("doctree-read", _tagged_math_as_written)
