@@ -39,7 +39,9 @@ Every pair also gets an inference scenario (column `inference_scenario`, see `cl
   2  regulation                      z_rho significant, z_rho_s not significant
   3  regulation + heterogeneity      z_rho significant, z_rho_s significant and z_rho_delta significant
   4  heterogeneity (shared state)    z_rho significant, z_rho_s significant, z_rho_delta not significant
-Significant means |z| above 1.96 (z_rho), 2.326 (z_rho_s) and 1.96 (z_rho_delta): one pre-specified pair, no multiple-testing correction.
+Significant means |z| above 1.96 (z_rho), 2.326 (z_rho_s) and 1.96 (z_rho_delta). For many pairs at once (the "clones" scenario, real data) z_rho is
+instead tested with Benjamini-Hochberg over all pairs scored (significant when q_rho <= 0.05), and z_rho_delta with Benjamini-Hochberg over the
+pairs whose z_rho is significant (q_rho_delta <= 0.05), as Stages I and III of the TwinScore procedure (`correction`, `fdr`; z_rho_s keeps its threshold). The twin-pair scenarios score one pre-specified pair per simulated system and use no correction by default.
 
 Clones of any size (real data): `clone_twin_stats(x, y, clone)` and `clone_twin_stats_matrix(X, Y, clone)` take one value per cell and a
 clone label per cell (singletons allowed) instead of (N, 2) arrays and follow the TwinScore procedure of twinscore_pdf_candidates.py:
@@ -53,7 +55,7 @@ clone label per cell (singletons allowed) instead of (N, 2) arrays and follow th
   h_x, h_y are floored at 0. For clones that all have two cells and no singletons these are exactly the formulas of `twin_stats`.
   The values are used as given: normalise (e.g. CP10k) before calling.
 
-Requires : numpy, pandas.
+Requires : numpy, pandas, scipy.
 Example  : from twinfer.inference.covariance_decomposition_z_scores import infer_with_twinfer
            result = infer_with_twinfer(table, ["gene_1_mRNA", "gene_2_mRNA"], time_points=[20])        # one time point
            result = infer_with_twinfer(table, ["gene_1_mRNA", "gene_2_mRNA"], time_points=[1, 20])     # two time points, with cross-correlation
@@ -63,6 +65,7 @@ from itertools import combinations
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 
 STAT_COLUMNS = ["z_rho", "z_rho_s", "z_rho_delta", "h_x", "h_y", "S", "C", "U", "sigma_rho", "A_s", "A_u", "c", "r_delta"]
 
@@ -134,7 +137,33 @@ SCENARIOS = ("single_time_point", "multiple_time_points", "clones")
 INFERENCE_SCENARIOS = {1: "nothing", 2: "regulation", 3: "regulation + heterogeneity", 4: "heterogeneity"}
 
 
-def classify_inference_scenario(z_rho, z_rho_s, z_rho_delta, thresholds=(1.96, 2.326, 1.96)):
+def benjamini_hochberg(p):
+    """Benjamini-Hochberg q-values of an array of p-values; NaN stays NaN and is not counted as a test."""
+    p = np.atleast_1d(np.asarray(p, float))
+    q = np.full(len(p), np.nan)
+    defined = np.flatnonzero(~np.isnan(p))
+    order = defined[np.argsort(p[defined])]
+    ranked = len(order) * p[order] / np.arange(1, len(order) + 1)
+    q[order] = np.minimum(np.minimum.accumulate(ranked[::-1])[::-1], 1.0)
+    return q
+
+
+def q_values_of_z_rho(z_rho):
+    """BH q-values of z_rho: two-sided normal p-values 2 * P(Z > |z_rho|), corrected over all pairs given (NaN excluded)."""
+    return benjamini_hochberg(2 * norm.sf(np.abs(np.atleast_1d(np.asarray(z_rho, float)))))
+
+
+def q_values_of_z_rho_delta(z_rho_delta, z_rho, fdr=0.05):
+    """BH q-values of z_rho_delta (two-sided normal p-values), corrected over the pairs whose z_rho passes BH (q_rho <= fdr);
+    NaN for the other pairs (as Stage III of the TwinScore procedure: BH over the Stage I pairs)."""
+    z_rho_delta = np.atleast_1d(np.asarray(z_rho_delta, float))
+    passing = q_values_of_z_rho(z_rho) <= fdr
+    q = np.full(len(z_rho_delta), np.nan)
+    q[passing] = benjamini_hochberg(2 * norm.sf(np.abs(z_rho_delta[passing])))
+    return q
+
+
+def classify_inference_scenario(z_rho, z_rho_s, z_rho_delta, thresholds=(1.96, 2.326, 1.96), correction="none", fdr=0.05):
     """Inference scenario (1-4) of each pair from its three z-scores (arrays or scalars); NaN in a needed z-score gives <NA>.
 
     thresholds = (z_rho, z_rho_s, z_rho_delta): |z| above the value counts as significant.
@@ -142,9 +171,25 @@ def classify_inference_scenario(z_rho, z_rho_s, z_rho_delta, thresholds=(1.96, 2
         z_rho significant, z_rho_s not significant              -> 2 regulation
         z_rho, z_rho_s and z_rho_delta significant              -> 3 regulation + heterogeneity
         z_rho and z_rho_s significant, z_rho_delta not          -> 4 heterogeneity
+    correction = "none": every threshold as above (one pre-specified pair).
+                 "bh":   z_rho is significant when its Benjamini-Hochberg q-value over ALL pairs given is <= fdr; z_rho_delta is
+                         significant when its BH q-value over the pairs whose z_rho is significant is <= fdr (thresholds[0] and
+                         thresholds[2] are not used); z_rho_s keeps its threshold. Use for many pairs at once (real data).
     """
     z_rho, z_rho_s, z_rho_delta = (np.atleast_1d(np.asarray(z, float)) for z in (z_rho, z_rho_s, z_rho_delta))
-    sig_rho, sig_s, sig_delta = np.abs(z_rho) > thresholds[0], np.abs(z_rho_s) > thresholds[1], np.abs(z_rho_delta) > thresholds[2]
+    # [2026-10-23 replaced: z_rho can be tested with BH]
+    # sig_rho, sig_s, sig_delta = np.abs(z_rho) > thresholds[0], np.abs(z_rho_s) > thresholds[1], np.abs(z_rho_delta) > thresholds[2]
+    if correction not in ("none", "bh"):
+        raise ValueError('correction must be "none" or "bh"')
+    # [2026-10-23 replaced: z_rho_delta also tested with BH]
+    # sig_rho = (q_values_of_z_rho(z_rho) <= fdr) if correction == "bh" else (np.abs(z_rho) > thresholds[0])
+    # sig_s, sig_delta = np.abs(z_rho_s) > thresholds[1], np.abs(z_rho_delta) > thresholds[2]
+    sig_s = np.abs(z_rho_s) > thresholds[1]
+    if correction == "bh":
+        sig_rho = q_values_of_z_rho(z_rho) <= fdr
+        sig_delta = q_values_of_z_rho_delta(z_rho_delta, z_rho, fdr) <= fdr          # NaN (z_rho not significant) -> False, not used
+    else:
+        sig_rho, sig_delta = np.abs(z_rho) > thresholds[0], np.abs(z_rho_delta) > thresholds[2]
     scenario = np.where(~sig_rho, 1, np.where(~sig_s, 2, np.where(sig_delta, 3, 4)))
     undefined = np.isnan(z_rho) | (sig_rho & np.isnan(z_rho_s)) | (sig_rho & sig_s & np.isnan(z_rho_delta))
     result = pd.array(scenario, dtype="Int64")
@@ -152,8 +197,12 @@ def classify_inference_scenario(z_rho, z_rho_s, z_rho_delta, thresholds=(1.96, 2
     return result
 
 
+# [2026-10-23 replaced: correction (BH on z_rho) added]
+# def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101010, split=(1, 1, 2),
+#                        regulators=None, targets=None, chunk_x=100, chunk_y=300, z_thresholds=(1.96, 2.326, 1.96), n_permutations=1000):
 def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101010, split=(1, 1, 2),
-                       regulators=None, targets=None, chunk_x=100, chunk_y=300, z_thresholds=(1.96, 2.326, 1.96), n_permutations=1000):
+                       regulators=None, targets=None, chunk_x=100, chunk_y=300, z_thresholds=(1.96, 2.326, 1.96), n_permutations=1000,
+                       correction="auto", fdr=0.05):
     """Score gene pairs with the covariance decomposition (and the cross-time correlation when there are several time points).
 
     table       DataFrame. Twin-pair scenarios: clone_id, replicate (1 and 2 = the two sisters), time_step and one column per gene.
@@ -168,6 +217,11 @@ def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101
     regulators, targets, chunk_x, chunk_y  "clones" only: gene lists of the pairs to score and the block sizes of the computation.
     z_thresholds  (z_rho, z_rho_s, z_rho_delta) significance thresholds of `classify_inference_scenario` (adds the column inference_scenario).
     n_permutations  "multiple_time_points": permutations of the cross group for the p-value of delta (p = (1 + #{|null| >= |delta|}) / (n + 1)).
+    correction, fdr multiple testing of z_rho in the inference scenario: "bh" = Benjamini-Hochberg over all pairs of the result, z_rho
+                significant when q_rho <= fdr, and z_rho_delta BH over the pairs with significant z_rho, significant when q_rho_delta <= fdr
+                (adds the columns q_rho, q_rho_delta; with several time points with the suffix _ta / _tb); "none" = the |z| thresholds.
+                "auto" (default): "bh" for the "clones" scenario (real data, many pairs), "none" for the twin-pair scenarios (one pre-specified
+                pair per simulated system). z_rho_s always uses its threshold.
     Returns a DataFrame, one row per gene pair (and time pair). Columns: gene_x, gene_y, t_a, [t_b,] the N of each group and the
     statistics (STAT_COLUMNS for twin pairs, with the _ta / _tb suffix for the two twin groups of several time points, then rho_dag_xy,
     rho_dag_yx, z_dag_xy, z_dag_yx, delta (= rho_dag_xy - rho_dag_yx) and p_delta (its permutation p-value); for clones rho, S, C, U, rho_delta, h_x, h_y, sigma_rho, sigma_C, sigma_D, z_rho, z_rho_s, z_rho_delta).
@@ -176,13 +230,19 @@ def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101
         scenario = "clones" if "replicate" not in table.columns else ("single_time_point" if len(time_points) == 1 else "multiple_time_points")
     if scenario not in SCENARIOS:
         raise ValueError(f"scenario must be one of {SCENARIOS}")
+    if correction == "auto":
+        correction = "bh" if scenario == "clones" else "none"
+    if correction not in ("none", "bh"):
+        raise ValueError('correction must be "auto", "none" or "bh"')
     if not table.columns.is_unique:
         raise ValueError("the table has duplicate column names: " + ", ".join(sorted(set(table.columns[table.columns.duplicated()]))))
     for label, names in (("genes", genes), ("regulators", regulators), ("targets", targets)):
         if names is not None and len(set(names)) != len(list(names)):
             raise ValueError(f"duplicate names in {label}: " + ", ".join(sorted({n for n in names if list(names).count(n) > 1})))
     if scenario == "clones":
-        return _infer_clones(table, genes, time_points, regulators, targets, chunk_x, chunk_y, z_thresholds)
+        # [2026-10-23 replaced: correction (BH on z_rho) added]
+        # return _infer_clones(table, genes, time_points, regulators, targets, chunk_x, chunk_y, z_thresholds)
+        return _infer_clones(table, genes, time_points, regulators, targets, chunk_x, chunk_y, z_thresholds, correction, fdr)
     if time_points is None:
         raise ValueError("time_points is required for twin-pair tables")
     time_points = sorted(time_points)
@@ -192,7 +252,13 @@ def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101
         for gx, gy in combinations(genes, 2):
             rows.append(dict(gene_x=gx, gene_y=gy, t_a=time_points[0], N=len(clones), **twin_stats_or_nan(data[gx], data[gy])))
         frame = pd.DataFrame(rows)
-        frame["inference_scenario"] = classify_inference_scenario(frame.z_rho, frame.z_rho_s, frame.z_rho_delta, z_thresholds)
+        # [2026-10-23 replaced: correction (BH on z_rho) added]
+        # frame["inference_scenario"] = classify_inference_scenario(frame.z_rho, frame.z_rho_s, frame.z_rho_delta, z_thresholds)
+        # return frame
+        if correction == "bh":
+            frame["q_rho"] = q_values_of_z_rho(frame.z_rho)
+            frame["q_rho_delta"] = q_values_of_z_rho_delta(frame.z_rho_delta, frame.z_rho, fdr)
+        frame["inference_scenario"] = classify_inference_scenario(frame.z_rho, frame.z_rho_s, frame.z_rho_delta, z_thresholds, correction, fdr)
         return frame
 
     for t_a, t_b in combinations(time_points, 2):
@@ -227,7 +293,13 @@ def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101
             rows.append(row)
     frame = pd.DataFrame(rows)
     for suffix in ("ta", "tb"):
-        frame[f"inference_scenario_{suffix}"] = classify_inference_scenario(frame[f"z_rho_{suffix}"], frame[f"z_rho_s_{suffix}"], frame[f"z_rho_delta_{suffix}"], z_thresholds)
+        # [2026-10-23 replaced: correction (BH on z_rho) added]
+        # frame[f"inference_scenario_{suffix}"] = classify_inference_scenario(frame[f"z_rho_{suffix}"], frame[f"z_rho_s_{suffix}"], frame[f"z_rho_delta_{suffix}"], z_thresholds)
+        if correction == "bh":
+            frame[f"q_rho_{suffix}"] = q_values_of_z_rho(frame[f"z_rho_{suffix}"])
+            frame[f"q_rho_delta_{suffix}"] = q_values_of_z_rho_delta(frame[f"z_rho_delta_{suffix}"], frame[f"z_rho_{suffix}"], fdr)
+        frame[f"inference_scenario_{suffix}"] = classify_inference_scenario(frame[f"z_rho_{suffix}"], frame[f"z_rho_s_{suffix}"], frame[f"z_rho_delta_{suffix}"],
+                                                                            z_thresholds, correction, fdr)
     return frame
 
 
@@ -330,7 +402,9 @@ def clone_twin_stats(x, y, clone):
     return {key: float(np.asarray(value).ravel()[0]) for key, value in out.items()}
 
 
-def _infer_clones(table, genes, time_points, regulators, targets, chunk_x, chunk_y, z_thresholds):
+# [2026-10-23 replaced: correction (BH on z_rho) added]
+# def _infer_clones(table, genes, time_points, regulators, targets, chunk_x, chunk_y, z_thresholds):
+def _infer_clones(table, genes, time_points, regulators, targets, chunk_x, chunk_y, z_thresholds, correction="bh", fdr=0.05):
     """Real-data scenario: clone-size aware statistics for all gene pairs (or regulators x targets) at one time point."""
     if time_points is not None and len(time_points) > 1:
         raise NotImplementedError("several time points are not implemented for the clones scenario (cross-time direction needs the real-data spec)")
@@ -354,5 +428,10 @@ def _infer_clones(table, genes, time_points, regulators, targets, chunk_x, chunk
     frame["N_clones"], frame["N_twin_clones"] = n_clones, n_twin
     for key, matrix in result.items():
         frame[key] = matrix[rows_i, cols_j]
-    frame["inference_scenario"] = classify_inference_scenario(frame.z_rho, frame.z_rho_s, frame.z_rho_delta, z_thresholds)
+    # [2026-10-23 replaced: correction (BH on z_rho) added]
+    # frame["inference_scenario"] = classify_inference_scenario(frame.z_rho, frame.z_rho_s, frame.z_rho_delta, z_thresholds)
+    if correction == "bh":
+        frame["q_rho"] = q_values_of_z_rho(frame.z_rho)
+        frame["q_rho_delta"] = q_values_of_z_rho_delta(frame.z_rho_delta, frame.z_rho, fdr)
+    frame["inference_scenario"] = classify_inference_scenario(frame.z_rho, frame.z_rho_s, frame.z_rho_delta, z_thresholds, correction, fdr)
     return frame

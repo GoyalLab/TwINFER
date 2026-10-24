@@ -22,3 +22,6 @@ _rescued/
 
 # script backups
 *.bak*
+
+# python build artefacts
+*.egg-info/

@@ -1,105 +1,42 @@
 # paper_analysis
 
-Simulation, inference, and figure-generation code for the TwINFER manuscript
-(bioRxiv 2026.02.22.707230). Depends on `twinfer` (`package/`); does not
-reimplement anything from it.
+The code behind the figures of the TwINFER paper (bioRxiv [10.1101/2026.02.22.707230](https://doi.org/10.1101/2026.02.22.707230)). Every folder uses the `twinfer` package (`package/`) for the statistics and the simulations; nothing is reimplemented here.
 
-Figure-to-folder mapping: `figures_manifest.yaml`.
-
-## Folders
-
-| Folder | Contents |
+| Folder | Shows |
 |---|---|
-| `heterogeneity_vs_regulation/` | Two-gene simulation and the heterogeneity/regulation flowchart |
-| `causal_direction_inference/` | Cross-correlation direction inference, 5-gene cascade |
-| `triplet_motif_discrimination/` | Fan-out, feed-forward-loop, regulated-mutual motifs |
-| `larry_hematopoiesis_validation/` | LARRY dataset analysis |
-| `parameter_space_scan/` | Latin-hypercube parameter sweep, used by two figures above |
-| `grnboost2_comparison/` | GRNBoost2 baseline via Arboreto, used by two figures above |
-| `extended_figures/` | Standalone extended-data and supplement analyses |
-| `parameter_estimation/` | Literature parameter compilation (Table E1/E2 sourcing) |
-| `benchmark/` | BEELINE/BoolODE evaluation — status unconfirmed, see manifest |
-| `work_in_progress/` | Code not tied to any published figure |
+| [`heterogeneity_vs_regulation/`](heterogeneity_vs_regulation/) | Two-gene simulations (no regulation / regulation, one state / two states / drifting states): the three z-scores separate regulation from heterogeneity; effect of the number of twin pairs. |
+| [`parameter_scan/`](parameter_scan/) | 25,000 random parameter sets for each of four two-gene networks (no link, activation, mutual regulation, repression), single- and two-state: ROC and precision-recall of the three z-scores. |
+| [`real_data_analysis_and_melanoma/`](real_data_analysis_and_melanoma/) | Real lineage-tracing datasets: how each raw dataset was processed into the matrices used in the figure (analysis and plots to be added). |
 
-Each folder contains its own `README.md` with a script-to-panel table.
-
-## Layout convention
-
-Each figure folder follows the same three stages where applicable:
+## Layout of a figure folder
 
 ```
-<folder>/
+<figure>/
 ├── README.md
-├── simulate.py        # or preprocess.py for real-data folders
-├── analysis.ipynb
-└── plot.ipynb
+├── simulation_code/     scripts that made the simulations (+ SLURM launchers, README with the settings)
+├── preprocessing_code/  real data only: raw data -> final matrices
+├── analysis_code/       simulations or final matrices -> analysis tables
+└── plot_code/           analysis / plot tables -> PDF figures
 ```
 
-## Output structure
+## Data
 
-No script hardcodes an output path. Output paths come from
-`twinfer.utils.paths.stage_dir(folder_name, stage)`, which resolves to:
-
-```
-<data_root>/paper_analysis/<folder>/<stage>/<run_tag>/
-```
-
-- `data_root` — `TWINFER_DATA_ROOT` if set, otherwise `<repo_root>/../../analysis_data`.
-- `run_tag` — a timestamp (`YYYYMMDD_HHMMSS`) generated per run, unless
-  `TWINFER_RUN_TAG` is set (pins every stage of one pipeline invocation to the
-  same tag) or an explicit `run_tag` is passed to reproduce/inspect a specific
-  past run.
-- `stage_dir()` repoints a `latest` symlink at the newest run for that
-  folder/stage, so `stage_dir(folder, stage, run_tag="latest")` resolves the
-  most recent run without knowing its timestamp.
-
-Example, for `heterogeneity_vs_regulation/`:
+Simulations and analysis tables are not in the repository (they are tens of GB). The scripts read and write them under a project folder:
 
 ```
-<data_root>/paper_analysis/heterogeneity_vs_regulation/
-├── simulate/
-│   ├── 20260731_101530/
-│   │   ├── A_B/
-│   │   ├── A_to_B/
-│   │   └── logs/
-│   └── latest -> 20260731_101530/
-├── analysis/
-│   └── ...
-└── plot/
-    └── ...
+$TWINFER_PROJECT_ROOT/
+├── final_figure_data/<figure>/
+│   ├── input_folder/      connectivity matrices, parameter sheets and other inputs of the simulations
+│   ├── simulation_data/   simulation outputs
+│   ├── analysis_data/     analysis tables
+│   └── plot_data/         the exact data of each plot (when it differs from an analysis table)
+└── final_plots/<figure>/  the PDF figures
 ```
 
-A downstream stage reads its input the same way — e.g. `analysis.ipynb` resolves
-its simulation input via `stage_dir("heterogeneity_vs_regulation", "simulate", run_tag="latest")`
-rather than a hardcoded path.
+Set the project folder before running a script:
 
-## Running
-
-```
-./run_simulation.sh <folder> [simulate|analyze|plot|all]
-./reproduce_all.sh --validate
+```bash
+export TWINFER_PROJECT_ROOT=/path/to/project
 ```
 
-`--validate` compares output against the reference values reported in the
-manuscript (AUROC, F1, precision/recall) rather than only checking that scripts
-ran without error.
-
-## Status
-
-Code has been moved into `heterogeneity_vs_regulation/`, `causal_direction_inference/`,
-`triplet_motif_discrimination/`, `larry_hematopoiesis_validation/`,
-`parameter_space_scan/`, and `grnboost2_comparison/`. Hardcoded paths and stale
-`TwINFER_function_scripts` imports within those files are not yet fixed —
-`stage_dir()` above is the target state, not yet universally in place. See
-`REORG_CHECKLIST.md` at the repository root for current per-file status.
-`extended_figures/`, `parameter_estimation/`, `benchmark/`, and `work_in_progress/`
-have not yet had code moved in.
-
-## Running a figure (added 2026-10-01)
-```
-source clean_code/env.sh
-bash paper_analysis/run_figure.sh heterogeneity_vs_regulation all --dry-run     # show what would run
-bash paper_analysis/run_figure.sh heterogeneity_vs_regulation analyze            # stages: simulate | analyze | plot | all; --variant v2 for the *_v2 notebooks
-bash paper_analysis/reproduce_all.sh --dry-run                                  # every folder of figures_manifest.yaml (shared scripts first)
-```
-`simulate` runs `simulate.py` (or `preprocess.py`), `analyze`/`plot` execute `analysis[_v2].ipynb` / `plot[_v2].ipynb` with nbconvert; executed copies go to `clean_data/paper_analysis/<folder>/executed_notebooks/`, the source notebooks are not modified. Nothing is submitted to SLURM. `reproduce_all.sh --validate` compares against `paper_analysis/expected_values.tsv`, which the author has to fill in from the manuscript (it does not exist yet, so `--validate` stops with an error instead of reporting a pass). Test: `tests/smoke/smoke_run_figure.py`.
+Every script starts with a header that names its inputs, outputs and an example command. The figure READMEs give the run order.

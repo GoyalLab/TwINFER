@@ -889,6 +889,9 @@ def plot_grn(
     terminal_depth_step=0.35,
     max_shift_fraction=0.92,
     edge_halo=True,
+    edge_styles=None,
+    undirected_edges=None,
+    colorbar_label="Edge Weight",
 ):
     """
     Plot a signed, weighted directed GRN.
@@ -934,6 +937,24 @@ def plot_grn(
     terminal_depth_step
         Radial staggering of crowded target symbols, in node-radius
         units.
+
+    edge_styles
+        Optional dict {(source, target): Matplotlib line style}, e.g.
+        {(0, 1): "--"} draws the edge 0 -> 1 dashed. Edges not in the
+        dict are solid. Arrowheads and repression bars stay solid.
+
+    undirected_edges
+        Optional collection of (source, target) edges drawn as a plain
+        line without arrowhead or repression bar (an association with
+        no direction). Give each such pair once: matrix[source, target]
+        must be non-zero and matrix[target, source] zero.
+
+    colorbar_label
+        Label of the colour bar (when show_colorbar is True).
+
+    `network_from_scenarios` builds the matrix, edge_styles and
+    undirected_edges from the output of
+    twinfer.inference.covariance_decomposition_z_scores.infer_with_twinfer.
     """
     matrix = np.asarray(
         matrix,
@@ -1229,6 +1250,12 @@ def plot_grn(
         node_radius * 0.40
     )
 
+    edge_styles = dict(edge_styles or {})
+    undirected_edges = {
+        tuple(edge)
+        for edge in (undirected_edges or ())
+    }
+
     # --------------------------------------------------------
     # Draw edges
     # --------------------------------------------------------
@@ -1244,8 +1271,22 @@ def plot_grn(
             data["weight"]
         )
 
+        # [2026-10-23 replaced: undirected edges get no repression bar]
+        # repression = (
+        #     weight < 0
+        # )
+        undirected = (
+            edge in undirected_edges
+        )
+
         repression = (
             weight < 0
+            and not undirected
+        )
+
+        line_style = edge_styles.get(
+            edge,
+            "solid",
         )
 
         color = colormap(
@@ -1364,6 +1405,7 @@ def plot_grn(
                         arrowstyle="-",
                         color=color,
                         lw=line_width,
+                        linestyle=line_style,
                         connectionstyle=(
                             connection_style
                         ),
@@ -1416,6 +1458,7 @@ def plot_grn(
                     ],
                     color=color,
                     lw=line_width,
+                    linestyle=line_style,
                     solid_capstyle="round",
                     zorder=2.0,
                 )
@@ -1507,6 +1550,16 @@ def plot_grn(
                 - unit * terminal_depth
             )
 
+            # Undirected edge: plain line, symmetric gaps at both nodes.
+            if undirected:
+                arrow_style = "-"
+                arrow_end = (
+                    end
+                    - unit
+                    * 1.50
+                    * terminal_gap
+                )
+
             arrow_start = (
                 start
                 + unit
@@ -1540,6 +1593,7 @@ def plot_grn(
                     arrowstyle=arrow_style,
                     color=color,
                     lw=line_width,
+                    linestyle=line_style,
                     connectionstyle=(
                         connection_style
                     ),
@@ -1684,13 +1738,177 @@ def plot_grn(
             orientation="vertical",
             fraction=0.03,
             pad=0.02,
-            label="Edge Weight",
+            # [2026-10-23 replaced: label is now an argument]
+            # label="Edge Weight",
+            label=colorbar_label,
         )
 
     if own_figure:
         fig.tight_layout()
 
     return fig, ax
+
+
+def network_from_scenarios(
+    result,
+    genes=None,
+    time="tb",
+    weight="z_rho",
+    solid_scenarios=(2, 3),
+    dashed_scenarios=(4,),
+    direction_alpha=0.05,
+):
+    """
+    Turn the output of `infer_with_twinfer` into the inputs of `plot_grn`.
+
+    Edge rules
+    ----------
+    - inference scenario in `solid_scenarios` (default 2 regulation,
+      3 regulation + heterogeneity): solid edge.
+    - inference scenario in `dashed_scenarios` (default 4 heterogeneity,
+      a shared state, not regulation): dashed edge without direction.
+    - any other scenario (1 nothing, or undefined): no edge.
+    - direction of a solid edge: only when the table has several time
+      points (columns delta, p_delta) and p_delta < direction_alpha;
+      delta > 0 gives gene_x -> gene_y, delta < 0 gives gene_y -> gene_x.
+      Otherwise the edge is drawn without direction.
+    - edge weight (colour, and activation arrow vs repression bar of a
+      directed edge) = the column `weight` (default z_rho).
+
+    Parameters
+    ----------
+    result
+        DataFrame returned by infer_with_twinfer, one row per gene pair.
+        With several time points, keep one (t_a, t_b) pair of rows.
+    genes
+        Node order (default: genes in order of appearance in result).
+    time
+        "ta" or "tb": which twin group's scenario and weight to use
+        when the table has several time points (default the later, tb).
+
+    Returns
+    -------
+    plot_kwargs
+        dict with matrix, node_labels, edge_styles, undirected_edges:
+        call plot_grn(**plot_kwargs) (other plot_grn options can be
+        added, e.g. plot_grn(**plot_kwargs, colorbar_label="z_rho")).
+    edges
+        DataFrame, one row per drawn edge: source, target, weight,
+        inference_scenario, line_style, directed.
+    """
+    suffix = (
+        ""
+        if "inference_scenario" in result.columns
+        else f"_{time}"
+    )
+
+    scenario_column = f"inference_scenario{suffix}"
+    weight_column = f"{weight}{suffix}"
+
+    for column in (scenario_column, weight_column):
+        if column not in result.columns:
+            raise ValueError(
+                f"result has no column {column}"
+            )
+
+    if result.duplicated(["gene_x", "gene_y"]).any():
+        raise ValueError(
+            "result has several rows for a gene pair: "
+            "keep one time pair (t_a, t_b)"
+        )
+
+    if genes is None:
+        genes = list(
+            dict.fromkeys(
+                list(result["gene_x"])
+                + list(result["gene_y"])
+            )
+        )
+
+    index = {
+        gene: position
+        for position, gene in enumerate(genes)
+    }
+
+    has_direction = {"delta", "p_delta"} <= set(result.columns)
+
+    matrix = np.zeros(
+        (len(genes), len(genes))
+    )
+    edge_styles = {}
+    undirected_edges = set()
+    edges = []
+
+    for row in result.itertuples(index=False):
+        row = row._asdict()
+        scenario = row[scenario_column]
+
+        if pd.isna(scenario):
+            continue
+
+        scenario = int(scenario)
+
+        if scenario in solid_scenarios:
+            line_style = "solid"
+        elif scenario in dashed_scenarios:
+            line_style = "--"
+        else:
+            continue
+
+        if row["gene_x"] not in index or row["gene_y"] not in index:
+            continue
+
+        source = index[row["gene_x"]]
+        target = index[row["gene_y"]]
+
+        directed = (
+            line_style == "solid"
+            and has_direction
+            and row["p_delta"] < direction_alpha
+        )
+
+        if directed and row["delta"] < 0:
+            source, target = target, source
+
+        matrix[source, target] = row[weight_column]
+        edge_styles[(source, target)] = line_style
+
+        if not directed:
+            undirected_edges.add(
+                (source, target)
+            )
+
+        edges.append(
+            dict(
+                source=genes[source],
+                target=genes[target],
+                weight=row[weight_column],
+                inference_scenario=scenario,
+                line_style=line_style,
+                directed=directed,
+            )
+        )
+
+    plot_kwargs = dict(
+        matrix=matrix,
+        node_labels=list(genes),
+        edge_styles=edge_styles,
+        undirected_edges=undirected_edges,
+    )
+
+    edges = pd.DataFrame(
+        edges,
+        columns=[
+            "source",
+            "target",
+            "weight",
+            "inference_scenario",
+            "line_style",
+            "directed",
+        ],
+    )
+
+    return plot_kwargs, edges
 
 
 # ============================================================

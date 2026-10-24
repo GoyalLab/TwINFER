@@ -1,81 +1,61 @@
 # `twinfer`
 
-Core TwINFER library: Gillespie simulation of gene regulatory networks, twin-pair correlation inference, and network plotting. Everything else in this repository (`paper_analysis/`, `tutorials/`) imports from this package rather than reimplementing these functions.
-
-Figure-specific code, benchmarking, and evaluation metrics are not part of this package; see `paper_analysis/` for those. `twinfer` does not import from `paper_analysis/` or `tutorials/` under any circumstance — the dependency runs one way only.
+The TwINFER Python package: stochastic simulation of gene regulatory networks with twin (sister-cell) pairs, the covariance decomposition that separates regulation from cell-state heterogeneity, and network plots. The figure code in `paper_analysis/` and the `tutorials/` import from this package; the package never imports from them.
 
 ## Installation
 
-From the repository root, inside the `twinfer-code` conda environment:
+From the repository root, in a Python ≥ 3.10 environment:
 
 ```bash
-conda env create -f package/environment.yml   # first time only
-conda activate twinfer-code
 pip install -e package/
 ```
 
-`pip install -e` performs an editable install: `package/twinfer/` is linked into the environment's `site-packages` rather than copied. `import twinfer` then works from any script or notebook running in this environment, from any directory, without modifying `sys.path`. Editing files under `twinfer/` takes effect immediately; rerun `pip install -e package/` only if `pyproject.toml`'s dependencies change.
+`-e` (editable) links `package/twinfer/` into the environment, so changes to the code take effect without reinstalling. The dependencies are listed in `pyproject.toml`. Check with `python -c "import twinfer; print(twinfer.__file__)"`.
 
-To verify the installation:
+## Modules
 
-```bash
-python -c "import twinfer; print(twinfer.__file__)"
-```
+### `twinfer.inference.covariance_decomposition_z_scores`: inference
 
-### Environments
+| Function | Does |
+|---|---|
+| `infer_with_twinfer(table, genes, time_points=None, ...)` | Scores gene pairs. Picks the data scenario from the table: **single time point** (twin pairs at one time → `z_rho`, `z_rho_s`, `z_rho_delta`, `inference_scenario`), **multiple time points** (adds the cross-time direction: `z_dag_xy`, `z_dag_yx`, `delta`, `p_delta`), **clones** (real data: one row per cell with `clone_id`, clones of any size, singletons allowed; optional `regulators=`, `targets=`). `correction="auto"` (default) uses Benjamini-Hochberg for clones (columns `q_rho`, `q_rho_delta`) and the fixed thresholds for twin-pair tables. |
+| `classify_inference_scenario(z_rho, z_rho_s, z_rho_delta, thresholds=(1.96, 2.326, 1.96), correction="none", fdr=0.05)` | Inference scenario 1-4 (nothing, regulation, regulation + heterogeneity, heterogeneity), tested in the order z_rho, z_rho_s, z_rho_delta. `correction="bh"` tests z_rho with Benjamini-Hochberg over all pairs given and z_rho_delta with Benjamini-Hochberg over the pairs whose z_rho is significant (q ≤ `fdr`); z_rho_s keeps its threshold. |
+| `q_values_of_z_rho(z_rho)`, `q_values_of_z_rho_delta(z_rho_delta, z_rho)`, `benjamini_hochberg(p)` | BH q-values (two-sided normal p-values; NaN is not counted as a test). |
+| `twin_stats(x, y)` | All statistics of one gene pair from two arrays of shape (N, 2) (sister 1, sister 2). |
+| `sister_arrays(table, genes, time_step)` | Turns the long twin table into those (N, 2) arrays. |
+| `clone_twin_stats(x, y, clone)`, `clone_twin_stats_matrix(X, Y, clone)` | The clone-size-aware statistics for one pair or for all regulator × target pairs (real data). |
 
-- **`environment.yml`** (`twinfer-code`, Python 3.12): the environment for this package — simulation, inference, plotting. Use this unless running the GRNBoost2/arboreto baseline.
-- **`grnboost_env.yml`** (`grnboost_env`, Python 3.10): required only for the GRNBoost2 comparison in `paper_analysis/benchmark/`, which depends on older numpy/pandas/scipy pins than `twinfer-code` uses.
+The module docstring gives every formula. Input tables:
 
-## Module map
+* twin pairs: columns `clone_id`, `replicate` (1 or 2 = which sister), `time_step`, one column per gene;
+* real data: one row per cell, `clone_id` and one column per gene (normalised values, e.g. log1p counts per 10,000), no `replicate` column.
 
-```
-twinfer/
-├── simulation/   Gillespie simulation engines
-├── inference/    Twin-pair correlation inference
-├── plotting/     Network visualization
-└── utils/        Cross-cutting helpers (paths, JSON serialization)
-```
+### `twinfer.plotting.network_plots`: network figures
 
-### `twinfer.simulation`
+| Function | Does |
+|---|---|
+| `network_from_scenarios(result, ...)` | Turns the output of `infer_with_twinfer` into the inputs of `plot_grn`: scenarios 2-3 solid edges, scenario 4 dashed edges without direction, direction from `p_delta` when two time points were used. Returns `(plot_kwargs, edges)`. |
+| `plot_grn(matrix, node_labels=None, ..., edge_styles=None, undirected_edges=None)` | Draws a signed, weighted directed network (`matrix[i, j]` = effect of node i on node j: positive = arrow, negative = bar). `edge_styles` sets a line style per edge, `undirected_edges` draws plain lines. |
 
-Gillespie simulation of stochastic gene expression over a regulatory network. Several engine variants exist side by side by design; each models a distinct scenario rather than a superseded draft.
+### `twinfer.simulation`: stochastic simulation
 
-| Module | Models | Used by |
-|---|---|---|
-| `gillespie_simulations` | Default engine: standard promoter/expression dynamics used for most figures | `figure_2`, `figure_3`, `figure_4` simulations and most of the simulation-driver scripts |
-| `gillespie_drift` | Multi-state drift dynamics | `drift_multiple_state/` analyses |
-| `gillespie_pulse` | Pulsed regulatory input | `drift_multiple_state/` analyses |
-| `shared_functions` | Helpers identical across every engine variant (matrix I/O, network construction, parameter assignment, steady-state checks). Imported by the engines above, not called directly | — |
-
-### `twinfer.inference`
-
-Given simulated or real single-cell data with twin/clone labels, infers a regulatory network from correlation structure across twin pairs.
-
-- `infer` — main entry point (`infer_with_twinfer`-style pipeline: existence, then heterogeneity, then direction).
-- `correlation_analysis_functions` — Spearman correlation, permutation/shuffle, and twin-pair-construction routines called by `infer`.
-
-### `twinfer.plotting`
-
-Network visualization.
+| Module | Simulates |
+|---|---|
+| `gillespie_simulations` | Gene expression on a regulatory network (promoter switching, mRNA, protein; Gillespie algorithm), a burn-in, cell division into twin pairs, and the twins' expression over time. Run as `python -m twinfer.simulation.gillespie_simulations --help` or call `process_param_set`. Inputs: a connectivity matrix (`matrix[i, j]` = effect of gene i on gene j) and a parameter sheet, see `simulation_example_input_data/`. |
+| `gillespie_drift` | The same with promoter activation rates (k_on) that ramp linearly after division, e.g. two halves of the clones drifting into a low and a high state. |
+| `gillespie_pulse` | A transient pulse in k_on of chosen genes after division. |
+| `gillespie_oscillations` | mRNA production modulated by an oscillation shared within a cell (for example a cell-cycle-like phase). |
+| `shared_functions` | Helpers shared by the engines (matrix input, parameter assignment). |
 
 ### `twinfer.utils`
 
-Cross-cutting helpers used by simulation, inference, and `paper_analysis/`: path resolution (`paths.py`, replacing hardcoded absolute paths) and JSON-safe serialization (`json_utils.py`).
+`paths` (repository and project folders, read from `TWINFER_PROJECT_ROOT`), `json_utils` (JSON export of numpy objects).
 
-## Usage
+### Other modules
 
-```python
-import twinfer
-from twinfer.simulation import gillespie_simulations
-from twinfer.inference import infer
+`twinfer.inference.infer`, `correlation_functions`, `network_naming`, `ranked_edges` and `twinfer.scoring` are the earlier, permutation-based pipeline and benchmark scoring helpers. They are kept for analyses that still import them; new code should use `covariance_decomposition_z_scores`.
 
-# Simulate, then infer a network from the result.
-# See tutorials/01_simulate_and_infer_basics.ipynb for a complete worked example.
-```
+## Environments
 
-## Status
-
-This package is being migrated from the previous flat `TwINFER_function_scripts/` layout. See `REORG_CHECKLIST.md` at the repository root for current progress. `simulation/` and `inference/` contain migrated code; `plotting/` and `utils/` have not yet been populated.
-## twinfer.scoring (added 2026-09-30)
-Reviewed scoring helpers shared by `benchmarks/` and `paper_analysis/`: `analytic_zscores`, `analytic_core`, `benchmark_truth`, `todo4v2`, `pidc`, `twinscore_supplement`. The package never imports from `benchmarks/` or `paper_analysis/`.
+* `environment.yml`: conda environment used for development (simulation, inference, plotting).
+* `grnboost_env.yml`: separate environment for the GRNBoost2 comparison (older numpy / pandas / scipy pins).
