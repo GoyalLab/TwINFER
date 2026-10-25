@@ -32,7 +32,8 @@ table, or with `scenario=`):
                          time, with the clone-size statistics below: the twin pairs of that group (clones of 2) and the cross-group
                          sister measured then (singletons) for z_rho, the twin pairs for z_rho_s and z_rho_Delta. The cross group gives
                          the directed cross-time correlations rho_dag_xy = corr(X at t_a, Y at t_b) and rho_dag_yx (Spearman) and
-                         z_dag = rho_dag * sqrt(N_cross - 1). A larger z_dag_xy than z_dag_yx points to X -> Y.
+                         z_dag = rho_dag * sqrt(N_cross - 1). A larger |z_dag_xy| than |z_dag_yx| points to X -> Y; the test is
+                         delta = |rho_dag_xy| - |rho_dag_yx| with the permutation p-value p_delta.
   "clones"               real data: one row per cell with clone_id and the genes (no replicate column), clones of any size, singletons
                          allowed, one time point -> the TwinScore statistics below (all gene pairs, or regulators x targets).
 (The cross-time direction for real data with several time points is not implemented.)
@@ -276,7 +277,8 @@ def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101
     z_thresholds : tuple of float
         (z_rho, z_rho_s, z_rho_Delta) significance thresholds of `classify_inference_scenario` (adds the column inference_scenario).
     n_permutations : int
-        "multiple_time_points": permutations of the cross group for the p-value of delta (``p = (1 + #{|null| >= |delta|}) / (n + 1)``).
+        "multiple_time_points": permutations of the cross group for the p-value of delta = ``|rho_dag_xy| - |rho_dag_yx|``; each null
+        value is built the same way from the permuted correlations, ``p = (1 + #{|null| >= |delta|}) / (n + 1)``.
     correction, fdr : {"auto", "bh", "none"}, float
         Multiple testing of z_rho in the inference scenario: "bh" = Benjamini-Hochberg over all pairs of the result, z_rho
         significant when q_rho <= fdr, and z_rho_Delta BH over the pairs with significant z_rho, significant when q_rho_Delta <= fdr
@@ -476,11 +478,18 @@ def infer_with_twinfer(table, genes, time_points=None, scenario="auto", seed=101
                     perm_rng.permutation(len(cross))
                 continue
             rho_xy, rho_yx = (xa * yb).sum() / norm_xy, (ya * xb).sum() / norm_yx
-            delta = rho_xy - rho_yx
+            # [2026-10-24 replaced: delta compares the magnitudes |rho_dag|, so that a repression (negative rho_dag) points the same way
+            #  as an activation; the null is built from absolute correlations too (same permutations, same seed)]
+            # delta = rho_xy - rho_yx
+            # null = np.empty(n_permutations)                          # permute which t_b measurement pairs with which t_a measurement
+            # for k in range(n_permutations):
+            #     perm = perm_rng.permutation(len(cross))
+            #     null[k] = (xa * yb[perm]).sum() / norm_xy - (ya * xb[perm]).sum() / norm_yx
+            delta = abs(rho_xy) - abs(rho_yx)
             null = np.empty(n_permutations)                          # permute which t_b measurement pairs with which t_a measurement
             for k in range(n_permutations):
                 perm = perm_rng.permutation(len(cross))
-                null[k] = (xa * yb[perm]).sum() / norm_xy - (ya * xb[perm]).sum() / norm_yx
+                null[k] = abs((xa * yb[perm]).sum() / norm_xy) - abs((ya * xb[perm]).sum() / norm_yx)
             p_delta = (1 + np.sum(np.abs(null) >= abs(delta))) / (n_permutations + 1)
             frame.loc[i, cross_columns] = [rho_xy, rho_yx, rho_xy * np.sqrt(len(cross) - 1), rho_yx * np.sqrt(len(cross) - 1), delta, p_delta]
     return frame[stat_columns + cross_columns + [c for c in frame.columns if c not in stat_columns + cross_columns]]

@@ -7,6 +7,9 @@ from matplotlib.colors import Normalize, LinearSegmentedColormap, ListedColormap
 from matplotlib.patches import FancyArrowPatch
 from adjustText import adjust_text
 
+# [2026-10-24 added: the direction rule shared with the ranked lists]
+from twinfer.inference.ranked_edges import pair_directions
+
 __version__ = "2026-07-16-one-reciprocal-edge-curved-v6"
 
 
@@ -894,6 +897,8 @@ def plot_grn(
     colorbar_label="Edge Weight",
     # [2026-10-24 added: edge_colors]
     edge_colors=None,
+    # [2026-10-24 added: edge_signs]
+    edge_signs=None,
 ):
     """
     Plot a signed, weighted directed GRN.
@@ -959,6 +964,12 @@ def plot_grn(
         {(0, 1): "tab:blue"}: the edge 0 -> 1 (line, arrowhead or bar)
         is drawn in that colour instead of the colour of its weight.
         Edges not in the dict are coloured by weight.
+
+    edge_signs
+        Optional dict {(source, target): +1 or -1}: arrowhead (+1) or
+        repression bar (-1) of that edge, instead of the sign of its
+        weight; the colour still follows the weight. Edges not in the
+        dict take the sign of their weight.
 
     Notes
     -----
@@ -1262,6 +1273,7 @@ def plot_grn(
 
     edge_styles = dict(edge_styles or {})
     edge_colors = dict(edge_colors or {})
+    edge_signs = dict(edge_signs or {})
     undirected_edges = {
         tuple(edge)
         for edge in (undirected_edges or ())
@@ -1290,8 +1302,13 @@ def plot_grn(
             edge in undirected_edges
         )
 
+        # [2026-10-24 replaced: edge_signs sets arrow / bar apart from the colour]
+        # repression = (
+        #     weight < 0
+        #     and not undirected
+        # )
         repression = (
-            weight < 0
+            edge_signs.get(edge, weight) < 0
             and not undirected
         )
 
@@ -1771,12 +1788,19 @@ def network_from_scenarios(
     result,
     genes=None,
     time="tb",
-    weight="z_rho",
+    # [2026-10-24 replaced: edge colour by z_rho_Delta (twin-difference correlation, regulation)]
+    # weight="z_rho",
+    # [2026-10-24 replaced: default None = z_dag of the drawn direction with two time points, else z_rho_Delta]
+    # weight="z_rho_Delta",
+    weight=None,
     solid_scenarios=(2, 3),
     dashed_scenarios=(4,),
     direction_alpha=0.05,
     # [2026-10-24 added: scenario_colors]
     scenario_colors=None,
+    # [2026-10-24 added: z_dag_threshold, two_way_scenarios (pair_directions)]
+    z_dag_threshold=1.96,
+    two_way_scenarios=(2,),
 ):
     """
     Turn the output of `infer_with_twinfer` into the inputs of `plot_grn`.
@@ -1788,12 +1812,26 @@ def network_from_scenarios(
     - inference scenario in `dashed_scenarios` (default 4 heterogeneity,
       a shared state, not regulation): dashed edge without direction.
     - any other scenario (1 nothing, or undefined): no edge.
-    - direction of a solid edge: only when the table has several time
-      points (columns delta, p_delta) and p_delta < direction_alpha;
-      delta > 0 gives gene_x -> gene_y, delta < 0 gives gene_y -> gene_x.
+    - direction of a solid edge (only when the table has several time
+      points), `twinfer.inference.ranked_edges.pair_directions`, the same
+      rule as the z_dag ranked list:
+        scenario in `two_way_scenarios` (default 2, regulation): each
+        direction on its own, |z_dag| > z_dag_threshold (z_dag_xy for
+        gene_x -> gene_y, z_dag_yx for gene_y -> gene_x); both can be
+        drawn (mutual regulation, two curved edges);
+        other solid scenarios (3, regulation + a shared state, which
+        correlates both directions): one direction, the sign of
+        delta = |rho_dag_xy| - |rho_dag_yx|, when p_delta < direction_alpha.
       Otherwise the edge is drawn without direction.
-    - edge weight (colour, and activation arrow vs repression bar of a
-      directed edge) = the column `weight` (default z_rho).
+    - edge colour = `weight`. Default (None): "z_dag" when the table has
+      two time points (the z_dag of the drawn direction; an edge without
+      direction takes the larger of |z_dag_xy| and |z_dag_yx|; a pair
+      without cross-time values, see cross_correlation_pairs of
+      infer_with_twinfer, is coloured by z_rho_Delta), otherwise
+      "z_rho_Delta". Any other column (without _ta / _tb) is used as is.
+    - activation arrow vs repression bar of a directed edge = the sign of
+      its z_dag (the cross-time correlation in the drawn direction),
+      passed to plot_grn as edge_signs, whatever the colour column.
     - `scenario_colors` (optional dict {scenario: colour}, e.g.
       {3: "tab:blue", 4: "grey"}): edges of these scenarios are drawn
       in that colour instead of the colour of their weight.
@@ -1815,13 +1853,14 @@ def network_from_scenarios(
     Returns
     -------
     plot_kwargs
-        dict with matrix, node_labels, edge_styles, undirected_edges
-        (and edge_colors when scenario_colors is given):
+        dict with matrix, node_labels, edge_styles, undirected_edges,
+        edge_signs (and edge_colors when scenario_colors is given):
         call ``plot_grn(**plot_kwargs)`` (other plot_grn options can be
         added, e.g. ``plot_grn(**plot_kwargs, colorbar_label="z_rho")``).
     edges
-        DataFrame, one row per drawn edge: source, target, weight,
-        inference_scenario, line_style, directed.
+        DataFrame, one row per drawn edge: source, target, weight (the
+        colour value), inference_scenario, line_style, directed, z_dag
+        (of the drawn direction; NaN without cross-time values).
     """
     suffix = (
         ""
@@ -1830,7 +1869,16 @@ def network_from_scenarios(
     )
 
     scenario_column = f"inference_scenario{suffix}"
-    weight_column = f"{weight}{suffix}"
+    # [2026-10-24 replaced: weight "z_dag" (default with two time points); z_rho_Delta is its fallback column]
+    # weight_column = f"{weight}{suffix}"
+    #
+    # for column in (scenario_column, weight_column):
+    has_cross = {"z_dag_xy", "z_dag_yx", "delta", "p_delta"} <= set(result.columns)
+    if weight is None:
+        weight = "z_dag" if has_cross else "z_rho_Delta"
+    if weight == "z_dag" and not has_cross:
+        raise ValueError("weight z_dag needs a result with two time points (columns z_dag_xy, z_dag_yx, delta, p_delta)")
+    weight_column = f"z_rho_Delta{suffix}" if weight == "z_dag" else f"{weight}{suffix}"
 
     for column in (scenario_column, weight_column):
         if column not in result.columns:
@@ -1857,13 +1905,16 @@ def network_from_scenarios(
         for position, gene in enumerate(genes)
     }
 
-    has_direction = {"delta", "p_delta"} <= set(result.columns)
+    # [2026-10-24 replaced: has_cross above]
+    # has_direction = {"delta", "p_delta"} <= set(result.columns)
 
     matrix = np.zeros(
         (len(genes), len(genes))
     )
     edge_styles = {}
     edge_colors = {}
+    # [2026-10-24 added: edge_signs, rho_dag of the drawn direction]
+    edge_signs = {}
     undirected_edges = set()
     edges = []
 
@@ -1886,44 +1937,65 @@ def network_from_scenarios(
         if row["gene_x"] not in index or row["gene_y"] not in index:
             continue
 
-        source = index[row["gene_x"]]
-        target = index[row["gene_y"]]
+        # [2026-10-24 replaced: directions from pair_directions (both directions in scenario 2), colour z_dag of each direction]
+        # source = index[row["gene_x"]]
+        # target = index[row["gene_y"]]
+        #
+        # directed = (
+        #     line_style == "solid"
+        #     and has_direction
+        #     and row["p_delta"] < direction_alpha
+        # )
+        #
+        # if directed and row["delta"] < 0:
+        #     source, target = target, source
+        #
+        # matrix[source, target] = row[weight_column]
+        # ...
+        if has_cross:
+            directions = pair_directions(row["z_dag_xy"], row["z_dag_yx"], row["delta"], row["p_delta"], scenario,
+                                         direction_alpha, z_dag_threshold, two_way_scenarios)
+        else:
+            directions = [(True, np.nan, False)]
+        if line_style != "solid":                                    # dashed (a shared state): one edge without direction
+            directions = [(directions[0][0], directions[0][1], False)] if len(directions) == 1 else \
+                         [max(((f, z, False) for f, z, _ in directions), key=lambda d: abs(d[1]))]
 
-        directed = (
-            line_style == "solid"
-            and has_direction
-            and row["p_delta"] < direction_alpha
-        )
+        for forward, z_dag, directed in directions:
+            source = index[row["gene_x"] if forward else row["gene_y"]]
+            target = index[row["gene_y"] if forward else row["gene_x"]]
 
-        if directed and row["delta"] < 0:
-            source, target = target, source
+            value = z_dag if weight == "z_dag" and not pd.isna(z_dag) else row[weight_column]
+            matrix[source, target] = value
+            edge_styles[(source, target)] = line_style
+            if scenario_colors and scenario in scenario_colors:
+                edge_colors[(source, target)] = scenario_colors[scenario]
 
-        matrix[source, target] = row[weight_column]
-        edge_styles[(source, target)] = line_style
-        if scenario_colors and scenario in scenario_colors:
-            edge_colors[(source, target)] = scenario_colors[scenario]
+            if directed:
+                edge_signs[(source, target)] = 1 if z_dag >= 0 else -1
+            else:
+                undirected_edges.add(
+                    (source, target)
+                )
 
-        if not directed:
-            undirected_edges.add(
-                (source, target)
+            edges.append(
+                dict(
+                    source=genes[source],
+                    target=genes[target],
+                    weight=value,
+                    inference_scenario=scenario,
+                    line_style=line_style,
+                    directed=directed,
+                    z_dag=z_dag,
+                )
             )
-
-        edges.append(
-            dict(
-                source=genes[source],
-                target=genes[target],
-                weight=row[weight_column],
-                inference_scenario=scenario,
-                line_style=line_style,
-                directed=directed,
-            )
-        )
 
     plot_kwargs = dict(
         matrix=matrix,
         node_labels=list(genes),
         edge_styles=edge_styles,
         undirected_edges=undirected_edges,
+        edge_signs=edge_signs,
     )
     if scenario_colors:
         plot_kwargs["edge_colors"] = edge_colors
@@ -1937,6 +2009,7 @@ def network_from_scenarios(
             "inference_scenario",
             "line_style",
             "directed",
+            "z_dag",
         ],
     )
 

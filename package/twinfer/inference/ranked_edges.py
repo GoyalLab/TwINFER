@@ -3,9 +3,15 @@
 One list per score, by default
   z_rho_s       twin-shared part of the correlation (heterogeneity: a shared cell state)
   z_rho_Delta   twin-difference correlation (regulation)
-  z_dag         only when the result has two time points: the cross-time correlation of sisters, ranked by the larger of
-                |z_dag_xy| (gene_x earlier with gene_y later) and |z_dag_yx| (the reverse); each pair is listed as source -> target
-                in the direction of the larger one, with delta and p_delta (the test of the direction)
+  z_dag         only when the result has two time points: the cross-time correlation of sisters (z_dag_xy: gene_x earlier with
+                gene_y later; z_dag_yx the reverse), one row per direction found by `pair_directions` (the rule network_from_scenarios
+                draws), source -> target, ranked by |z_dag| of that direction:
+                  scenario 2 (regulation)  each direction on its own: |z_dag| > z_dag_threshold; both directions can be listed
+                                           (mutual regulation)
+                  other scenarios          delta = |rho_dag_xy| - |rho_dag_yx| and its permutation p-value p_delta: one direction
+                                           (the sign of delta) when p_delta < direction_alpha. In scenario 3 a shared state
+                                           correlates both directions, so only the difference is used.
+                  no direction found       one row, the larger |z_dag|, directed False
 Each list ranks the gene pairs by |z| (the sign does not change the rank), largest first. By default only pairs whose
 expression correlation z_rho is significant are ranked: q_rho <= fdr when the result has a q_rho column (Benjamini-Hochberg,
 the default for real data), otherwise |z_rho| > z_rho_threshold. This is how the top lists of the TwinScore procedure are made
@@ -15,17 +21,48 @@ Example:
     from twinfer.inference.ranked_edges import ranked_edge_lists
     lists = ranked_edge_lists(result, top=100)
     lists["z_rho_Delta"]          # rank, gene_x, gene_y, z_rho_Delta, z_rho, q_rho, inference_scenario, ...
-    lists["z_dag"]                # two time points only: rank, source, target, z_dag, z_dag_xy, z_dag_yx, delta, p_delta, ...
+    lists["z_dag"]                # two time points only: rank, source, target, directed, z_dag, z_dag_xy, z_dag_yx, delta, p_delta, ...
+    pair_directions(z_dag_xy, z_dag_yx, delta, p_delta, scenario)   # [(forward, z_dag, directed), ...] of one pair
 """
 # [2026-10-24 renamed: z_rho_delta, q_rho_delta, rho_delta and q_values_of_z_rho_delta to z_rho_Delta, q_rho_Delta, rho_Delta, q_values_of_z_rho_Delta]
 import numpy as np
 import pandas as pd
 
 
+# [2026-10-24 added: one direction rule for the ranked list and the network]
+def pair_directions(z_dag_xy, z_dag_yx, delta, p_delta, scenario, direction_alpha=0.05, z_dag_threshold=1.96, two_way_scenarios=(2,)):
+    """Directions of one gene pair from its cross-time statistics.
+
+    Returns a list of (forward, z_dag, directed): forward True = gene_x -> gene_y, False = gene_y -> gene_x; z_dag of that direction.
+    scenario in `two_way_scenarios` (default 2, regulation): each direction on its own, directed when ``|z_dag|`` > z_dag_threshold;
+    both can be returned (mutual regulation). Other scenarios (3: regulation + a shared state, which correlates both directions):
+    one direction, the sign of delta, when p_delta < direction_alpha. When no direction is found: [(larger ``|z_dag|``, z_dag, False)].
+    Without cross-time statistics (NaN): [(True, NaN, False)].
+    """
+    if pd.isna(z_dag_xy) or pd.isna(z_dag_yx):
+        return [(True, np.nan, False)]
+    if scenario in two_way_scenarios:
+        found = [(forward, z, True) for forward, z in ((True, z_dag_xy), (False, z_dag_yx)) if abs(z) > z_dag_threshold]
+    elif p_delta < direction_alpha:
+        found = [(True, z_dag_xy, True)] if delta >= 0 else [(False, z_dag_yx, True)]
+    else:
+        found = []
+    if not found:
+        forward = abs(z_dag_xy) >= abs(z_dag_yx)
+        found = [(forward, z_dag_xy if forward else z_dag_yx, False)]
+    return found
+
+
 # [2026-10-23 replaced: scores default None adds the cross-correlation list (z_dag) for several time points]
 # def ranked_edge_lists(result, scores=("z_rho_s", "z_rho_delta"), time="tb", significant_rho_only=True, fdr=0.05,
 #                       z_rho_threshold=1.96, top=None):
-def ranked_edge_lists(result, scores=None, time="tb", significant_rho_only=True, fdr=0.05, z_rho_threshold=1.96, top=None):
+# [2026-10-24 replaced: direction_alpha added (column directed of the z_dag list)]
+# def ranked_edge_lists(result, scores=None, time="tb", significant_rho_only=True, fdr=0.05, z_rho_threshold=1.96, top=None):
+# [2026-10-24 replaced: z_dag_threshold, two_way_scenarios added (pair_directions)]
+# def ranked_edge_lists(result, scores=None, time="tb", significant_rho_only=True, fdr=0.05, z_rho_threshold=1.96, top=None,
+#                       direction_alpha=0.05):
+def ranked_edge_lists(result, scores=None, time="tb", significant_rho_only=True, fdr=0.05, z_rho_threshold=1.96, top=None,
+                      direction_alpha=0.05, z_dag_threshold=1.96, two_way_scenarios=(2,)):
     """Ranked lists of gene pairs, one per score.
 
     Parameters
@@ -41,13 +78,16 @@ def ranked_edge_lists(result, scores=None, time="tb", significant_rho_only=True,
         Rank only pairs whose z_rho is significant (q_rho <= fdr if a q_rho column exists, else ``|z_rho|`` > z_rho_threshold).
     top : int, optional
         Keep the first `top` pairs of each list (None = all).
+    direction_alpha, z_dag_threshold, two_way_scenarios : float, float, tuple of int
+        z_dag list: the direction rule of `pair_directions` (as network_from_scenarios draws it).
 
     Returns
     -------
     dict
         {score: DataFrame} with the columns rank (1 = largest ``|score|``), gene_x, gene_y, the score, z_rho, and q_rho, q_rho_Delta,
-        inference_scenario where present. The z_dag list has source, target (the direction of the larger ``|z_dag|``), z_dag, z_dag_xy,
-        z_dag_yx, delta, p_delta instead of gene_x, gene_y. Pairs with a missing score are left out; tied pairs keep their order in `result`.
+        inference_scenario where present. The z_dag list has one row per direction (`pair_directions`): source, target, directed,
+        z_dag (of that direction), z_dag_xy, z_dag_yx, delta, p_delta instead of gene_x, gene_y. Pairs with a missing score are left
+        out; tied rows keep their order in `result`.
     """
     has_cross = {"z_dag_xy", "z_dag_yx"} <= set(result.columns)
     if scores is None:
@@ -66,21 +106,35 @@ def ranked_edge_lists(result, scores=None, time="tb", significant_rho_only=True,
     if "z_dag" in scores:
         if not has_cross:
             raise ValueError("z_dag needs a result with two time points (columns z_dag_xy, z_dag_yx)")
-        forward = np.abs(table["z_dag_xy"].to_numpy()) >= np.abs(table["z_dag_yx"].to_numpy())
-        table = table.assign(source=np.where(forward, table["gene_x"], table["gene_y"]),
-                             target=np.where(forward, table["gene_y"], table["gene_x"]),
-                             z_dag=np.where(forward, table["z_dag_xy"], table["z_dag_yx"]))
+        # [2026-10-24 replaced: one row per direction of pair_directions (both directions in scenario 2)]
+        # forward = np.abs(table["z_dag_xy"].to_numpy()) >= np.abs(table["z_dag_yx"].to_numpy())
+        # table = table.assign(source=np.where(forward, table["gene_x"], table["gene_y"]),
+        #                      target=np.where(forward, table["gene_y"], table["gene_x"]),
+        #                      z_dag=np.where(forward, table["z_dag_xy"], table["z_dag_yx"]),
+        #                      # [2026-10-24 added: directed]
+        #                      directed=(table["p_delta"] < direction_alpha).to_numpy())
+        scenario = table["inference_scenario"] if "inference_scenario" in table.columns else pd.Series(np.nan, index=table.index)
+        cross_rows = []
+        for (_, row), s in zip(table.iterrows(), scenario):
+            for forward, z, directed in pair_directions(row["z_dag_xy"], row["z_dag_yx"], row["delta"], row["p_delta"], s,
+                                                        direction_alpha, z_dag_threshold, two_way_scenarios):
+                cross_rows.append(row.to_dict() | dict(source=row["gene_x"] if forward else row["gene_y"],
+                                                       target=row["gene_y"] if forward else row["gene_x"], z_dag=z, directed=directed))
+        cross_table = pd.DataFrame(cross_rows, columns=list(table.columns) + ["source", "target", "z_dag", "directed"])
     for score in scores:
-        if score not in table.columns:
+        source_table = cross_table if score == "z_dag" else table
+        if score not in source_table.columns:
             raise ValueError(f"result has no column {score}{suffix}")
-        ranked = table.dropna(subset=[score])
+        ranked = source_table.dropna(subset=[score])
         ranked = ranked.iloc[np.argsort(-np.abs(ranked[score].to_numpy()), kind="stable")]
         if top is not None:
             ranked = ranked.head(top)
         # [2026-10-23 replaced: own columns for the cross-correlation list]
         # columns = ["gene_x", "gene_y", score] + [c for c in extra if c != score]
         if score == "z_dag":
-            columns = ["source", "target", "z_dag", "z_dag_xy", "z_dag_yx", "delta", "p_delta"] + extra
+            # [2026-10-24 replaced: column directed added]
+            # columns = ["source", "target", "z_dag", "z_dag_xy", "z_dag_yx", "delta", "p_delta"] + extra
+            columns = ["source", "target", "directed", "z_dag", "z_dag_xy", "z_dag_yx", "delta", "p_delta"] + extra
         else:
             columns = ["gene_x", "gene_y", score] + [c for c in extra if c != score]
         ranked = ranked[columns].reset_index(drop=True)

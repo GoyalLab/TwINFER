@@ -28,7 +28,7 @@ pip install -e package/
 
 ### `twinfer.inference.ranked_edges`: ranked lists
 
-`ranked_edge_lists(result, scores=None, top=None, direction_alpha=0.05)` ranks the gene pairs of an `infer_with_twinfer` result by |z_rho_s| (shared state) and by |z_rho_Delta| (regulation), among the pairs whose z_rho is significant (q_rho ≤ 0.05 when present, else \|z_rho\| > 1.96). Returns one table per score with a `rank` column. When the result has two time points it adds a third list, `z_dag`: the pairs ranked by their cross-time correlation (the larger of \|z_dag_xy\| and \|z_dag_yx\|), each listed as source → target in that direction (the sign of `delta`), with `delta`, `p_delta` and `directed` (`p_delta < direction_alpha`; otherwise the pair has no direction, as in `network_from_scenarios`).
+`ranked_edge_lists(result, scores=None, top=None, direction_alpha=0.05)` ranks the gene pairs of an `infer_with_twinfer` result by |z_rho_s| (shared state) and by |z_rho_Delta| (regulation), among the pairs whose z_rho is significant (q_rho ≤ 0.05 when present, else \|z_rho\| > 1.96). Returns one table per score with a `rank` column. When the result has two time points it adds a third list, `z_dag`: one row per direction found by `pair_directions(z_dag_xy, z_dag_yx, delta, p_delta, scenario)`, source → target, ranked by \|z_dag\| of that direction. In scenario 2 (regulation) each direction is tested on its own (\|z_dag\| > 1.96), so mutual regulation gives two rows; in scenario 3 (regulation + a shared state, which correlates both directions) one direction, the sign of `delta`, when `p_delta` < 0.05; otherwise one row with `directed` False. `network_from_scenarios` draws the same directions.
 
 The module docstring gives every formula. Input tables:
 
@@ -39,8 +39,8 @@ The module docstring gives every formula. Input tables:
 
 | Function | Does |
 |---|---|
-| `network_from_scenarios(result, ...)` | Turns the output of `infer_with_twinfer` into the inputs of `plot_grn`: scenarios 2-3 solid edges, scenario 4 dashed edges without direction, direction (sign of `delta`) when two time points were used and `p_delta < 0.05`, otherwise no direction; edge colour = `weight` (default `z_rho_Delta`). Returns `(plot_kwargs, edges)`. |
-| `plot_grn(matrix, node_labels=None, ..., edge_styles=None, undirected_edges=None)` | Draws a signed, weighted directed network (`matrix[i, j]` = effect of node i on node j: positive = arrow, negative = bar). `edge_styles` sets a line style per edge, `undirected_edges` draws plain lines. |
+| `network_from_scenarios(result, ...)` | Turns the output of `infer_with_twinfer` into the inputs of `plot_grn`: scenarios 2-3 solid edges, scenario 4 dashed edges without direction, directions by `pair_directions` when two time points were used (both directions possible in scenario 2), otherwise no direction; edge colour = `weight` (default `z_dag` of the drawn direction with two time points, `z_rho_Delta` with one); a directed edge is an arrow or a bar by the sign of its `z_dag`. Returns `(plot_kwargs, edges)`. |
+| `plot_grn(matrix, node_labels=None, ..., edge_styles=None, undirected_edges=None)` | Draws a signed, weighted directed network (`matrix[i, j]` = effect of node i on node j: positive = arrow, negative = bar). `edge_styles` sets a line style per edge, `undirected_edges` draws plain lines, `edge_signs` sets arrow or bar apart from the colour. |
 
 ### `twinfer.simulation`: stochastic simulation
 

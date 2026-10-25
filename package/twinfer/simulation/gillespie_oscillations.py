@@ -1,0 +1,2195 @@
+#Updates
+# # Optimized Gillespie-SSA Simulation Pipeline
+# %% Input utilities
+import os
+import uuid
+import json
+from datetime import datetime
+import re
+import numpy as np
+import pandas as pd
+import numba
+from numba import prange, set_num_threads, get_num_threads
+from tqdm.auto import tqdm
+import time
+import concurrent.futures
+import argparse
+import gc 
+from numba.typed import List
+from joblib import Parallel, delayed
+from tqdm import tqdm
+import glob
+import ast
+
+# =============================================================================
+# OSCILLATOR MODEL CONSTANTS (new)
+# =============================================================================
+# Shared-cell-phase oscillatory k_prod_mRNA model:
+#   k_prod_mRNA_gene_g(t, cell i) =
+#       max(0, k_prod_mRNA_base_g * (1 + A_g * sin(OMEGA*t + Phi_i/PHI_SCALE)))
+# OMEGA is global and fixed (T=38h, from t1=1h/t2=20h half-period constraint).
+# Phi_i is ONE shared phase value per cell (not per gene) -- a read-only
+# species, scaled by PHI_SCALE to store as an integer in Gillespie state.
+PHI_SCALE = 10000.0
+OMEGA = np.pi / 19.0          # T = 38h
+PHI_SPECIES_NAME = "Phi"      # one global phase species, shared by all genes
+
+# %% Input utilities
+
+def read_input_matrix(path_to_matrix: str):
+    """
+    Reads an input matrix from a specified file path and returns its dimensions and content.
+
+    Args:
+        path_to_matrix (str): The file path to the matrix file. The file should contain
+                              a comma-separated matrix of integers.
+
+    Returns:
+        tuple: A tuple containing:
+            - int: The number of rows in the matrix.
+            - np.ndarray: The matrix as a NumPy array. If the matrix is a single value,
+                          it is reshaped into a 1x1 array.
+
+    Raises:
+        ValueError: If the file cannot be loaded.
+    """
+    try:
+        matrix = np.loadtxt(path_to_matrix, dtype=int, delimiter=',')
+        if matrix.ndim == 0:
+            matrix = matrix.reshape((1,1))
+        return matrix.shape[0], matrix
+    except Exception as e:
+        raise ValueError(f"Error loading matrix from {path_to_matrix}: {e}")
+
+
+def assign_parameters_to_genes(csv_path, gene_list, rows=None):
+    """
+    Assigns parameters to a list of genes based on values from a CSV file.
+
+    This function reads a CSV file containing parameter values, selects rows 
+    either randomly or based on the provided indices, and assigns the parameters 
+    to the specified genes. It calculates additional parameters such as 
+    degradation rates for mRNA and protein based on their respective half-lives.
+
+    Args:
+        csv_path (str): Path to the CSV file containing parameter values. 
+                        The file should have columns including 'mrna_half_life' 
+                        and 'protein_half_life'. To use the oscillator model,
+                        also include an 'A' column (per-gene oscillation
+                        amplitude) -- it will be picked up automatically as
+                        {A_<gene>}, exactly like k_prod_mRNA etc.
+        gene_list (list): List of gene names to which parameters will be assigned.
+        rows (list, optional): List of row indices to select from the CSV file. 
+                               If None, rows are randomly selected with replacement. 
+                               Defaults to None.
+
+    Returns:
+            param_dict (dict): A dictionary mapping parameter names (formatted 
+                                 as "{parameter_gene}") to their values.
+    """
+    try:
+        df = pd.read_csv(csv_path, index_col=0)
+    except FileNotFoundError:
+        raise ValueError(f"Parameter csv file not found at path: {csv_path}")
+    n = len(gene_list)
+
+    param_dict = {}
+    for i,row in enumerate(rows):
+        if i >= n:
+            print(f"Using the first {n} parameters out of {len(rows)} rows")
+            break
+        gene = gene_list[i]
+        if int(row) in df.index:
+            vals = df.loc[int(row)].copy()
+        else:
+            raise KeyError(f"Row index {int(row)} not found in the DataFrame.")
+        if 'k_off' not in vals:
+            if "pi_on" in vals:
+                vals['k_off'] = vals['k_on']*(1/vals['pi_on'] - 1)
+            else:
+                raise ValueError("Either pi_on or k_off must be specified!")
+        vals["k_deg_mRNA"] = np.log(2)/vals["mrna_half_life"]
+        vals["k_deg_protein"] = np.log(2)/vals["protein_half_life"]
+        vals.drop(["mrna_half_life","protein_half_life"],axis=0,inplace=True,errors="ignore")
+        for k, v in vals.items():
+            if "_to_" in k:
+                param_dict[f"{{{k}}}"] = float(v)  # Interaction parameter: keep as is
+            else:
+                param_dict[f"{{{k}_{gene}}}"] = float(v)  # Gene-specific parameter
+    return param_dict
+
+def _add_additive_per_edge_reaction(reactions, connectivity_matrix, gene_list, j, curr_gene, kon_term):
+    """
+    Per-edge additive regulation for opposing-sign 2-regulator or >2-regulator
+    genes. k_on and every regulator's signed Hill term are summed together
+    FIRST, then floored at 0 as a single combined expression -- matching
+    generate_K_from_steady_state_calc's k_on_eff_clamped formula exactly.
+    Flooring the regulatory term alone (before adding k_on) is wrong: it lets
+    repression floor to zero contribution but never subtract below baseline.
+    """
+    regulators_index = np.where(connectivity_matrix[:, j] != 0)[0]
+    terms = []
+    for i in regulators_index:
+        regulator = gene_list[i]
+        sign = int(np.sign(connectivity_matrix[i, j]))
+        edge = f"{regulator}_to_{curr_gene}"
+        term = (
+            f"({sign}*{{k_add_{edge}}}"
+            f"*({regulator}_protein**{{n_{edge}}})"
+            f"/({{K_{edge}}}**{{n_{edge}}}+{regulator}_protein**{{n_{edge}}}))"
+        )
+        terms.append(term)
+    reg_sum = " + ".join(terms)
+    expr = f"max(0.0, {kon_term} + ({reg_sum})) * {curr_gene}_I"
+    reactions.append({"species1": f"{curr_gene}_A", "change1": 1,
+                      "species2": f"{curr_gene}_I", "change2": -1,
+                      "propensity": expr, "time": "-"})
+
+def generate_reaction_network_from_matrix(connectivity_matrix: np.ndarray,
+                                          combinatorial_interaction_type:str = "additive"):
+    """
+    Generate a reaction network from a given connectivity matrix.
+
+    This function constructs a reaction network based on gene interactions defined 
+    in the input connectivity matrix. It generates reactions for gene activation/inactivation, 
+    regulation, mRNA production/degradation, and protein production/degradation 
+    for each gene in the network.
+
+    Args:
+        connectivity_matrix (np.ndarray): A square matrix representing gene interactions. 
+            Each element connectivity_matrix[i, j] indicates the regulatory effect of gene i 
+            on gene j. Positive values represent activation, negative values represent 
+            repression, and zero indicates no interaction.
+
+    Returns:
+        Tuple[pd.DataFrame, List[str]]:
+            - reactions_df (pd.DataFrame): A DataFrame containing the reaction network. 
+              Each row represents a reaction with the following columns:
+                - 'species1': The species involved in the reaction.
+                - 'change1': The change in the count of 'species1'.
+                - 'species2': The second species involved in the reaction (if applicable).
+                - 'change2': The change in the count of 'species2'.
+                - 'time': Placeholder for reaction time (currently set to "-").
+                - 'propensity': The propensity function for the reaction.
+            - gene_list (List[str]): A list of gene names generated from the connectivity matrix.
+
+    Notes:
+        - The propensity functions for reactions are defined using a set of predefined templates.
+        - Parameters for each reaction are dynamically generated based on the gene and interaction 
+          matrix information.
+        - The function aggregates reactions with identical species and changes into a single row 
+          with combined propensity functions.
+        - mRNA_prod now includes the shared-cell-phase oscillator term (NEW):
+              k_prod_mRNA * (1 + A*sin(OMEGA*t + Phi/PHI_SCALE))
+          floored at 0. Requires a per-gene {A_<gene>} parameter in param_dict
+          (add an 'A' column to your parameter CSV) and a global 'Phi' species
+          (see generate_initial_state_from_genes).
+    """
+    n_genes = connectivity_matrix.shape[0]
+    gene_list = [f"gene_{i+1}" for i in range(n_genes)]
+    prop = {
+        "activation": "{k_on}*{curr_gene}_I",
+        "inactivation": "{k_off}*{curr_gene}_A",
+        # --- CHANGED: mRNA_prod now includes the shared-phase sinusoid ---
+        "mRNA_prod": (
+            "max(0.0, {k_prod_mRNA}*(1 + {A}*sin({omega}*t + "
+            + PHI_SPECIES_NAME + "/" + repr(PHI_SCALE) + ")))*{curr_gene}_A"
+        ),
+        "mRNA_deg": "{k_deg_mRNA}*{curr_gene}_mRNA",
+        "protein_prod": "{k_prod_protein}*{curr_gene}_mRNA",
+        "protein_deg": "{k_deg_protein}*{curr_gene}_protein"
+        }
+    reactions = []
+    for j, curr_gene in enumerate(gene_list):
+        param = lambda k: f"{{{k}_{curr_gene}}}"
+        kon_term = param("k_on")
+
+        # inactivation (unchanged, unregulated)
+        expr = prop["inactivation"].replace("{k_off}", param("k_off")).replace("{curr_gene}", curr_gene)
+        reactions.append({"species1": f"{curr_gene}_I", "change1": 1,
+                        "species2": f"{curr_gene}_A", "change2": -1,
+                        "propensity": expr, "time": "-"})
+
+        # production/degradation
+        for label, suffix, chg in [
+            ("mRNA_prod", "mRNA", 1), ("mRNA_deg", "mRNA", -1),
+            ("protein_prod", "protein", 1), ("protein_deg", "protein", -1)
+        ]:
+            expr = prop[label].replace("{curr_gene}", curr_gene)
+            # --- CHANGED: added "A" to the substitution list for mRNA_prod ---
+            for k in ["k_prod_mRNA", "k_deg_mRNA", "k_prod_protein", "k_deg_protein", "A"]:
+                expr = expr.replace(f"{{{k}}}", param(k))
+            # --- CHANGED: literal OMEGA substitution (global constant, not per-gene) ---
+            expr = expr.replace("{omega}", repr(OMEGA))
+            reactions.append({"species1": f"{curr_gene}_{suffix}", "change1": chg,
+                            "species2": "-", "change2": "-",
+                            "propensity": expr, "time": "-"})
+
+        regulators_index = np.where(connectivity_matrix[:, j] != 0)[0]
+
+        if len(regulators_index) == 0:
+            # no regulation -- k_on alone is always > 0, no floor needed
+            expr = f"{kon_term}*{curr_gene}_I"
+            reactions.append({"species1": f"{curr_gene}_A", "change1": 1,
+                            "species2": f"{curr_gene}_I", "change2": -1,
+                            "propensity": expr, "time": "-"})
+
+        elif len(regulators_index) == 1:
+            i = regulators_index[0]
+            regulator = gene_list[i]
+            sign = int(np.sign(connectivity_matrix[i, j]))
+            edge = f"{regulator}_to_{curr_gene}"
+            reg_term = (f"({sign}*{{k_add_{curr_gene}}})*({regulator}_protein**{{n_{edge}}})"
+                    f"/({{K_{edge}}}**{{n_{edge}}}+{regulator}_protein**{{n_{edge}}})")
+            expr = f"max(0.0, {kon_term} + ({reg_term})) * {curr_gene}_I"
+            reactions.append({"species1": f"{curr_gene}_A", "change1": 1,
+                            "species2": f"{curr_gene}_I", "change2": -1,
+                            "propensity": expr, "time": "-"})
+
+        elif len(regulators_index) == 2:
+            i1, i2 = regulators_index
+            sign1 = int(np.sign(connectivity_matrix[i1, j]))
+            sign2 = int(np.sign(connectivity_matrix[i2, j]))
+
+            if sign1 == sign2:
+                # (r1, r2, r12, pre_factor selection from combinatorial_interaction_type -- unchanged)
+                if combinatorial_interaction_type == "OR":
+                    r1, r2, r12, pre_factor = "1", "1", "1", "(2.0/3.0)"
+                elif combinatorial_interaction_type == "AND":
+                    r1, r2, r12, pre_factor = "0", "0", "1", "(2.0)"
+                elif combinatorial_interaction_type == "additive":
+                    r1, r2, r12, pre_factor = "1", "1", "2", "(1.0)"
+
+                reg1, reg2 = gene_list[i1], gene_list[i2]
+                edge1, edge2 = f"{reg1}_to_{curr_gene}", f"{reg2}_to_{curr_gene}"
+                comb_term = (
+                    f"(({sign1}*{{k_add_{curr_gene}}}*{pre_factor}) * ("
+                    f"{r1} * ({reg1}_protein**{{n_{edge1}}}) / ({{K_{edge1}}}**{{n_{edge1}}})"
+                    f"+ {r2} * ({reg2}_protein**{{n_{edge2}}}) / ({{K_{edge2}}}**{{n_{edge2}}})"
+                    f"+ {r12} * (({reg1}_protein**{{n_{edge1}}}) * ({reg2}_protein**{{n_{edge2}}})) "
+                    f"/ (({{K_{edge1}}}**{{n_{edge1}}}) * ({{K_{edge2}}}**{{n_{edge2}}}))"
+                    f")) / ("
+                    f"1 + ({reg1}_protein**{{n_{edge1}}}) / ({{K_{edge1}}}**{{n_{edge1}}})"
+                    f"+ ({reg2}_protein**{{n_{edge2}}}) / ({{K_{edge2}}}**{{n_{edge2}}})"
+                    f"+ (({reg1}_protein**{{n_{edge1}}}) * ({reg2}_protein**{{n_{edge2}}})) "
+                    f"/ (({{K_{edge1}}}**{{n_{edge1}}}) * ({{K_{edge2}}}**{{n_{edge2}}}))"
+                    f")"
+                )
+                expr = f"max(0.0, {kon_term} + ({comb_term})) * {curr_gene}_I"
+                reactions.append({"species1": f"{curr_gene}_A", "change1": 1,
+                                "species2": f"{curr_gene}_I", "change2": -1,
+                                "propensity": expr, "time": "-"})
+            else:
+                _add_additive_per_edge_reaction(reactions, connectivity_matrix, gene_list, j, curr_gene, kon_term)
+        else:
+            _add_additive_per_edge_reaction(reactions, connectivity_matrix, gene_list, j, curr_gene, kon_term)   
+                    
+    df = pd.DataFrame(reactions)
+    df['propensity'] = df['propensity'].astype(str)
+    reactions_df = (
+        df.assign(propensity=df['propensity'].str.strip())
+        .query("propensity != ''")
+        .groupby(['species1','change1','species2','change2','time'])['propensity']
+        .agg(lambda x: ' + '.join(x) if len(x) > 1 else x.iloc[0])
+        .reset_index()
+    )                                   
+    return reactions_df, gene_list                                      
+
+def generate_initial_state_from_genes(gene_list):
+    """
+    Generate the initial state for a list of genes.
+
+    This function creates a DataFrame representing the initial state of species
+    associated with each gene in the provided list. For each gene, the following
+    species are initialized:
+    - `<gene>_A`: Active state, initialized with a count of 0.
+    - `<gene>_I`: Inactive state, initialized with a count of 1.
+    - `<gene>_mRNA`: Messenger RNA, initialized with a count of 0.
+    - `<gene>_protein`: Protein, initialized with a count of 0.
+
+    Additionally (NEW) adds ONE global 'Phi' species -- the per-cell
+    oscillator phase, scaled to an integer (see PHI_SCALE). Phi is never
+    touched by any reaction; it is a read-only lookup value used only
+    inside the mRNA production propensity. Its per-cell value is set later
+    via initialize_phi(), after pop0_mat is built.
+
+    Args:
+        gene_list (list of str): A list of gene names for which the initial states
+                                 are to be generated.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the initial states of the species
+                          for each gene, plus one 'Phi' row.
+    """
+    states = []
+    for g in gene_list:
+        states += [
+            {"species":f"{g}_A","count":0},
+            {"species":f"{g}_I","count":1},
+            {"species":f"{g}_mRNA","count":0},
+            {"species":f"{g}_protein","count":0},
+        ]
+    states.append({"species": PHI_SPECIES_NAME, "count": 0})  # NEW: filled per-cell later
+    return pd.DataFrame(states)
+
+
+# =============================================================================
+# NEW: population-level Phi initialization
+# =============================================================================
+def initialize_phi(pop0_mat, species_index, n_cells, scenario, seed=None,
+                    phi_center=0.0, sigma_phi_population=0.248):
+    """
+    Sets Phi for every cell in pop0_mat according to the chosen scenario.
+    Call this after building pop0_mat (tile of pop0 across n_cells) and
+    before running the Gillespie simulation.
+
+    Args:
+        pop0_mat (np.ndarray): shape (n_species, n_cells), already tiled from pop0.
+        species_index (dict): species name -> row index in pop0_mat.
+        n_cells (int): number of cells.
+        scenario (str): "in_phase" | "out_of_phase"
+            in_phase       -> all cells get Phi = 0
+            out_of_phase   -> Phi ~ Normal(phi_center, sigma_phi_population),
+                               wrapped to [0, 2*pi)
+        seed (int, optional): RNG seed.
+        phi_center (float): mean phase for out_of_phase scenario (radians).
+        sigma_phi_population (float): stdev of phase spread for out_of_phase
+            scenario (radians). Default 0.248 rad, derived from a +/-3h
+            population division-time window (~2 sigma) converted via OMEGA.
+
+    Returns:
+        np.ndarray: pop0_mat, modified in place (and returned for convenience).
+    """
+    rng = np.random.default_rng(seed)
+    phi_idx = species_index[PHI_SPECIES_NAME]
+
+    if scenario == "in_phase":
+        phi_vals = np.zeros(n_cells)
+    elif scenario == "out_of_phase":
+        phi_vals = rng.normal(loc=phi_center, scale=sigma_phi_population, size=n_cells)
+        phi_vals = np.mod(phi_vals, 2 * np.pi)
+    else:
+        raise ValueError(f"Unknown phi_scenario: {scenario}")
+
+    pop0_mat[phi_idx, :] = np.round(phi_vals * PHI_SCALE).astype(np.int64)
+    return pop0_mat
+
+
+# =============================================================================
+# NEW (scenario 4): genuinely asynchronous per-cell division timing
+# =============================================================================
+# Scenarios 1-3 all divide the whole population at the same global instant
+# (base_samples[:, -1, :]) -- only the oscillator's phase differs per cell,
+# which is a mathematically clean proxy for "cells that effectively started
+# at different times" ONLY once the population has reached its periodic
+# steady state (many oscillation periods have elapsed). Scenario 4 instead
+# makes the division EVENT ITSELF happen at a different real simulated time
+# for each cell, sampling that cell's own trajectory at its own division
+# time rather than everyone's trajectory at one shared final timepoint.
+def compute_division_indices(n_cells, time_points, sigma_t_division,
+                             base_division_index=None, seed=None):
+    """
+    Computes per-cell division-time indices into time_points, representing
+    genuinely asynchronous division: cell i divides at
+        t_div_i = time_points[base_division_index] + Delta_t_i
+    where Delta_t_i ~ Normal(0, sigma_t_division), clipped to stay within
+    the simulated time range and snapped to the nearest available
+    time_points index (time_points assumed evenly spaced, e.g. np.arange).
+
+    Args:
+        n_cells (int)
+        time_points (np.ndarray): the shared time grid used for the base
+            simulation (e.g. np.arange(0, simulation_time_before_division, 1)).
+        sigma_t_division (float): stdev of division-time spread, in the same
+            time units as time_points (e.g. hours). Default recommendation:
+            1.5h, derived the same way as sigma_phi_population (+/-3h window
+            treated as ~2 sigma).
+        base_division_index (int, optional): index into time_points around
+            which division times are centered. Defaults to the last index
+            (i.e. centered on simulation_time_before_division).
+        seed (int, optional): RNG seed.
+
+    Returns:
+        np.ndarray: shape (n_cells,), integer indices into time_points, one
+        per cell -- the timepoint at which that cell's state should be read
+        off as its "at division" state.
+    """
+    rng = np.random.default_rng(seed)
+    if base_division_index is None:
+        base_division_index = len(time_points) - 1
+    base_t = time_points[base_division_index]
+    delta_t = rng.normal(0.0, sigma_t_division, size=n_cells)
+    t_div = base_t + delta_t
+    t_div = np.clip(t_div, time_points[0], time_points[-1])
+    dt_step = time_points[1] - time_points[0]
+    idx = np.round((t_div - time_points[0]) / dt_step).astype(np.int64)
+    idx = np.clip(idx, 0, len(time_points) - 1)
+    return idx
+
+
+def assign_k_values_matrix(param_dict, connectivity_matrix, gene_list, K_to_use):
+    """
+    Assign k-values for every regulatory interaction using a K matrix.
+
+    Parameters
+    ----------
+    gene_list : list of gene names
+    connectivity_matrix : numpy array (n_genes x n_genes)
+        Nonzero entries indicate regulatory edges.
+    param_dict : dict
+        Dictionary where {k_src_to_tgt} keys will be replaced.
+    K_to_use : numpy array (n_genes x n_genes)
+        K-value matrix, where K_to_use[i, j] is K(src -> tgt).
+
+    Returns
+    -------
+    param_dict : updated dict with new {k_src_to_tgt} values.
+    """
+
+    n_genes = len(gene_list)
+    K_to_use = np.asarray(K_to_use, dtype=float)
+
+    # -----------------------------------------------------------
+    # 1) Validate matrix shape
+    # -----------------------------------------------------------
+    if K_to_use.shape != (n_genes, n_genes):
+        raise ValueError(
+            f"K_to_use must have shape ({n_genes},{n_genes}), "
+            f"but got {K_to_use.shape}"
+        )
+
+    # -----------------------------------------------------------
+    # 2) Validate that every TRUE edge has a specified K value
+    # -----------------------------------------------------------
+    for i in range(n_genes):
+        for j in range(n_genes):
+            if connectivity_matrix[i, j] != 0:
+                if np.isnan(K_to_use[i, j]):
+                    raise ValueError(
+                        f"K-value missing (NaN) for interaction "
+                        f"{gene_list[i]} -> {gene_list[j]} at index [{i},{j}]"
+                    )
+
+                if K_to_use[i, j] <= 0:
+                    raise ValueError(
+                        f"K-value for {gene_list[i]} -> {gene_list[j]} "
+                        f"must be > 0, got {K_to_use[i, j]}"
+                    )
+
+    # -----------------------------------------------------------
+    # 3) Assign K-values into param_dict
+    # -----------------------------------------------------------
+    protein_levels = []
+    for i, src in enumerate(gene_list):
+        for j, tgt in enumerate(gene_list):
+
+            if connectivity_matrix[i, j] != 0:
+                key = f"{{K_{src}_to_{tgt}}}"
+                param_dict[key] = float(K_to_use[i, j])
+                protein_levels.append(float(K_to_use[i, j]))
+    print("Assigned K from input matrix.")
+    print(param_dict)
+    return np.array(protein_levels), param_dict
+
+def generate_K_from_steady_state_calc(param_dict, connectivity_matrix, gene_list,
+                                      target_hill=0.5, scale_K=None):
+    """
+    Calculate steady-state protein levels and assign K values for gene interactions.
+
+    Args:
+        param_dict (dict): Dictionary containing parameters for gene regulation.
+        connectivity_matrix (numpy.ndarray): Matrix representing gene interactions.
+        gene_list (list): List of gene names.
+        target_hill (float, optional): Hill function value used to scale regulatory
+                                       effects. Default is 0.5.
+        scale_K (numpy.ndarray, optional): Scaling matrix for K values. If None,
+                                           defaults to a matrix of ones.
+    Returns:
+        tuple:
+            - protein_levels (numpy.ndarray): Steady-state protein levels per gene.
+            - param_dict (dict): Updated dictionary with assigned K values.
+    """
+    n_genes = len(gene_list)
+    if scale_K is None:
+        scale_K = np.ones((n_genes, n_genes))
+
+    protein_levels = np.zeros(n_genes)
+
+    for i, gene in enumerate(gene_list):
+        k_on        = param_dict[f'{{k_on_{gene}}}']
+        k_off       = param_dict[f'{{k_off_{gene}}}']
+        k_prod_mRNA = param_dict[f'{{k_prod_mRNA_{gene}}}']
+        k_deg_mRNA  = param_dict[f'{{k_deg_mRNA_{gene}}}']
+        k_prod_prot = param_dict[f'{{k_prod_protein_{gene}}}']
+        k_deg_prot  = param_dict[f'{{k_deg_protein_{gene}}}']
+
+        regulators = np.where(connectivity_matrix[:, i] != 0)[0]
+        n_regs = len(regulators)
+
+        if n_regs == 0:
+            k_on_eff = k_on
+
+        elif n_regs == 1:
+            # original per-gene k_add path
+            k_add    = param_dict.get(f"{{k_add_{gene}}}", 0.0)
+            sign     = int(np.sign(connectivity_matrix[regulators[0], i]))
+            k_on_eff = k_on + sign * k_add * target_hill
+
+        elif n_regs == 2:
+            sign1 = int(np.sign(connectivity_matrix[regulators[0], i]))
+            sign2 = int(np.sign(connectivity_matrix[regulators[1], i]))
+
+            if sign1 == sign2:
+                # original per-gene k_add path
+                k_add    = param_dict.get(f"{{k_add_{gene}}}", 0.0)
+                k_on_eff = k_on + sign1 * k_add * target_hill
+            else:
+                # new per-edge path — opposing signs
+                reg_eff = 0.0
+                for r in regulators:
+                    edge       = f"{gene_list[r]}_to_{gene}"
+                    k_add_edge = param_dict.get(f"{{k_add_{edge}}}", 0.0)
+                    sign_r     = int(np.sign(connectivity_matrix[r, i]))
+                    reg_eff   += sign_r * k_add_edge * target_hill
+                k_on_eff = k_on + reg_eff
+
+        else:
+            # new per-edge path — >2 regulators
+            reg_eff = 0.0
+            for r in regulators:
+                edge       = f"{gene_list[r]}_to_{gene}"
+                k_add_edge = param_dict.get(f"{{k_add_{edge}}}", 0.0)
+                sign_r     = int(np.sign(connectivity_matrix[r, i]))
+                reg_eff   += sign_r * k_add_edge * target_hill
+            k_on_eff = k_on + reg_eff
+
+        # clamp k_on_eff to avoid negative burst probability
+        k_on_eff_clamped = max(k_on_eff, 0.0)
+        denom             = k_on_eff_clamped + k_off
+        burst_prob        = k_on_eff_clamped / denom if denom > 0 else 0.0
+        m                 = k_prod_mRNA * burst_prob / max(k_deg_mRNA, 1e-12)
+        protein_levels[i] = max(m * k_prod_prot / max(k_deg_prot, 1e-12), 0.1)
+
+    # assign K values
+    for i, src in enumerate(gene_list):
+        for j, tgt in enumerate(gene_list):
+            if connectivity_matrix[i, j] != 0:
+                param_dict[f"{{K_{src}_to_{tgt}}}"] = protein_levels[i] * scale_K[i, j]
+
+    return protein_levels, param_dict
+
+def generate_k_from_max_expression(param_dict, connectivity_matrix, gene_list,
+                                      target_hill=0.5, scale_K=None):
+    """
+    Calculate steady-state protein levels and assign rate constants (k values) 
+    for gene interactions based on the provided parameters and interaction 
+
+    Args:
+        param_dict (dict): Dictionary containing parameters for gene regulation, 
+            including burst probabilities, production rates, degradation rates, 
+            and interaction strengths.
+        connectivity_matrix (numpy.ndarray): Matrix representing gene interactions, 
+            where non-zero values indicate regulatory relationships and their signs 
+            (positive for activation, negative for repression).
+        gene_list (list): List of gene names corresponding to the rows and columns 
+            of the connectivity matrix.
+        target_hill (float, optional): Hill function value used to scale regulatory 
+            effects. Default is 0.5.
+        scale_K (numpy.ndarray, optional): Scaling matrix for rate constants. If 
+            None, defaults to a matrix of ones with the same dimensions as the 
+            interaction 
+    Returns:
+        tuple: A tuple containing:
+            - protein_levels (numpy.ndarray): Array of steady-state protein levels 
+              for each gene.
+            - param_dict (dict): Updated dictionary with assigned rate constants 
+              (k values) for gene intera
+    Notes:
+        - The function calculates steady-state protein levels based on burst 
+          probabilities and production/degradation rates.
+        - Regulatory effects are computed using the connectivity matrix and scaled 
+          by the target Hill function value  (default is 0.5).
+        - Rate constants (k values) are assigned based on steady-state protein 
+          levels and multiplied by the scaling matrix.
+    """
+    n_genes = len(gene_list)
+    if scale_K is None:
+        scale_K = np.ones((n_genes, n_genes))
+    protein_levels = np.zeros(n_genes)
+    for i,gene in enumerate(gene_list):
+        k_on = param_dict[f'{{k_on_{gene}}}']
+        k_off = param_dict[f'{{k_off_{gene}}}']
+        k_prod_mRNA = param_dict[f'{{k_prod_mRNA_{gene}}}']
+        k_deg_mRNA  = param_dict[f'{{k_deg_mRNA_{gene}}}']
+        k_prod_prot = param_dict[f'{{k_prod_protein_{gene}}}']
+        k_deg_prot  = param_dict[f'{{k_deg_protein_{gene}}}']
+        regs = np.where(connectivity_matrix[:,i]!=0)[0]
+
+        reg_eff = 0.0
+        for r in regs:
+            edge = f"{gene_list[r]}_to_{gene}"
+            k_add = param_dict.get(f"{{k_add_{edge}}}", 0.0)
+            sign = connectivity_matrix[r,i]
+            reg_eff += target_hill * k_add * sign
+            # print(f"  {edge} — sign: {sign}, k_add: {k_add}")
+        
+        k_on_eff = k_on + reg_eff  # or replace k_on completely if no basal allowed
+        # print(gene, k_on, reg_eff)
+        burst_prob = k_on_eff/(k_on_eff+k_off)
+        m = k_prod_mRNA * burst_prob / k_deg_mRNA
+        protein_levels[i] = max(m * k_prod_prot / k_deg_prot, 0.1)
+    
+    # assign k values
+    for i, src in enumerate(gene_list):
+        for j, tgt in enumerate(gene_list):
+            if connectivity_matrix[i,j]!=0:
+                key = f"{{K_{src}_to_{tgt}}}"
+                param_dict[key] = protein_levels[i]*scale_K[i,j]
+    return protein_levels, param_dict
+
+def validate_k_add_matrix(k_add_matrix, connectivity_matrix, gene_list):
+    """
+    Validate the shape and values of a per-edge k_add matrix before it is used
+    in add_interaction_terms.
+
+    Only entries corresponding to actual regulatory edges (where
+    connectivity_matrix[i, j] != 0) are checked. NaN is permitted for such
+    entries and signals that the value is unset, so the caller can fall back
+    to a CSV-provided value or the sign-based default (6.0 / 0.8). Entries
+    with no corresponding edge are never checked.
+
+    Args:
+        k_add_matrix (array-like): Matrix of shape (n_genes, n_genes) where
+                                   k_add_matrix[i, j] is the per-edge k_add
+                                   magnitude for the interaction gene_i -> gene_j.
+                                   Use NaN for edges where no explicit value is
+                                   supplied.
+        connectivity_matrix (np.ndarray): Square matrix representing gene
+                                          interactions. Non-zero entries mark
+                                          regulatory edges.
+        gene_list (list): List of gene names, used only for error messages.
+
+    Returns:
+        np.ndarray: The validated matrix, cast to float.
+
+    Raises:
+        ValueError: If the matrix shape does not match (n_genes, n_genes),
+                   or if a non-NaN value at an existing edge is <= 0.
+    """
+    n = len(gene_list)
+    k_add_matrix = np.asarray(k_add_matrix, dtype=float)
+
+    if k_add_matrix.shape != (n, n):
+        raise ValueError(
+            f"k_add_matrix must have shape ({n},{n}), but got {k_add_matrix.shape}"
+        )
+
+    for i in range(n):
+        for j in range(n):
+            if connectivity_matrix[i, j] != 0:
+                val = k_add_matrix[i, j]
+                if np.isnan(val):
+                    raise ValueError(
+                    f"k_add_matrix cannot have NaN values (in {gene_list[i]} -> {gene_list[j]})"
+                )
+                if val <= 0:
+                    raise ValueError(
+                        f"k_add_matrix value for {gene_list[i]} -> {gene_list[j]} "
+                        f"must be > 0, got {val}"
+                    )
+    return k_add_matrix
+
+def resolve_all_k_add(param_dict, connectivity_matrix, gene_list,
+                      k_add_list=None, k_add_matrix=None, use_csv_k_add=True,
+                      default_pos=6.0, default_neg=0.8, verbose=True):
+    """
+    Resolves k_add values for every gene/edge and writes them to param_dict.
+    Removes any unused k_add keys so param_dict only contains values that
+    are actually referenced downstream. Sole function responsible for
+    writing {k_add_...} keys.
+
+    Genes with 1 regulator, or 2 same-sign regulators, use a single per-gene
+    value ({k_add_<gene>}), resolved in order: k_add_list -> k_add_matrix
+    (all regulators must be specified; averaged if 2) -> existing/CSV direct
+    value in param_dict -> average of per-edge CSV values -> sign-based
+    default.
+
+    Genes with 2 opposite-sign regulators, or >2 regulators, use a per-edge
+    value ({k_add_<src>_to_<tgt>}), resolved in order: k_add_matrix ->
+    existing/CSV value in param_dict -> sign-based default.
+
+    Args:
+        param_dict (dict): Parameter dictionary, updated in place.
+        connectivity_matrix (np.ndarray): Gene interaction matrix.
+        gene_list (list): List of gene names.
+        k_add_list (array-like, optional): Per-gene k_add values (length
+                                           n_genes). NaN = not set.
+        k_add_matrix (array-like, optional): Per-edge k_add matrix
+                                             (n_genes, n_genes). NaN = not set.
+        use_csv_k_add (bool): Whether to use k_add values already present in
+                              param_dict (default True).
+        default_pos (float): Default k_add for activating edges.
+        default_neg (float): Default k_add for repressing edges.
+        verbose (bool): Print a summary of sources used and keys removed.
+
+    Returns:
+        dict: The updated param_dict.
+    """
+    n = len(gene_list)
+    k_add_list = np.full(n, np.nan) if k_add_list is None else np.array(k_add_list, dtype=float)
+    if k_add_matrix is not None:
+        k_add_matrix = validate_k_add_matrix(k_add_matrix, connectivity_matrix, gene_list)
+
+    pre_existing_k_add_keys = {k for k in param_dict if k.startswith("{k_add_")}
+    used_keys = set()
+    log = []  # (target, scope, source, value)
+
+    for j in range(n):
+        curr_gene = gene_list[j]
+        regulators = np.where(connectivity_matrix[:, j] != 0)[0]
+        n_regs = len(regulators)
+        if n_regs == 0:
+            continue
+
+        same_sign_or_single = (
+            n_regs == 1 or
+            (n_regs == 2 and
+             np.sign(connectivity_matrix[regulators[0], j]) ==
+             np.sign(connectivity_matrix[regulators[1], j]))
+        )
+
+        if same_sign_or_single:
+            key = f"{{k_add_{curr_gene}}}"
+            if not np.isnan(k_add_list[j]):
+                value, source = float(k_add_list[j]), "k_add_list"
+            elif k_add_matrix is not None and not np.any(np.isnan(k_add_matrix[regulators, j])):
+                matrix_edge_values = k_add_matrix[regulators, j]
+                value = float(np.mean(matrix_edge_values))
+                source = "k_add_matrix avg" if n_regs > 1 else "k_add_matrix"
+            elif use_csv_k_add and key in param_dict:
+                value, source = param_dict[key], "CSV (direct)"
+            else:
+                # csv_edge_values = (
+                #     [v for k, v in param_dict.items()
+                #      if k.startswith("{k_add_") and k.endswith(f"_to_{curr_gene}}}")]
+                #     if use_csv_k_add else []
+                # )
+                # [2026-10-24 replaced: averaged every CSV column ending in _to_<gene>, including edges
+                #  from genes absent from the network (A_to_B averaged gene_3_to_gene_2 into gene_2's k_add)]
+                csv_edge_values = (
+                    [param_dict[f"{{k_add_{gene_list[i]}_to_{curr_gene}}}"] for i in regulators
+                     if f"{{k_add_{gene_list[i]}_to_{curr_gene}}}" in param_dict]
+                    if use_csv_k_add else []
+                )
+                if csv_edge_values:
+                    value = float(np.mean(csv_edge_values))
+                    source = "CSV avg" if len(csv_edge_values) > 1 else "CSV"
+                    # the per-edge keys that fed this average are not used downstream
+                else:
+                    sign = int(np.sign(connectivity_matrix[regulators[0], j]))
+                    value, source = (default_pos if sign > 0 else default_neg), "default"
+            param_dict[key] = value
+            used_keys.add(key)
+            scope = "per-gene" if n_regs == 1 else "per-gene (same-sign)"
+            log.append((curr_gene, scope, source, value))
+
+        else:
+            # per-edge regime: opposing-sign 2-regulator, or >2 regulators
+            for i in regulators:
+                edge = f"{gene_list[i]}_to_{curr_gene}"
+                key = f"{{k_add_{edge}}}"
+                if k_add_matrix is not None and not np.isnan(k_add_matrix[i, j]):
+                    value = float(k_add_matrix[i, j])
+                    source = "k_add_matrix"
+                elif use_csv_k_add and key in param_dict:
+                    value, source = param_dict[key], "CSV"
+                else:
+                    sign = int(np.sign(connectivity_matrix[i, j]))
+                    value, source = (default_pos if sign > 0 else default_neg), "default"
+                param_dict[key] = value
+                used_keys.add(key)
+                log.append((edge, "per-edge", source, value))
+
+    # remove any pre-existing k_add key that was never selected as a final value
+    unused_keys = pre_existing_k_add_keys - used_keys
+    for key in unused_keys:
+        del param_dict[key]
+
+    if verbose:
+        print("\nk_add resolution summary")
+        print(f"{'Target':<20}{'Scope':<24}{'Source':<12}{'Value':>8}")
+        print("-" * 64)
+        for name, scope, source, value in log:
+            print(f"{name:<20}{scope:<24}{source:<12}{value:>8.4f}")
+        if unused_keys:
+            print(f"\nRemoved {len(unused_keys)} unused k_add key(s): {sorted(unused_keys)}")
+        print()
+
+    return param_dict
+
+def add_interaction_terms(param_dict, connectivity_matrix, gene_list,
+                          n_matrix=None, scale_K=None,
+                          use_given_K=None, K_to_use=None):
+    """
+    Sets the Hill exponent (n) for every regulatory edge and calculates
+    steady-state K values. k_add must already be resolved in param_dict
+    (see resolve_all_k_add) — this function no longer handles k_add itself.
+
+    Parameters:
+        param_dict (dict): Dictionary to store/read interaction parameters.
+                           Must already contain {k_add_...} keys.
+        connectivity_matrix (numpy.ndarray): Matrix representing interactions
+                                            between genes. Non-zero values
+                                            indicate an interaction.
+        gene_list (list): List of gene names corresponding to the rows and
+                          columns of the connectivity matrix.
+        n_matrix (numpy.ndarray, optional): Matrix specifying the Hill exponent
+                                            'n' for each interaction. Defaults
+                                            to a matrix filled with 2.0.
+        scale_K (numpy.ndarray, optional): Scaling matrix for K values.
+        use_given_K (bool, optional): If True, use K_to_use matrix instead of
+                                      steady-state calc.
+        K_to_use (numpy.ndarray, optional): Matrix of K values to use directly.
+
+    Returns:
+        tuple: (protein_levels, updated param_dict)
+    """
+    n = len(gene_list)
+    if n_matrix is None:
+        n_matrix = np.full((n, n), 2.0)
+
+    for j in range(n):
+        curr_gene = gene_list[j]
+        regulators = np.where(connectivity_matrix[:, j] != 0)[0]
+        for i in regulators:
+            edge = f"{gene_list[i]}_to_{curr_gene}"
+            param_dict[f"{{n_{edge}}}"] = float(n_matrix[i, j])
+
+    if use_given_K and K_to_use is not None:
+        return assign_k_values_matrix(param_dict, connectivity_matrix, gene_list, K_to_use)
+    else:
+        return generate_K_from_steady_state_calc(param_dict, connectivity_matrix, gene_list, scale_K=scale_K)
+
+def validate_reactions_against_species(reactions_df, species_index):
+    """
+    Validates that every species referenced in species1/species2 across all
+    reactions is present in species_index.
+    """
+    known = set(species_index.keys())
+    missing = set()
+    for _, row in reactions_df.iterrows():
+        for col in ("species1", "species2"):
+            s = row[col]
+            if s != "-" and s not in known:
+                missing.add(s)
+    if missing:
+        raise ValueError(f"Reactions reference unknown species: {sorted(missing)}")
+    return True
+
+def setup_gillespie_params_from_reactions(init_states: pd.DataFrame,
+                                          reactions: pd.DataFrame,
+                                          param_dictionary: dict):
+    """
+    Sets up the parameters required for Gillespie simulation based on initial states, reaction definitions, 
+    and a parameter dictionary. This function generates the initial population, update matrix, 
+    and a compiled function for updating propensities
+    Args:
+        init_states (pd.DataFrame): A DataFrame containing the initial states of species. 
+                                    Must include columns 'species' and 'count'.
+        reactions (pd.DataFrame): A DataFrame defining the reactions. 
+                                  Must include columns 'species1', 'species2', 'change1', 'change2', and 'propensity'.
+        param_dictionary (dict): A dictionary mapping parameter names to their values, 
+                                 used for substituting placeholders in propensity f
+    Returns:
+        tuple: A tuple containing:
+            - pop0 (np.ndarray): Initial population counts as a NumPy array of integers.
+            - update_matrix (np.ndarray): A matrix defining the changes in species counts for each reaction.
+            - update_propensities (function): A compiled function for updating propensities using numba.
+            - species_index (dict): A dictionary mapping species names to their indices
+    Raises:
+        ValueError: If any placeholders in the propensity formulas are missing from the parameter dic
+    Notes:
+        - The function dynamically generates and compiles a propensity update function using numba for performance.
+        - Species names and parameters in the propensity formulas are replaced with their respective indices and values.
+        - (NEW) np is added to the exec() namespace so np.sin resolves inside
+          the compiled propensity function (needed for the oscillator term).
+    """
+    species_index = {s:i for i,s in enumerate(init_states['species'])}
+    validate_reactions_against_species(reactions, species_index)
+    pop0 = init_states['count'].values.astype(np.int64)
+    update_matrix = []
+    prop_formulas = []
+    missing = []
+    for i,row in reactions.iterrows():
+        delta = [0]*len(species_index)
+        a1,a2 = row['species1'], row['species2']
+        delta[species_index[a1]] = int(row['change1'])
+        if a2!='-':
+            delta[species_index[a2]] = int(row['change2'])
+        update_matrix.append(delta)
+        expr = row['propensity']
+        # inject species
+        for s,idx in species_index.items():
+            expr = expr.replace(s, f"pop[idx_{s}]")
+        # inject params
+        placeholders = set(re.findall(r"{[^}]+}", expr))
+        miss = placeholders - set(param_dictionary.keys())
+        if miss:
+            missing.append((i, miss))
+            continue
+        for k,v in param_dictionary.items():
+            expr = expr.replace(k, str(v))
+        # --- CHANGED: ensure sin(...) resolves as np.sin(...) ---
+        expr = expr.replace("sin(", "np.sin(")
+        line = f"prop[{i}] = {expr}"
+        prop_formulas.append(line)
+    if missing:
+        raise ValueError(f"Missing params in propensities: {missing}")
+    # build update function
+    src = ["@numba.njit(fastmath=True)",
+           "def update_propensities(prop, pop, t):"]
+    for s,i in species_index.items():
+        src.append(f"    idx_{s} = {i}")
+    for L in prop_formulas:
+        src.append("    " + L)
+    ns = "\n".join(src)
+    loc = {}
+    # print(ns)
+    # --- CHANGED: added np to the exec namespace ---
+    exec(ns, {'numba':numba, 'np': np}, loc)
+    return pop0, np.array(update_matrix, dtype=np.int64), loc['update_propensities'], species_index
+
+# %% Vectorized extraction
+
+def convert_samples_to_df(samples: np.ndarray, species_index: dict,
+                              types=('mRNA','protein', "_A", "_I")) -> pd.DataFrame:
+    """
+    Extracts mRNA and protein data from simulation samples and organizes it into a pandas DataF
+    Parameters:
+        samples (np.ndarray): A 3D numpy array of shape (n_cells, n_time, n_species) containing simulation data.
+                              Each entry represents the count of a species at a given cell and time step.
+        species_index (dict): A dictionary mapping species names to their respective indices in the samples array.
+        types (tuple, optional): A tuple of strings specifying the types of species to extract (e.g., 'mRNA', 'protein').
+                                 Defaults to ('mRNA', 'protein')
+    Returns:
+        pd.DataFrame: A pandas DataFrame containing the extracted data. The DataFrame includes the following columns:
+                      - 'cell_id': The ID of the cell (integer).
+                      - 'time_step': The time step (integer).
+                      - Columns for each extracted species, named according to the species_index keys.
+    """
+    n_cells, n_time, _ = samples.shape
+    sel = [(name,idx) for name,idx in species_index.items()
+           if any(name.endswith(t) for t in types)]
+    names, idxs = zip(*sel)
+    data = samples[:,:,idxs].reshape(n_cells*n_time, len(idxs))
+    cell_ids   = np.repeat(np.arange(n_cells), n_time)
+    time_steps = np.tile(np.arange(n_time), n_cells)
+    df = pd.DataFrame(data, columns=names)
+    df.insert(0,'time_step',time_steps)
+    df.insert(0,'cell_id',cell_ids)
+    return df
+
+@numba.njit(parallel=True, fastmath=True)
+def gillespie_simulation_all_cells(update_propensities, update_matrix,
+                                   pop0_mat, time_points, verbose_flags):
+    
+    n_species, n_cells = pop0_mat.shape
+    n_time = time_points.shape[0]
+    n_rxns = update_matrix.shape[0]
+
+    samples = np.empty((n_cells, n_time, n_species), dtype=np.int64)
+
+    for cell in prange(n_cells):
+
+        pop = pop0_mat[:, cell].copy()
+        t = time_points[0]
+        i_time = 0
+        stuck_counter = 0
+        max_attempts = 10000
+        prop = np.zeros(n_rxns, dtype=np.float64)
+        next_tp = time_points[0]
+
+        while i_time < n_time:
+
+            update_propensities(prop, pop, t)
+            total = prop.sum()
+
+            if total <= 0:
+                stuck_counter += 1
+                if stuck_counter > max_attempts:
+                    verbose_flags[cell] = 1
+                    samples[cell, i_time:, :] = pop
+                    # print(pop)
+                    break
+                samples[cell, i_time, :] = pop
+                continue
+
+            stuck_counter = 0
+
+            reaction_time = np.random.exponential(1.0 / total)
+            t += reaction_time
+
+            # Sampling at timepoints
+            while i_time < n_time and t >= next_tp:
+                samples[cell, i_time, :] = pop
+                i_time += 1
+                if i_time < n_time:
+                    next_tp = time_points[i_time]
+
+            # Reaction selection
+            cum_props = np.cumsum(prop)
+            r = np.searchsorted(cum_props, np.random.rand() * total)
+            pop += update_matrix[r]
+
+    return samples
+
+@numba.njit(parallel=False, fastmath=True)
+def gillespie_simulation_all_cells_with_event_log(update_propensities, update_matrix,
+                                   pop0_mat, time_points, verbose_flags,
+                                   promoter_indices,
+                                   event_times_all, event_genes_all, event_states_all,
+                                   log_pi_on):
+    n_species, n_cells = pop0_mat.shape
+    n_time = time_points.shape[0]
+    n_rxns = update_matrix.shape[0]
+    n_genes = promoter_indices.shape[0]
+
+    samples = np.empty((n_cells, n_time, n_species), dtype=np.int64)
+
+    for cell in range(n_cells):
+
+        pop = pop0_mat[:, cell].copy()
+        t = time_points[0]
+        i_time = 0
+        stuck_counter = 0
+        max_attempts = 10000
+        prop = np.zeros(n_rxns, dtype=np.float64)
+        next_tp = time_points[0]
+
+        # references if we will log
+        if log_pi_on:
+            event_times  = event_times_all[cell]
+            event_genes  = event_genes_all[cell]
+            event_states = event_states_all[cell]
+
+        while i_time < n_time:
+
+            update_propensities(prop, pop, t)
+            total = prop.sum()
+
+            if total <= 0:
+                stuck_counter += 1
+                if stuck_counter > max_attempts:
+                    verbose_flags[cell] = 1
+                    samples[cell, i_time:, :] = pop
+                    break
+                samples[cell, i_time, :] = pop
+                continue
+
+            stuck_counter = 0
+
+            old_pop = pop.copy()
+            reaction_time = np.random.exponential(1.0 / total)
+            t += reaction_time
+
+            # Sampling at timepoints
+            while i_time < n_time and t >= next_tp:
+                samples[cell, i_time, :] = pop
+                i_time += 1
+                if i_time < n_time:
+                    next_tp = time_points[i_time]
+
+            # Reaction selection
+            cum_props = np.cumsum(prop)
+            r = np.searchsorted(cum_props, np.random.rand() * total)
+            pop += update_matrix[r]
+
+            # === Log promoter ON/OFF if flag is set ===
+            if log_pi_on:
+                for g in range(n_genes):
+                    A = promoter_indices[g]
+                    if old_pop[A] != pop[A]:
+                        event_times.append(t)
+                        event_genes.append(g)
+                        event_states.append(pop[A])   # 0 or 1
+                        break
+
+    # ============================
+    # RETURN LOGIC
+    # ============================
+    return samples, event_times_all, event_genes_all, event_states_all
+
+
+
+# %%
+def hill_fn(x, n, k):
+        x = np.asarray(x)
+        return x ** n / (x ** n + k ** n)
+
+def is_steady_state(samples, time_points, mean_tol=0.05, std_tol=0.05,
+                    window_frac=0.1, param_dict=None, interaction_matrix=None,
+                    gene_list=None, verbose=True, combinatorial_interaction_type="additive"):
+    """
+    Check if simulation has reached steady state and matches expected protein levels.
+
+    Args:
+        samples (np.ndarray): Shape (n_cells, n_time, n_species)
+        time_points (np.ndarray): Time values
+        mean_tol (float): Tolerance for relative mean change over last window
+        std_tol (float): Tolerance for relative std change over last window
+        window_frac (float): Fraction of final time used to assess steady state
+        param_dict (dict): All kinetic + interaction parameters
+        interaction_matrix (np.ndarray): (n_genes, n_genes) connectivity matrix
+        gene_list (list): Ordered list of gene names
+        verbose (bool): Whether to print diagnostics
+        combinatorial_interaction_type (str): One of 'additive', 'AND', 'OR'
+    
+    Returns:
+        bool: True if steady state is reached
+
+    NOTE: this steady-state check's "expected protein" formula does NOT
+    account for the oscillator term (it assumes constant k_prod_mRNA). With
+    the oscillator active, protein levels will genuinely oscillate around
+    the steady-state mean rather than converge to a single value, so this
+    check may need a wider tolerance or should be interpreted as "steady
+    oscillation" rather than "constant value" when phi_scenario is active.
+    """
+    n_cells, n_time, n_species = samples.shape
+    window = int(n_time * window_frac)
+    if window < 2:
+        raise ValueError("Window too small for steady state check.")
+
+    protein_species_idx = np.arange(3, n_species, 4)
+    n_genes = len(gene_list)
+    comb_type = combinatorial_interaction_type.lower()
+
+    # --- Step 1: mean/std stability check ---
+    data = samples[:, -window:, :]
+    mean_traj = data.mean(axis=0)
+    std_traj  = data.std(axis=0)
+    rel_mean_change = np.abs(mean_traj[-1] - mean_traj[0]) / (mean_traj[0] + 1e-6)
+    rel_std_change  = np.abs(std_traj[-1] - std_traj[0])  / (std_traj[0]  + 1e-6)
+    steady_mean_std = (rel_mean_change.max() < mean_tol) and (rel_std_change.max() < std_tol)
+
+    # --- Step 2: compare expected vs simulated proteins ---
+    last_n = min(100, n_time)
+    rel_error_tp = []
+
+    for t_idx in range(n_time - last_n, n_time):
+
+        proteins_at_t    = samples[:, t_idx, protein_species_idx]  # (n_cells, n_genes)
+        mean_at_t_prot   = proteins_at_t.mean(axis=0)              # (n_genes,)
+        protein_expected = np.zeros(n_genes)
+
+        for i, gene in enumerate(gene_list):
+            k_on        = param_dict[f'{{k_on_{gene}}}']
+            k_off       = param_dict[f'{{k_off_{gene}}}']
+            k_prod_mRNA = param_dict[f'{{k_prod_mRNA_{gene}}}']
+            k_deg_mRNA  = param_dict[f'{{k_deg_mRNA_{gene}}}']
+            k_prod_prot = param_dict[f'{{k_prod_protein_{gene}}}']
+            k_deg_prot  = param_dict[f'{{k_deg_protein_{gene}}}']
+
+            regulators = np.where(interaction_matrix[:, i] != 0)[0]
+            n_regs     = len(regulators)
+
+            if n_regs == 0:
+                p_on_eff = k_on
+
+            elif n_regs == 1:
+                # original — per-gene k_add, matches simulation exactly
+                r      = regulators[0]
+                edge   = f"{gene_list[r]}_to_{gene}"
+                k_add  = param_dict.get(f"{{k_add_{gene}}}", 0.0)
+                n_val  = param_dict.get(f"{{n_{edge}}}", 2.0)
+                K_val  = param_dict.get(f"{{K_{edge}}}", 1.0)
+                sign   = int(np.sign(interaction_matrix[r, i]))
+                TF     = proteins_at_t[:, r]
+                hill   = TF**n_val / (K_val**n_val + TF**n_val)
+                p_on_eff = k_on + sign * k_add * hill  # (n_cells,)
+
+            elif n_regs == 2:
+                sign1 = int(np.sign(interaction_matrix[regulators[0], i]))
+                sign2 = int(np.sign(interaction_matrix[regulators[1], i]))
+
+                if sign1 == sign2:
+                    # original — per-gene k_add, normalised combinatorial formula
+                    r1, r2 = regulators
+                    edge1  = f"{gene_list[r1]}_to_{gene}"
+                    edge2  = f"{gene_list[r2]}_to_{gene}"
+                    k_add  = param_dict.get(f"{{k_add_{gene}}}", 0.0)
+                    n1     = param_dict.get(f"{{n_{edge1}}}", 2.0)
+                    n2     = param_dict.get(f"{{n_{edge2}}}", 2.0)
+                    K1     = param_dict.get(f"{{K_{edge1}}}", 1.0)
+                    K2     = param_dict.get(f"{{K_{edge2}}}", 1.0)
+                    sign   = sign1
+                    TF1    = proteins_at_t[:, r1]
+                    TF2    = proteins_at_t[:, r2]
+                    u1     = TF1**n1 / K1**n1
+                    u2     = TF2**n2 / K2**n2
+                    denom  = 1 + u1 + u2 + u1*u2
+
+                    if comb_type == "additive":
+                        numerator  = u1 + u2 + 2*u1*u2
+                        pre_factor = 1.0
+                    elif comb_type == "or":
+                        numerator  = u1 + u2 + u1*u2
+                        pre_factor = 2.0/3.0
+                    elif comb_type == "and":
+                        numerator  = u1*u2
+                        pre_factor = 2.0
+                    else:
+                        raise ValueError(f"Unknown combinatorial_interaction_type: {combinatorial_interaction_type}")
+
+                    reg_eff  = sign * k_add * pre_factor * numerator / denom
+                    p_on_eff = k_on + reg_eff  # (n_cells,)
+
+                else:
+                    # new — opposing-sign, per-edge k_add, simple additive
+                    reg_eff = np.zeros(n_cells)
+                    for r in regulators:
+                        edge       = f"{gene_list[r]}_to_{gene}"
+                        k_add_edge = param_dict.get(f"{{k_add_{edge}}}", 0.0)
+                        n_val      = param_dict.get(f"{{n_{edge}}}", 2.0)
+                        K_val      = param_dict.get(f"{{K_{edge}}}", 1.0)
+                        sign_r     = int(np.sign(interaction_matrix[r, i]))
+                        TF         = proteins_at_t[:, r]
+                        hill       = TF**n_val / (K_val**n_val + TF**n_val)
+                        reg_eff   += sign_r * k_add_edge * hill
+                    p_on_eff = k_on + reg_eff  # (n_cells,)
+
+            else:
+                # new — >2 regulators, per-edge k_add, simple additive
+                reg_eff = np.zeros(n_cells)
+                for r in regulators:
+                    edge       = f"{gene_list[r]}_to_{gene}"
+                    k_add_edge = param_dict.get(f"{{k_add_{edge}}}", 0.0)
+                    n_val      = param_dict.get(f"{{n_{edge}}}", 2.0)
+                    K_val      = param_dict.get(f"{{K_{edge}}}", 1.0)
+                    sign_r     = int(np.sign(interaction_matrix[r, i]))
+                    TF         = proteins_at_t[:, r]
+                    hill       = TF**n_val / (K_val**n_val + TF**n_val)
+                    reg_eff   += sign_r * k_add_edge * hill
+                p_on_eff = k_on + reg_eff  # (n_cells,)
+
+            # clamp and compute expected protein
+            p_on_eff_clamped = np.maximum(p_on_eff, 0.0)
+            denom_burst      = p_on_eff_clamped + k_off
+            denom_burst      = np.where(denom_burst <= 0, 1e-12, denom_burst)
+            burst_prob       = float(np.mean(p_on_eff_clamped / denom_burst))
+            m                = k_prod_mRNA * burst_prob / max(k_deg_mRNA, 1e-12)
+            protein_expected[i] = max(m * k_prod_prot / max(k_deg_prot, 1e-12), 0.1)
+
+        rel_err = np.abs(mean_at_t_prot - protein_expected) / (protein_expected + 1e-12)
+        rel_error_tp.append(rel_err)
+
+    rel_error_tp = np.vstack(rel_error_tp)  # (last_n, n_genes)
+
+    # --- Step 3: per-gene success fraction ---
+    frac_within_tol       = np.mean(rel_error_tp < 0.01, axis=0)
+    steady_match_per_gene = frac_within_tol >= 0.8
+    steady_match          = bool(np.all(steady_match_per_gene))
+
+    # --- Verbose output ---
+    if verbose:
+        print("\n Steady-state check:")
+        print(f"  Max rel mean change over last {window} steps: {rel_mean_change.max():.4e}")
+        print(f"  Max rel std  change over last {window} steps: {rel_std_change.max():.4e}")
+        print(f"  Steady by mean/std stability:                 {steady_mean_std}")
+        print(f"  Steady by param-based protein match:          {steady_match}")
+        print(f"  Per-gene fraction of time points within 1% of expected protein:")
+        for gene, frac, passed in zip(gene_list, frac_within_tol, steady_match_per_gene):
+            status = "pass" if passed else "fail"
+            print(f"     {gene:>15}: {frac*100:6.2f}%  {status}")
+
+    return steady_match
+
+# %% Wrapping functions 
+def run_simulation(update_propensities, update_matrix, pop0, time_points, n_cells=1000, promoter_indices = None,
+                    phi_scenario=None, phi_seed=None, phi_center=0.0, sigma_phi_population=0.248,
+                    species_index=None):
+    """
+    Simulates the dynamics of a population of cells using the Gillespie algorithm.
+
+    Parameters:
+        update_propensities (callable): A function to compute the propensities for reactions.
+        update_matrix (numpy.ndarray): The stoichiometry matrix defining the system's reactions.
+        pop0 (numpy.ndarray): Initial population vector for all species (shape: [n_species]).
+        time_points (numpy.ndarray): Array of time points at which to sample the population.
+        n_cells (int, optional): Number of cells to simulate. Defaults to 1000.
+        phi_scenario (str, optional): NEW -- "in_phase" | "out_of_phase" | None.
+            If None, Phi is left at its pop0 default (0) for every cell, i.e.
+            in-phase behavior. If set, initialize_phi() is called to set
+            per-cell Phi before simulating. Requires species_index.
+        phi_seed (int, optional): RNG seed for initialize_phi.
+        phi_center (float): mean phase for out_of_phase scenario (radians).
+        sigma_phi_population (float): stdev of phase spread for out_of_phase
+            scenario (radians).
+        species_index (dict, optional): required if phi_scenario is set.
+
+    Returns:
+        numpy.ndarray: A 3D array containing the simulated population data. 
+                       Shape: [n_species, len(time_points), n_cells].
+
+    Notes:
+        - The function uses a JIT-compiled helper function `gillespie_simulation_all_cells` for efficient simulation.
+        - Warnings are printed for cells that encounter issues during simulation:
+            - Cell stuck due to zero propensities for too long.
+    """
+    n_species = pop0.shape[0]
+    pop0_mat = np.tile(pop0[:, None], (1, n_cells))
+    pop0_mat = pop0_mat.copy()
+
+    # --- NEW: set per-cell Phi according to the chosen scenario ---
+    if phi_scenario is not None:
+        if species_index is None:
+            raise ValueError("species_index is required when phi_scenario is set")
+        pop0_mat = initialize_phi(
+            pop0_mat, species_index, n_cells, scenario=phi_scenario,
+            seed=phi_seed, phi_center=phi_center,
+            sigma_phi_population=sigma_phi_population,
+        )
+
+    verbose_flags = np.zeros(n_cells, dtype=np.int64)
+
+    samples = gillespie_simulation_all_cells(update_propensities, update_matrix,
+                                   pop0_mat, time_points, verbose_flags)
+                                   
+    for cell in range(n_cells):
+        if verbose_flags[cell] == 1:
+            print(f"⚠️ WARNING: Cell {cell} got stuck (zero propensities).")
+    return samples
+
+def get_promoter_indices(species_index, gene_list):
+    promoter_indices = []
+    for g in gene_list:
+        key = f"{g}_A"   # the active/ON promoter state
+        promoter_indices.append(species_index[key])
+    return np.array(promoter_indices, dtype=np.int64)
+
+def save_promoter_events(event_times, event_genes, event_states):
+    """
+    Convert Numba event logs into a tidy DataFrame and return the DataFrame.
+
+    Parameters
+    ----------
+    event_times : List[List[float]]
+        Per-cell list of times when promoter switched.
+    event_genes : List[List[int]]
+        Per-cell list of gene indices corresponding to each event.
+    event_states : List[List[int]]
+        Per-cell list of new promoter states (0 or 1).
+    """
+    
+    rows = []
+    n_cells = len(event_times)
+
+    for cell in range(n_cells):
+        times  = event_times[cell]
+        genes  = event_genes[cell]
+        states = event_states[cell]
+
+        for k in range(len(times)):
+            rows.append({
+                "cell": cell,
+                "gene": genes[k],
+                "time": times[k],
+                "new_state": states[k],   # 0 or 1
+            })
+
+    df = pd.DataFrame(rows)
+    return df
+
+def allocate_event_logs(n_cells):
+    event_times_all  = List()
+    event_genes_all  = List()
+    event_states_all = List()
+
+    for _ in range(n_cells):
+        event_times_all.append(List.empty_list(numba.float64))
+        event_genes_all.append(List.empty_list(numba.int64))
+        event_states_all.append(List.empty_list(numba.int64))
+
+    return event_times_all, event_genes_all, event_states_all
+
+def validate_regulatory_configuration(connectivity_matrix):
+    """
+    Validate that the regulatory configuration is compatible with the current
+    simulation assumptions. Raises an error for unsupported configurations,
+    and warns for configurations that will use simple additive per-edge logic.
+    """
+    n = connectivity_matrix.shape[0]
+    gene_list = [f"gene_{i+1}" for i in range(n)]
+
+    for j in range(n):
+        regulators = np.where(connectivity_matrix[:, j] != 0)[0]
+        n_regs = len(regulators)
+
+        if n_regs > 2:
+            reg_names = [gene_list[i] for i in regulators]
+            print(
+                f"Gene '{gene_list[j]}' has {n_regs} regulators {reg_names}. "
+                f"Using simple additive per-edge logic."
+            )
+
+        if n_regs == 2:
+            signs = np.sign(connectivity_matrix[regulators, j]).astype(int)
+            if signs[0] != signs[1]:
+                reg_names = [gene_list[i] for i in regulators]
+                print(
+                    f"Gene '{gene_list[j]}' has opposing-sign regulators {reg_names} "
+                    f"(signs {signs.tolist()}). "
+                    f"Using simple additive per-edge logic."
+                )
+
+def divide_mother_cell_content(
+    mother_states,
+    species_index,
+    seed=None,
+    partition_suffixes=("_mRNA", "_protein"),
+    p_major=0.5,          # 0.6 means 60/40, 0.7 means 70/30
+    randomize_polarity=True,
+    dephase_twins=False,
+    sigma_phi_twin=0.04,
+    division_times=None,   # NEW -- see below, fixes a real bug
+    omega=None,
+    partition_mrna_protein=True,
+):
+    """
+    Splits mother-cell molecule counts into two daughter cells.
+
+    mRNA/protein are binomially partitioned as before. All other species
+    (promoter states, etc.) are copied exactly to both twins.
+
+    Phi is handled specially, and THIS IS WHERE A BUG WAS FIXED (division_times):
+
+    The post-division (twin) simulation always restarts its local clock at
+    t=0 (gillespie_simulation_all_cells begins at rep_time[0]=0 for every
+    cell, in every scenario). If Phi were simply copied across division
+    unmodified, the oscillator would silently "forget" how much absolute
+    time had elapsed before division -- every cell's post-division
+    oscillator would restart from whatever bare Phi value it carried,
+    rather than from the phase it had actually reached by the time it
+    divided. This made async_division look almost identical to in_phase
+    post-division (both effectively reset to phase ~Phi), even though
+    their absolute division times genuinely differed -- the asynchrony
+    was real pre-division but got erased at the division boundary.
+
+    Fix: BEFORE copying/dephasing Phi, advance it by the phase the
+    oscillator actually accumulated over each mother cell's own elapsed
+    time before division:
+        phi_at_division = (stored_Phi + omega * division_time) mod 2*pi
+    This is then what gets copied to twins (and dephased, if requested).
+    Pass division_times=None to skip this correction and fall back to the
+    old (buggy) behavior of copying Phi as-is.
+
+    Args:
+        division_times (np.ndarray, optional): shape (n_cells,), the
+            ABSOLUTE simulated time at which each mother cell was sampled
+            for division (e.g. time_points[-1] for synchronous scenarios,
+            or the per-cell t_div_i array for async_division). Required
+            for the phase-carry-through fix to apply.
+        omega (float, optional): angular frequency to use for the phase
+            advance. Defaults to the module-level OMEGA if not given.
+
+    dephase_twins:
+        - False (default): both twins get the SAME phi_at_division.
+        - True: each twin gets phi_at_division + independent
+          Normal(0, sigma_phi_twin) noise, wrapped to [0, 2*pi).
+
+    partition_mrna_protein (bool): If True (default), mRNA/protein counts are
+        binomially partitioned between twins. If False, both twins instead
+        get an exact, unscaled copy of the mother's mRNA/protein counts
+        (reproduces the old divide_binomial=False behavior for those species
+        only). Phi's phase-advance correction and dephase_twins are ALWAYS
+        applied regardless of this flag -- Phi is not a partitioned species
+        and must not be gated behind it (this coupling was a real bug: it
+        made async_division/dephase_twins indistinguishable from in_phase
+        whenever binomial partitioning was off).
+    """
+    rng = np.random.default_rng(seed)
+    if omega is None:
+        omega = OMEGA
+
+    mother_states = mother_states.astype(np.int64)
+    n_species, n_cells = mother_states.shape
+
+    twin_1 = np.empty_like(mother_states)
+    twin_2 = np.empty_like(mother_states)
+
+    # partition only mRNA + protein explicitly
+    partition_indices = np.array(
+        [idx for name, idx in species_index.items()
+         if name.endswith(partition_suffixes)],
+        dtype=np.int64
+    )
+
+    # Phi is always handled separately now (not lumped into the generic
+    # copy_indices set), since it needs the phase-advance correction below
+    # regardless of dephase_twins.
+    phi_idx = species_index.get(PHI_SPECIES_NAME, None)
+    exclude_from_plain_copy = set(partition_indices.tolist())
+    if phi_idx is not None:
+        exclude_from_plain_copy.add(phi_idx)
+
+    copy_indices = np.array(
+        [i for i in range(n_species) if i not in exclude_from_plain_copy],
+        dtype=np.int64
+    )
+
+    # copy everything else (promoters, etc.)
+    twin_1[copy_indices] = mother_states[copy_indices]
+    twin_2[copy_indices] = mother_states[copy_indices]
+
+    if partition_mrna_protein:
+        # total molecules available to split (your "keep mean = M" rule)
+        doubled = 2 * mother_states[partition_indices]  # shape: (n_part, n_cells)
+
+        # per-cell probability for twin_1
+        if randomize_polarity:
+            # mask[j] = True => twin_1 is the major daughter for cell j
+            mask = rng.random(n_cells) < 0.5
+            p_cell = np.where(mask, p_major, 1.0 - p_major)  # shape: (n_cells,)
+        else:
+            p_cell = np.full(n_cells, p_major)
+
+        # broadcast p_cell across partitioned species rows
+        draw = rng.binomial(doubled, p_cell[None, :])
+
+        twin_1[partition_indices] = draw
+        twin_2[partition_indices] = doubled - draw
+    else:
+        # no partitioning noise: both twins get an exact copy of the mother's
+        # mRNA/protein counts (matches old divide_binomial=False behavior)
+        twin_1[partition_indices] = mother_states[partition_indices]
+        twin_2[partition_indices] = mother_states[partition_indices]
+
+    # --- Phi: advance by elapsed phase at division, THEN copy/dephase ---
+    if phi_idx is not None:
+        mother_phi = mother_states[phi_idx, :] / PHI_SCALE
+        if division_times is not None:
+            phi_at_division = np.mod(mother_phi + omega * np.asarray(division_times), 2 * np.pi)
+        else:
+            # legacy behavior: no correction applied (bug preserved only if
+            # caller explicitly omits division_times)
+            phi_at_division = mother_phi
+
+        if dephase_twins:
+            noise_1 = rng.normal(0.0, sigma_phi_twin, size=n_cells)
+            noise_2 = rng.normal(0.0, sigma_phi_twin, size=n_cells)
+            phi_1 = np.mod(phi_at_division + noise_1, 2 * np.pi)
+            phi_2 = np.mod(phi_at_division + noise_2, 2 * np.pi)
+        else:
+            phi_1 = phi_at_division
+            phi_2 = phi_at_division
+
+        twin_1[phi_idx, :] = np.round(phi_1 * PHI_SCALE).astype(np.int64)
+        twin_2[phi_idx, :] = np.round(phi_2 * PHI_SCALE).astype(np.int64)
+
+    return twin_1, twin_2
+
+def validate_no_stuck_cells(verbose_flags, label=""):
+    """
+    Raises if any cell was flagged as stuck (zero propensities for too long)
+    during simulation, rather than letting it pass silently into output CSVs.
+    """
+    n_stuck = int(verbose_flags.sum())
+    if n_stuck > 0:
+        stuck_ids = np.where(verbose_flags == 1)[0].tolist()
+        raise RuntimeError(f"{label}: {n_stuck} cell(s) got stuck during simulation: {stuck_ids}")
+    return True
+def validate_connectivity_matrix(connectivity_matrix):
+    """
+    Validates that connectivity_matrix is square, contains no self-loops, and
+    has only finite values.
+    """
+    if connectivity_matrix.ndim != 2 or connectivity_matrix.shape[0] != connectivity_matrix.shape[1]:
+        raise ValueError(f"connectivity_matrix must be square, got shape {connectivity_matrix.shape}")
+    if not np.isfinite(connectivity_matrix).all():
+        raise ValueError("connectivity_matrix contains NaN or infinite values")
+    return True
+
+def validate_simulation_inputs(connectivity_matrix, full_param_dict, pop0,
+                               update_prop, update_matrix, reactions_df, species_index):
+    validate_connectivity_matrix(connectivity_matrix)
+    validate_param_dict(full_param_dict)
+    validate_pop0(pop0, species_index)
+    validate_reactions_against_species(reactions_df, species_index)
+    validate_propensities_nonnegative(update_prop, pop0, n_rxns=update_matrix.shape[0])
+    return True
+
+def validate_param_dict(param_dict, required_positive_prefixes=("k_on_", "k_off_",
+                        "k_prod_mRNA_", "k_deg_mRNA_", "k_prod_protein_", "k_deg_protein_")):
+    """
+    Validates that param_dict contains no NaN values, and that known
+    rate-constant parameters (k_on, k_off, production/degradation rates) are
+    strictly positive.
+    """
+    for key, val in param_dict.items():
+        if isinstance(val, (int, float)) and np.isnan(val):
+            raise ValueError(f"param_dict[{key}] is NaN")
+    for key, val in param_dict.items():
+        stripped = key.strip("{}")
+        if stripped.startswith(required_positive_prefixes) and val <= 0:
+            raise ValueError(f"param_dict[{key}] = {val}, expected strictly positive")
+    return True
+
+def validate_propensities_nonnegative(update_propensities, pop0, n_rxns, n_perturbations=20, seed=0):
+    """
+    Sanity-checks that update_propensities never returns a negative value.
+    Evaluates at pop0 and at several randomly perturbed populations (to catch
+    sign errors that only manifest at nonzero regulator protein counts).
+    Raises ValueError on the first negative propensity found.
+    """
+    rng = np.random.default_rng(seed)
+    prop = np.zeros(n_rxns, dtype=np.float64)
+
+    update_propensities(prop, pop0, 0.0)
+    if (prop < 0).any():
+        bad = np.where(prop < 0)[0]
+        raise ValueError(f"Negative propensity at pop0 for reaction index(es) {bad.tolist()}: {prop[bad]}")
+
+    for _ in range(n_perturbations):
+        pop_test = pop0.copy()
+        # perturb a random subset of species up, to exercise regulator-dependent terms
+        idx = rng.choice(len(pop0), size=max(1, len(pop0) // 4), replace=False)
+        pop_test[idx] += rng.integers(1, 50, size=len(idx))
+        update_propensities(prop, pop_test, 0.0)
+        if (prop < 0).any():
+            bad = np.where(prop < 0)[0]
+            raise ValueError(f"Negative propensity for reaction index(es) {bad.tolist()}: {prop[bad]} "
+                            f"at perturbed population {pop_test}")
+    return True
+def validate_pop0(pop0, species_index):
+    """
+    Validates that the initial population vector is non-negative and
+    integer-valued (required for a valid Gillespie state).
+    """
+    if (pop0 < 0).any():
+        bad = [name for name, idx in species_index.items() if pop0[idx] < 0]
+        raise ValueError(f"pop0 has negative counts for species: {bad}")
+    if not np.issubdtype(pop0.dtype, np.integer):
+        raise ValueError(f"pop0 must be integer-typed, got dtype {pop0.dtype}")
+    return True
+    
+# --- Worker for a single parameter set ---
+def process_param_set(rows, label, base_config):
+    """
+    Processes a set of parameters for a Gillespie simulation, running the simulation for a specified number of cells and handling the results.
+    Parameters:
+        rows (list): A list of parameter rows to be processed.
+        label (str): A label for identifying the simulation run.
+        base_config (dict): A dictionary containing common parameters such as paths, connectivity matrix, and simulation settings.
+
+        NEW base_config keys for the oscillator model:
+            phi_scenario           : "in_phase" | "out_of_phase" | None (default None = in-phase behavior)
+            phi_seed                : int, RNG seed for population Phi draw (default None)
+            phi_center               : float, mean phase for out_of_phase (default 0.0)
+            sigma_phi_population     : float, stdev of phase spread for out_of_phase (default 0.248 rad)
+            dephase_twins            : bool, whether twins get independent phase noise at division (default False)
+            sigma_phi_twin           : float, stdev of twin phase noise (default 0.04 rad)
+        Also requires an 'A' column in param_csv (per-gene oscillation amplitude)
+        if phi_scenario is not None / oscillator behavior is desired.
+    Returns:
+        str: The file path of the saved DataFrame containing the results of the simulation.
+    Raises:
+        AssertionError: If the number of parameter rows is less than the number of genes.
+    """
+    # base_config contains common parameters: paths, k_add_list, n_matrix, time_points
+    # Unpack base_config
+    path_to_connectivity_matrix = base_config['path_to_connectivity_matrix']
+    param_csv      = base_config['param_csv']
+    k_add_list    = base_config.get("k_add_list", None)     # unchanged key name
+    k_add_matrix  = base_config.get("k_add_matrix", None)    #defaults to None
+    use_csv_k_add = base_config.get("use_csv_k_add", True)   #defaults to True
+    n_matrix      = base_config.get("n_matrix", None)
+
+    # --- NEW: oscillator / phase config (moved up so time_points buffer
+    #     logic below can use it directly, no duplicate lookups) ---
+    phi_scenario          = base_config.get("phi_scenario", None)          # "in_phase" | "out_of_phase" | None
+    phi_seed              = base_config.get("phi_seed", None)
+    phi_center            = base_config.get("phi_center", 0.0)
+    sigma_phi_population  = base_config.get("sigma_phi_population", 0.248)
+    dephase_twins          = base_config.get("dephase_twins", False)
+    sigma_phi_twin         = base_config.get("sigma_phi_twin", 0.04)
+
+    # --- NEW (scenario 4): genuinely asynchronous division timing ---
+    async_division         = base_config.get("async_division", False)
+    sigma_t_division        = base_config.get("sigma_t_division", 1.5)   # hours
+    division_time_seed      = base_config.get("division_time_seed", None)
+
+    # --- Consistency check: sigma_phi_population and sigma_t_division are
+    #     independent knobs, but if you intend scenario 2 (out_of_phase)
+    #     and scenario 4 (async_division) to represent the SAME underlying
+    #     spread through two different mechanisms, they should satisfy
+    #     sigma_phi_population == OMEGA * sigma_t_division. This does not
+    #     raise -- both are valid to set independently -- but a large
+    #     mismatch usually means one was updated without the other.
+    _implied_sigma_t_from_phi = sigma_phi_population / OMEGA
+    if abs(_implied_sigma_t_from_phi - sigma_t_division) > 0.5 * max(_implied_sigma_t_from_phi, sigma_t_division):
+        print(f"NOTE: sigma_phi_population={sigma_phi_population} rad implies an equivalent "
+              f"division-time spread of {_implied_sigma_t_from_phi:.2f}h, which differs "
+              f"substantially from the configured sigma_t_division={sigma_t_division}h. "
+              f"This is fine if scenario 2 and scenario 4 are meant to represent different "
+              f"magnitudes of spread; if they're meant to match, update one to align with the other.")
+
+    # --- CHANGED (scenario 4): if async_division is on, simulate a buffer
+    #     PAST simulation_time_before_division so cells whose per-cell
+    #     division time falls later than the nominal time aren't clipped at
+    #     the boundary (which would silently shrink the spread -- confirmed
+    #     empirically: without this buffer, ~half the distribution piles up
+    #     at the last timepoint instead of spreading symmetrically). The
+    #     "base" division time (center of the per-cell distribution) stays
+    #     at simulation_time_before_division either way.
+    if async_division:
+        _buffer = int(np.ceil(5 * sigma_t_division))
+        time_points = np.arange(0, base_config['simulation_time_before_division'] + _buffer, 1)
+    else:
+        time_points = np.arange(0, base_config['simulation_time_before_division'], 1)
+    sample_twins_time_points = np.arange(0, base_config['twin_simulation_time_after_division'] + base_config['twin_measurement_resolution'], base_config['twin_measurement_resolution']) 
+    n_cells = base_config['n_cells']
+    scale_K = base_config.get("scale_K", None)
+    log_pi_on = base_config.get("log_pi_on", False)
+    use_given_K = base_config.get("use_given_K", False)
+    divide_binomial = base_config.get("divide_binomial", False)
+    p_major = base_config.get("p_major", 0.5)
+    K_to_use = base_config.get("K_to_use", None)
+
+    if use_given_K and K_to_use is not None:
+        print("Using given hill Constants.")
+    combinatorial_interaction_type = base_config.get("combinatorial_interaction_type", "additive")
+    if combinatorial_interaction_type not in ['additive', 'AND', 'OR']:
+        raise ValueError("The three options for combinatorial interaction type are: 'additive', 'AND', 'OR' ")
+    print(f"Log pi on is set to {log_pi_on}")
+    print(f"Combinatorial interaction type: {combinatorial_interaction_type}")
+    print(f"Phi scenario: {phi_scenario}, dephase_twins: {dephase_twins}, "
+          f"async_division: {async_division} (sigma_t={sigma_t_division}h)")
+    # Build reactions and parameters for this row set
+    n_genes, connectivity_matrix = read_input_matrix(path_to_connectivity_matrix)
+    assert len(rows) >= n_genes, "The number of parameter rows entered is less than the number of genes"
+    # validate_regulatory_configuration(connectivity_matrix)
+    reactions_df, gene_list = generate_reaction_network_from_matrix(connectivity_matrix, combinatorial_interaction_type=combinatorial_interaction_type)
+    
+    init_states = generate_initial_state_from_genes(gene_list)
+    param_dict = assign_parameters_to_genes(param_csv, gene_list, rows)
+
+    if n_matrix is None:
+        n_matrix = np.zeros((n_genes, n_genes))
+
+    # fill n_matrix per edge from param_dict, if values were pre-supplied (e.g. via CSV)
+    for j in range(n_genes):
+        regulators = np.where(connectivity_matrix[:, j] != 0)[0]
+        for i in regulators:
+            edge = f"{gene_list[i]}_to_{gene_list[j]}"
+            n_matrix[i, j] = param_dict.get(f"{{n_{edge}}}", 2.0)
+
+    param_dict = resolve_all_k_add(
+        param_dict=param_dict, connectivity_matrix=connectivity_matrix, gene_list=gene_list,
+        k_add_list=k_add_list, k_add_matrix=k_add_matrix, use_csv_k_add=use_csv_k_add
+    )
+
+    steady_state, full_param_dict = add_interaction_terms(
+        param_dict=param_dict, connectivity_matrix=connectivity_matrix, gene_list=gene_list,
+        n_matrix=n_matrix, scale_K=scale_K,
+        use_given_K=use_given_K, K_to_use=K_to_use
+    )
+    # print(full_param_dict)
+
+    pop0, update_matrix, update_prop, species_index = setup_gillespie_params_from_reactions(
+        init_states, reactions_df, full_param_dict)
+    # print(update_matrix)
+    promoter_indices = get_promoter_indices(species_index, gene_list)
+    validate_simulation_inputs(connectivity_matrix, full_param_dict, pop0,
+                               update_prop, update_matrix, reactions_df, species_index)
+                               
+    print("Starting base simulation")
+    # 1) Run base simulation
+    # --- CHANGED: pass phi_scenario/species_index through to run_simulation ---
+    base_samples = run_simulation(
+        update_prop, update_matrix, pop0, time_points, n_cells,
+        promoter_indices=promoter_indices,
+        phi_scenario=phi_scenario, phi_seed=phi_seed, phi_center=phi_center,
+        sigma_phi_population=sigma_phi_population, species_index=species_index,
+    )
+    flag = 0
+    if not is_steady_state(samples = base_samples, time_points =  time_points, param_dict = full_param_dict, interaction_matrix = connectivity_matrix, gene_list = gene_list):
+        print(f"⚠️ Base simulation (basal) for {label} may not be steady. Please manually verify and increase pre-division time if it has not reached steady state.")
+        # Log the issue in a separate file
+        error_record = {
+            "id": uuid.uuid4().hex[:8],
+            "rows": rows,
+            "timestamp": datetime.now().strftime("%d%m%Y_%H%M%S"),
+            "issue": "Base simulation not steady",
+            "label": label
+        }
+        flag = 1
+        log_folder = os.path.join(os.path.dirname(base_config['log_file']))
+        os.makedirs(log_folder, exist_ok=True)
+        log_file_path = os.path.join(log_folder, f"error_log.jsonl")
+        with open(log_file_path, "a") as log_file:
+            log_file.write(json.dumps(error_record) + "\n")
+        
+    df_base = convert_samples_to_df(base_samples, species_index)
+    
+    # 2) Replicate into two to create daughter cells
+    # --- CHANGED (scenario 4): sample each cell at its OWN division time
+    #     instead of every cell at the same final timepoint, if async_division
+    #     is enabled. Otherwise unchanged (synchronous division, as before).
+    if async_division:
+        # center on the ORIGINAL nominal division time, not the extended
+        # buffer endpoint (time_points was lengthened above specifically so
+        # this center point has room to spread on both sides without
+        # clipping at the array boundary)
+        _base_div_idx = base_config['simulation_time_before_division'] - 1
+        div_idx = compute_division_indices(
+            n_cells, time_points, sigma_t_division,
+            base_division_index=_base_div_idx, seed=division_time_seed,
+        )
+        final_states = base_samples[np.arange(n_cells), div_idx, :]
+        # per-cell absolute division time -- genuinely differs per cell
+        division_times_array = time_points[div_idx].astype(np.float64)
+    else:
+        div_idx = None
+        final_states = base_samples[:, -1, :]
+        # synchronous division: every cell divides at the same absolute time
+        division_times_array = np.full(n_cells, float(time_points[-1]))
+    del base_samples
+    gc.collect()
+    timestamp = datetime.now().strftime("%d%m%Y_%H%M%S")
+    id = uuid.uuid4().hex[:8]
+    prefix = f"{label}_{timestamp}_ncells_{n_cells}_{base_config['type']}_{id}"
+    df_base.to_csv(f"{base_config['output_folder']}/simulation_before_division_df_{prefix}.csv", index=False)
+
+    # --- NEW: log the actual per-cell division time used, if async_division ---
+    if async_division:
+        division_times_df = pd.DataFrame({
+            "cell_id": np.arange(n_cells),
+            "division_time_index": div_idx,
+            "division_time": time_points[div_idx],
+        })
+        division_times_df.to_csv(
+            f"{base_config['output_folder']}/division_times_{prefix}.csv", index=False
+        )
+    rep_time = sample_twins_time_points
+    # --- CHANGED: always go through divide_mother_cell_content so the Phi
+    #     phase-advance correction and dephase_twins always run -- they are
+    #     independent of divide_binomial (which only controls whether
+    #     mRNA/protein counts get binomial partitioning noise). Previously
+    #     this whole function -- Phi correction included -- was skipped
+    #     whenever divide_binomial=False (the default), which silently made
+    #     async_division and dephase_twins indistinguishable from in_phase. ---
+    twin_1, twin_2 = divide_mother_cell_content(
+        final_states.T, species_index=species_index, seed=101010, p_major=p_major,
+        dephase_twins=dephase_twins, sigma_phi_twin=sigma_phi_twin,
+        division_times=division_times_array, omega=OMEGA,
+        partition_mrna_protein=divide_binomial,
+    )
+    pop0_rep = np.concatenate([twin_1, twin_2], axis=1)
+    verbose_flags = np.zeros(2*n_cells, dtype=np.int64)
+
+    if log_pi_on:
+        # ---- allocate logging lists outside numba ----
+        event_times_all, event_genes_all, event_states_all = allocate_event_logs(2 * n_cells)
+
+        # ---- run simulation with logging ----
+        rep_samples, event_times_all, event_genes_all, event_states_all = gillespie_simulation_all_cells_with_event_log(
+            update_prop, update_matrix, pop0_rep, rep_time,
+            verbose_flags, promoter_indices,
+            event_times_all, event_genes_all, event_states_all,
+            log_pi_on=True
+        )
+
+        # ---- flatten events and save csv ----
+        event_log = save_promoter_events(event_times_all, event_genes_all, event_states_all)
+
+        event_log_file_name = (
+            f"event_log_{label}_{timestamp}_ncells_{n_cells}_{base_config['type']}_{id}"
+        )
+        event_log.to_csv(f"{base_config['output_folder']}/{event_log_file_name}.csv", index=False)
+
+    else:
+        # ---- still allocate empty lists to satisfy Numba return type ----
+
+        rep_samples = gillespie_simulation_all_cells(
+            update_prop, update_matrix, pop0_rep, rep_time, verbose_flags
+        )
+    validate_no_stuck_cells(verbose_flags, label=label)
+    # 3) Extract from simulation and label
+    df_rep = convert_samples_to_df(rep_samples, species_index)
+    n_total = 2 * n_cells
+    replicate_ids = np.repeat([1, 2], n_cells)
+    clone_ids = np.tile(np.arange(n_cells), 2)
+
+    df_rep['replicate'] = replicate_ids[df_rep['cell_id']]
+    df_rep['clone_id'] = clone_ids[df_rep['cell_id']]
+    df_rep['cell_id'] = df_rep.index // len(rep_time) 
+    
+    # 4) Save
+    # timestamp = datetime.now().strftime("%d%m%Y_%H%M%S")
+    # id = uuid.uuid4().hex[:8]
+    df_rep.to_csv(f"{base_config['output_folder']}/df_{prefix}.csv", index=False)
+
+    record = {
+        "id": id,
+        "rows": rows,
+        "n_cells": n_cells,
+        "type": base_config['type'],
+        "timestamp": timestamp,
+        "param_dict": full_param_dict,
+        "steady_state": steady_state.tolist() if hasattr(steady_state, 'tolist') else list(steady_state)
+
+    }
+    os.makedirs(os.path.dirname(base_config['log_file']), exist_ok=True)
+    with open(base_config['log_file'],"a") as f:
+        f.write(json.dumps(record) + "\n")
+    return f"{base_config['output_folder']}/df_{prefix}.csv"
+
+#%%
+def check_if_file_exists(rows, output_folder, type_name):
+    """
+    Check if a file for the given parameter set already exists
+    """
+    # Create the pattern that matches your existing filename format
+    row_pattern = "_".join(map(str, rows))
+    pattern = f"{output_folder}/df_row_{row_pattern}_*_{type_name}_*.csv"
+    
+    # Check if any files match this pattern
+    existing_files = glob.glob(pattern)
+    
+    if existing_files:
+        return True
+    return False
+#%%
+# --- Main execution with parallel parameter sets ---
+if __name__ == "__main__":
+    root = "/projects/b1042/GoyalLab/Keerthana/"
+    # Base configuration - the commented out lines can be used instead of providing arguments to the file (e.g. if using it as ipynb notebook)
+    base_config = {
+        'time_points':    np.arange(0, 2500, 1), #Time to reach steady state
+        'n_cells':        10000, #Before division
+        # "path_to_matrix":  "/path/to/interaction/matrix.txt",
+        # "param_csv":      "/path/to/parameters.csv",
+        # "row_to_start":      0,
+        # "output_folder":      "/path/to/output/folder/",
+        # "log_file":      "/path/to/log.jsonl",
+        # "type":      "A_to_B",
+        
+    }
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Run Gillespie simulation with specified inputs.")
+    parser.add_argument("--path_to_connectivity_matrix", type=str, required=True, help="Path to the connectivity matrix file specifying the GRN to simulate.")
+    parser.add_argument("--param_csv", type=str, required=True, help="Path to the parameters for all genes and interaction terms.")
+    parser.add_argument("--row_to_start", type=int, required=True, help="Row of parameter file to start for this batch of simulations.")
+    parser.add_argument("--row_to_end", type=int, required=False, default = None, help="Row of parameter file to end for this batch of simulations.")
+    parser.add_argument("--output_folder", type=str , required=True, help="Path to output folder to store simulation.")
+    parser.add_argument("--log_file", type=str , required=True, help="Json file to save log.")
+    parser.add_argument("--type", type=str , required=True, help="Name of the network used -- will be in the filename.")
+    parser.add_argument("--number_parallel_processes", type=int, default=1, required=False, help="Number of parallel parameter sets to be run at once (default: 1).")
+    parser.add_argument("--number_of_cores_per_parameter", type=int, default=4, required=False, help="Number of cores to be used per parameter (default: 4).")
+    parser.add_argument("--n_genes", type=int, default=2, required=False, help="Number of genes in the system (default: 2).")
+    parser.add_argument("--n_cells", type=int, default=5000, required=False, help="Number of cells in the system (default: 5000).")
+    parser.add_argument("--simulation_time_before_division", type=int, default=2500, required=False, help="Number of hours to run to achieve steady state (default: 2500h).")
+    parser.add_argument("--twin_simulation_time_after_division", type=int, default=48, required=False, help="Number of hours to run after cell division for collecting twin data (default: 48h).")
+    parser.add_argument("--twin_measurement_resolution", type=int, default=1, required=False, help="The time duration between every twin measurement (default: 1). For example, if it is 1h, then, data is stored eevry hour.")
+    parser.add_argument("--scale_K", type=str, default=None, required=False, help="The matrix of values to scale Hill constant K for each interaction. "
+                        "Provide as string representation of nested list, e.g., '[[0,1],[0,0]]'. "
+                        "Default is matrix of 1s for all interactions.")    
+    parser.add_argument("--log_pi_on", action="store_true", default=False, help="If set, the activity of promoter (A/I) and their timing will be recorded and saved for every genes.")   
+    parser.add_argument("--k_add_list", type=str, default=None,
+                    help="Comma-separated k_add per gene, e.g. '6.0,0.8'")
+    parser.add_argument("--n_matrix", type=str, default=None,
+                        help="Nested list string for n_matrix, e.g. '[[2,2],[2,2]]'")
+    parser.add_argument("--use_given_K", action="store_true", default=False,
+                        help="Use provided K_to_use matrix instead of steady-state calc.")
+    parser.add_argument("--K_to_use", type=str, default=None,
+                        help="Nested list string for K matrix, e.g. '[[0,100],[50,0]]'")
+    parser.add_argument("--divide_binomial", action="store_true", default=False,
+                        help="Use binomial partitioning at cell division.")
+    parser.add_argument("--p_major", type=float, default=0.5,
+                        help="Major daughter fraction for binomial division (default: 0.5).")
+    parser.add_argument("--combinatorial_interaction_type", type=str, default="additive",
+                        choices=["additive", "AND", "OR"],
+                        help="Combinatorial logic for two-regulator genes (default: additive).")
+    parser.add_argument("--k_add_matrix", type=str, default=None,
+                    help="Nested list string, per-edge k_add for opposing-sign/>2-regulator "
+                         "genes only, e.g. '[[0,6.0],[0.8,0]]'.")
+    parser.add_argument("--use_csv_k_add", action="store_true", default=True,
+                        help="Use CSV-provided k_add values when available (default: on).")
+    parser.add_argument("--no_csv_k_add", dest="use_csv_k_add", action="store_false")
+    # --- NEW: oscillator / phase CLI args ---
+    parser.add_argument("--phi_scenario", type=str, default=None, choices=["in_phase", "out_of_phase", None],
+                        help="Population phase scenario for the shared-cell-phase oscillator model "
+                             "(default: None -> Phi=0 for all cells, equivalent to in_phase).")
+    parser.add_argument("--phi_seed", type=int, default=None, help="RNG seed for population Phi draw.")
+    parser.add_argument("--phi_center", type=float, default=0.0, help="Mean phase (radians) for out_of_phase scenario.")
+    parser.add_argument("--sigma_phi_population", type=float, default=0.248,
+                        help="Stdev (radians) of population phase spread for out_of_phase scenario "
+                             "(default 0.248, derived from a +/-3h division-time window).")
+    parser.add_argument("--dephase_twins", action="store_true", default=False,
+                        help="If set, twins get independent phase noise at division on top of "
+                             "the population phase scenario.")
+    parser.add_argument("--sigma_phi_twin", type=float, default=0.04,
+                        help="Stdev (radians) of twin phase noise at division (default 0.04).")
+    # --- NEW (scenario 4): genuinely asynchronous division timing ---
+    parser.add_argument("--async_division", action="store_true", default=False,
+                        help="If set, cells divide at genuinely different simulated times "
+                             "(sampled per-cell from base_samples) instead of all cells "
+                             "dividing at the same shared final timepoint.")
+    parser.add_argument("--sigma_t_division", type=float, default=1.5,
+                        help="Stdev (hours) of per-cell division-time spread for "
+                             "async_division (default 1.5, from a +/-3h window).")
+    parser.add_argument("--division_time_seed", type=int, default=None,
+                        help="RNG seed for per-cell division-time draw.")
+    args = parser.parse_args()
+
+    # # Update base configuration with parsed arguments
+    base_config["path_to_connectivity_matrix"] = args.path_to_connectivity_matrix
+    base_config["param_csv"] = args.param_csv
+    base_config["row_to_start"] = int(args.row_to_start)
+    base_config["use_csv_k_add"] = args.use_csv_k_add
+    base_config["output_folder"] = args.output_folder
+    base_config["log_file"] = args.log_file
+    base_config["type"] = args.type
+    base_config["number_parallel_processes"] = args.number_parallel_processes
+    base_config["n_genes"] = args.n_genes
+    base_config["n_cells"] = args.n_cells
+    base_config["number_of_cores_per_parameter"] = args.number_of_cores_per_parameter
+    base_config["simulation_time_before_division"] = args.simulation_time_before_division
+    base_config["twin_simulation_time_after_division"] = args.twin_simulation_time_after_division
+    base_config["twin_measurement_resolution"] = args.twin_measurement_resolution
+    base_config['scale_K'] = None
+    base_config['log_pi_on']= args.log_pi_on
+
+    # --- NEW: wire oscillator / phase args into base_config ---
+    base_config["phi_scenario"] = args.phi_scenario
+    base_config["phi_seed"] = args.phi_seed
+    base_config["phi_center"] = args.phi_center
+    base_config["sigma_phi_population"] = args.sigma_phi_population
+    base_config["dephase_twins"] = args.dephase_twins
+    base_config["sigma_phi_twin"] = args.sigma_phi_twin
+    base_config["async_division"] = args.async_division
+    base_config["sigma_t_division"] = args.sigma_t_division
+    base_config["division_time_seed"] = args.division_time_seed
+
+    if args.k_add_list is not None:
+        raw = args.k_add_list.strip()
+        if raw.startswith("["):
+            # handles [6.0,0.8,6.0]
+            base_config["k_add_list"] = [float(x) for x in raw.strip("[]").split(",")]
+        else:
+            # handles 6.0,0.8,6.0
+            base_config["k_add_list"] = [float(x) for x in raw.split(",")]
+    else:
+        base_config["k_add_list"] = None
+
+    base_config["use_given_K"] = args.use_given_K
+    base_config["divide_binomial"] = args.divide_binomial
+    base_config["p_major"] = args.p_major
+    base_config["combinatorial_interaction_type"] = args.combinatorial_interaction_type
+
+    for key, arg_val in [("n_matrix", args.n_matrix), ("K_to_use", args.K_to_use)]:
+        if arg_val is not None:
+            try:
+                base_config[key] = np.array(ast.literal_eval(arg_val))
+            except (ValueError, SyntaxError) as e:
+                print(f"Error parsing {key}: {e}")
+                raise
+        else:
+            base_config[key] = None
+
+    os.makedirs(base_config["output_folder"], exist_ok = True)
+    try:
+        df = pd.read_csv(base_config['param_csv'])
+    except FileNotFoundError:
+        print(f"Error: The file {base_config['param_csv']} was not found.")
+        raise
+    except pd.errors.EmptyDataError:
+        print("Error: The file is empty.")
+        raise
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        raise
+    if args.row_to_end is not None:
+        base_config["row_to_end"] = int(args.row_to_end)
+    else:
+        base_config["row_to_end"] = base_config["row_to_start"] + 1
+        print(f"row_to_end not specified, defaulting to last pair: {base_config['row_to_end']}")
+    # Read the connectivity matrix before using it
+    path_to_connectivity_matrix = base_config["path_to_connectivity_matrix"]
+    n_genes, mat = read_input_matrix(path_to_connectivity_matrix)  # Ensure mat is defined
+    
+    if args.scale_K is not None:
+        try:
+            # Parse the string representation into nested list, then convert to numpy array
+            parsed_matrix = ast.literal_eval(args.scale_K)
+            base_config["scale_K"] = np.array(parsed_matrix)
+            print(f"Using provided scale_K matrix: {base_config['scale_K']}")
+        except (ValueError, SyntaxError) as e:
+            print(f"Error parsing scale_K matrix: {e}")
+            print("Expected format: '[[0,1],[0,0]]' (include the quotes)")
+            raise
+        except Exception as e:
+            print(f"Error converting to numpy array: {e}")
+            raise
+        expected_shape = (base_config["n_genes"], base_config["n_genes"])
+        
+        if base_config["scale_K"].shape != expected_shape:
+            print(f"Warning: scale_K matrix shape {base_config['scale_K'].shape} doesn't match expected {expected_shape}")
+    
+    
+    start_pair = base_config["row_to_start"]  # row_to_start now refers to pair_id
+    end_pair = base_config["row_to_end"]
+    print(f"start_pair: {start_pair}, end_pair: {end_pair}")
+    row_list = []
+    labels = []
+
+    for pair in range(start_pair, end_pair + 1):
+
+        subset = df[df["pair_id"] == pair].sort_values("gene_id")
+        rows = subset.index.tolist()
+    
+        # Ensure only complete groups are taken
+        rows_to_use = rows[:n_genes]
+        if len(rows) >= n_genes:
+            if len(rows) > n_genes:
+                print(f"pair {pair}: {len(rows)} rows found, using first {n_genes}: {rows_to_use}")
+            if not check_if_file_exists(rows_to_use, base_config["output_folder"], base_config["type"]):
+                row_list.append(rows_to_use)
+                labels.append(f"row_{'_'.join(map(str, rows_to_use))}")
+        else:
+            print(f"pair {pair}: only {len(rows)} rows found, need {n_genes}. Skipping.")
+            break
+        
+    param_sets = list(zip(row_list, labels))
+    # print(base_config["output_folder"])
+    print("length of param_sets", len(param_sets))
+    # Modified function wrapper for joblib that sets numba threads internally
+    def process_param_set_with_numba_config(rows, label, config):
+        """
+        Wrapper function that configures numba threads and then processes the parameter set
+        """
+        set_num_threads(base_config['number_of_cores_per_parameter'])
+        print(f"Worker process - Numba threads set to: {get_num_threads()}")
+        
+        # Call your original processing function
+        return process_param_set(rows, label, config)
+
+    # Use joblib instead of concurrent.futures
+    
+
+    print(f"Starting joblib with {base_config['number_parallel_processes']} parallel processes")
+
+    # Run parallel processing with joblib
+    results = Parallel(
+        n_jobs=base_config['number_parallel_processes'], 
+        backend='multiprocessing',
+        verbose=0  # Set to 10 for more verbose output
+    )(
+        delayed(process_param_set_with_numba_config)(rows, label, base_config) 
+        for rows, label in tqdm(param_sets, desc="Param sets")
+    )
+
+    # Process results
+    for result in results:
+        if result:
+            print(f"Completed simulation: {result}")

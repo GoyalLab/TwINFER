@@ -2,7 +2,7 @@
 
 | Module | Contents |
 |---|---|
-| `network_plots.py` | `plot_grn` draws a signed, weighted, directed network (`matrix[i, j]` = effect of node i on node j; positive = arrow, negative = bar; reciprocal edges curved). Per-edge line styles (`edge_styles`) and edges without direction (`undirected_edges`) are optional. `network_from_scenarios` turns the output of `infer_with_twinfer` into the inputs of `plot_grn`: scenarios 2-3 solid, scenario 4 dashed without direction, direction from the cross-time correlation when two time points were scored. |
+| `network_plots.py` | `plot_grn` draws a signed, weighted, directed network (`matrix[i, j]` = effect of node i on node j; positive = arrow, negative = bar; reciprocal edges curved). Per-edge line styles (`edge_styles`) and edges without direction (`undirected_edges`) are optional. `network_from_scenarios` turns the output of `infer_with_twinfer` into the inputs of `plot_grn`: scenarios 2-3 solid, scenario 4 dashed without direction, direction from the cross-time correlation when two time points were scored (`pair_directions`: both directions possible in scenario 2), colour = `z_dag` of the drawn direction. `edge_signs` sets arrow or bar apart from the colour. |
 | `assets/fonts/` | Arial font files used by the figure scripts. |
 
 Example:
