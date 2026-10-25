@@ -18,7 +18,7 @@ pip install -e package/
 
 | Function | Does |
 |---|---|
-| `infer_with_twinfer(table, genes, time_points=None, ...)` | Scores gene pairs. Picks the data scenario from the table: **single time point** (twin pairs at one time → `z_rho`, `z_rho_s`, `z_rho_Delta`, `inference_scenario`), **multiple time points** (adds the cross-time direction: `z_dag_xy`, `z_dag_yx`, `delta`, `p_delta`; `cross_correlation_pairs="all" | "significant_rho" | "regulation"` limits it to all pairs, pairs with significant z_rho, or pairs in scenario 2 or 3), **clones** (real data: one row per cell with `clone_id`, clones of any size, singletons allowed; optional `regulators=`, `targets=`). `correction="auto"` (default) uses Benjamini-Hochberg for clones (columns `q_rho`, `q_rho_Delta`) and the fixed thresholds for twin-pair tables. |
+| `infer_with_twinfer(table, genes, time_points=None, ...)` | Scores gene pairs. Picks the data scenario from the table: **single time point** (twin pairs at one time → `z_rho`, `z_rho_s`, `z_rho_Delta`, `inference_scenario`), **multiple time points** (adds the cross-time direction: `z_dag_xy`, `z_dag_yx`, `delta` = \|rho_dag_xy\| − \|rho_dag_yx\|, its permutation p-value `p_delta`; `cross_correlation_pairs="all" | "significant_rho" | "regulation"` limits it to all pairs, pairs with significant z_rho, or pairs in scenario 2 or 3), **clones** (real data: one row per cell with `clone_id`, clones of any size, singletons allowed; optional `regulators=`, `targets=`). `correction="auto"` (default) uses Benjamini-Hochberg for clones (columns `q_rho`, `q_rho_Delta`) and the fixed thresholds for twin-pair tables. |
 | `save_result(table, path, settings=None)` | Writes a result table (`.csv`, `.csv.gz`, `.tsv`, `.tsv.gz` or `.parquet`, from the extension). `infer_with_twinfer(..., save_to=path)` uses it and also writes the settings of the call to `<name>_settings.json`. |
 | `classify_inference_scenario(z_rho, z_rho_s, z_rho_Delta, thresholds=(1.96, 2.326, 1.96), correction="none", fdr=0.05)` | Inference scenario 1-4 (nothing, regulation, regulation + heterogeneity, heterogeneity), tested in the order z_rho, z_rho_s, z_rho_Delta. `correction="bh"` tests z_rho with Benjamini-Hochberg over all pairs given and z_rho_Delta with Benjamini-Hochberg over the pairs whose z_rho is significant (q ≤ `fdr`); z_rho_s keeps its threshold. |
 | `q_values_of_z_rho(z_rho)`, `q_values_of_z_rho_Delta(z_rho_Delta, z_rho)`, `benjamini_hochberg(p)` | BH q-values (two-sided normal p-values; NaN is not counted as a test). |
@@ -28,7 +28,7 @@ pip install -e package/
 
 ### `twinfer.inference.ranked_edges`: ranked lists
 
-`ranked_edge_lists(result, scores=("z_rho_s", "z_rho_Delta"), top=None)` ranks the gene pairs of an `infer_with_twinfer` result by |z_rho_s| (shared state) and by |z_rho_Delta| (regulation), among the pairs whose z_rho is significant (q_rho ≤ 0.05 when present, else \|z_rho\| > 1.96). Returns one table per score with a `rank` column. When the result has two time points it adds a third list, `z_dag`: the pairs ranked by their cross-time correlation (the larger of \|z_dag_xy\| and \|z_dag_yx\|), each listed as source → target in that direction, with `delta` and `p_delta`.
+`ranked_edge_lists(result, scores=None, top=None, direction_alpha=0.05)` ranks the gene pairs of an `infer_with_twinfer` result by |z_rho_s| (shared state) and by |z_rho_Delta| (regulation), among the pairs whose z_rho is significant (q_rho ≤ 0.05 when present, else \|z_rho\| > 1.96). Returns one table per score with a `rank` column. When the result has two time points it adds a third list, `z_dag`: the pairs ranked by their cross-time correlation (the larger of \|z_dag_xy\| and \|z_dag_yx\|), each listed as source → target in that direction (the sign of `delta`), with `delta`, `p_delta` and `directed` (`p_delta < direction_alpha`; otherwise the pair has no direction, as in `network_from_scenarios`).
 
 The module docstring gives every formula. Input tables:
 
@@ -39,7 +39,7 @@ The module docstring gives every formula. Input tables:
 
 | Function | Does |
 |---|---|
-| `network_from_scenarios(result, ...)` | Turns the output of `infer_with_twinfer` into the inputs of `plot_grn`: scenarios 2-3 solid edges, scenario 4 dashed edges without direction, direction from `p_delta` when two time points were used. Returns `(plot_kwargs, edges)`. |
+| `network_from_scenarios(result, ...)` | Turns the output of `infer_with_twinfer` into the inputs of `plot_grn`: scenarios 2-3 solid edges, scenario 4 dashed edges without direction, direction (sign of `delta`) when two time points were used and `p_delta < 0.05`, otherwise no direction; edge colour = `weight` (default `z_rho_Delta`). Returns `(plot_kwargs, edges)`. |
 | `plot_grn(matrix, node_labels=None, ..., edge_styles=None, undirected_edges=None)` | Draws a signed, weighted directed network (`matrix[i, j]` = effect of node i on node j: positive = arrow, negative = bar). `edge_styles` sets a line style per edge, `undirected_edges` draws plain lines. |
 
 ### `twinfer.simulation`: stochastic simulation
